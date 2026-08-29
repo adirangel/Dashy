@@ -4,6 +4,19 @@
   "version": "0.1.0",
   "identifier": "app.dashy.desktop",
   "build": { "beforeDevCommand": "npm --prefix ../frontend run dev", "devUrl": "http://localhost:5173", "beforeBuildCommand": "npm --prefix ../frontend run build", "frontendDist": "../frontend/dist" },
-  "app": { "windows": [{ "title": "Dashy", "width": 380, "height": 620, "minWidth": 320, "minHeight": 520, "resizable": true, "decorations": false, "transparent": true, "alwaysOnTop": true }] },
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "Dashy",
+      "width": 380,
+      "height": 470,
+      "resizable": false,
+      "decorations": false,
+      "transparent": true,
+      "alwaysOnTop": true,
+      "shadow": true,
+      "windowEffects": { "effects": ["acrylic"] }
+    }]
+  },
   "bundle": { "active": true, "targets": "all" }
 }

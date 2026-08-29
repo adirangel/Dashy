@@ -6,16 +6,16 @@ The application uses React and TypeScript for the user interface, Vite for the d
 
 ## What We Built
 
-- A compact, transparent, frameless dashboard window that stays above other windows.
+- A compact Acrylic glass widget that opens in the top-right corner and stays above other windows.
 - An activity streak display and weekly activity heatmap.
-- Sample usage cards for Claude and ChatGPT.
+- Sample usage cards for Claude and Codex.
 - A task list that lets users add tasks and mark them as completed.
 - A progress indicator based on the number of completed tasks.
 - A responsive design optimized for Hebrew and window widths of 320 pixels or more.
 - Unit tests for the activity streak calculation.
 
 > [!NOTE]
-> This is still a prototype. Tasks and usage data are currently stored in memory and reset when the page is refreshed or the application is closed. The close and settings buttons are visual only, and there is no live integration with Claude or ChatGPT yet.
+> This is still a prototype. Tasks and usage data are currently stored in memory and reset when the page is refreshed or the application is closed. The close button is visual only, and there is no live integration with Claude or Codex yet.
 
 ## Project Structure
 
@@ -30,6 +30,21 @@ Dashy/
 
 ## Prerequisites
 
+### Download and Installation Links
+
+Install these tools before running the full desktop application:
+
+| Tool | Why it is needed | Download or instructions |
+|---|---|---|
+| Git for Windows | Clone and update the repository | [Download Git](https://git-scm.com/download/win) |
+| Node.js LTS and npm | Install and build the React frontend | [Download Node.js LTS](https://nodejs.org/en/download) |
+| Rust and Cargo | Compile the Tauri desktop backend | [Install Rust with rustup](https://www.rust-lang.org/tools/install) |
+| Microsoft C++ Build Tools | Compile native Windows dependencies | [Download Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select **Desktop development with C++** |
+| Microsoft Edge WebView2 | Render the application UI on Windows | [Download WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
+| Tauri CLI 2 | Run and package the desktop application | [Tauri CLI installation instructions](https://v2.tauri.app/reference/cli/) |
+
+The [complete Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/) includes platform-specific details and troubleshooting.
+
 ### Browser Preview
 
 - [Node.js LTS](https://nodejs.org/) and npm.
@@ -41,7 +56,7 @@ In addition to Node.js, install:
 - [Rust through rustup](https://www.rust-lang.org/tools/install) with an MSVC toolchain.
 - [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++** selected.
 - Microsoft Edge WebView2. It is normally preinstalled on Windows 10 version 1803 or later and on Windows 11.
-- Tauri CLI version 2.
+- [Tauri CLI version 2](https://v2.tauri.app/reference/cli/).
 
 See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for the complete and most current requirements.
 

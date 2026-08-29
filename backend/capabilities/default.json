@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Permissions for the local Dashy desktop window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-position"
+  ]
+}
