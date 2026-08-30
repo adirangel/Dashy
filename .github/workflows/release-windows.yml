@@ -121,6 +121,9 @@ jobs:
           $msiName = [IO.Path]::GetFileName($msiPath)
           $checksumName = [IO.Path]::GetFileName($checksumPath)
           $expectedNames = @($msiName, $checksumName)
+          $expectedTitle = "Dashy $tag"
+          $expectedNotes = (([string]$env:RELEASE_NOTES -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd([char[]]"`n")
+          if (-not $expectedNotes) { throw "The required release warning is unavailable." }
           if ($msiName -ceq $checksumName) { throw "Release asset names must be unique." }
 
           $msiHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msiPath).Hash.ToLowerInvariant()
@@ -133,6 +136,16 @@ jobs:
           function Assert-DraftRelease($release, [bool] $requireBothAssets) {
             if (-not $release.isDraft) { throw "Refusing to modify a non-draft release." }
             if ($release.isPrerelease) { throw "Refusing an unexpected prerelease." }
+            if ([string]$release.name -cne $expectedTitle) {
+              throw "Draft release title does not match the release tag."
+            }
+
+            $releaseBody = (([string]$release.body -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd([char[]]"`n")
+            $bodyHasExpectedPrefix = $releaseBody -ceq $expectedNotes -or
+              $releaseBody.StartsWith("$expectedNotes`n", [StringComparison]::Ordinal)
+            if (-not $bodyHasExpectedPrefix) {
+              throw "Draft release body is missing the required unsigned-build warning."
+            }
 
             $assets = @($release.assets)
             $unexpected = @($assets | Where-Object { $expectedNames -cnotcontains $_.name })
@@ -156,7 +169,7 @@ jobs:
             }
           }
 
-          $releaseJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,assets 2>$null
+          $releaseJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,name,body,assets 2>$null
           $releaseExists = $LASTEXITCODE -eq 0
           if ($releaseExists) {
             $release = $releaseJson | ConvertFrom-Json
@@ -175,13 +188,13 @@ jobs:
               --repo $repo `
               --draft `
               --verify-tag `
-              --title "Dashy $tag" `
+              --title $expectedTitle `
               --generate-notes `
               --notes $env:RELEASE_NOTES
             if ($LASTEXITCODE -ne 0) { throw "Draft release creation failed." }
           }
 
-          $finalJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,assets
+          $finalJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,name,body,assets
           if ($LASTEXITCODE -ne 0) { throw "Draft release verification failed." }
           $finalRelease = $finalJson | ConvertFrom-Json
           Assert-DraftRelease $finalRelease $true
