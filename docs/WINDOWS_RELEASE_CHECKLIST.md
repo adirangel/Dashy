@@ -9,8 +9,9 @@ not treat a developer workstation as a clean-machine result.
 - [ ] The release tag is `vMAJOR.MINOR.PATCH` and exactly matches the versions in
       `backend/tauri.conf.json`, `backend/Cargo.toml`, and `frontend/package.json`.
 - [ ] Maintainers edited only those three version manifests; the Cargo gates
-      regenerated the tracked `backend/Cargo.lock`, and the release commit contains
-      exactly those four reviewed files.
+      ran unlocked once to regenerate the tracked `backend/Cargo.lock`, then every
+      final Cargo test, Clippy, and Tauri build gate enforced `--locked`; the
+      release commit contains exactly those four reviewed files.
 - [ ] The matching release tag was created once for the version commit; no existing
       tag was moved, deleted, or reused.
 - [ ] `npm run test:release` passes for the release tag.

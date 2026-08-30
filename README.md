@@ -268,7 +268,7 @@ To build Windows bundles:
 
 ```powershell
 Set-Location backend
-cargo tauri build
+cargo tauri build -- --locked
 ```
 
 Bundle output is generated under `backend/target/release/bundle` and is not tracked.
@@ -287,37 +287,57 @@ existing release tag.
    Edit only those three version manifests manually. The Cargo gates regenerate the
    tracked `backend/Cargo.lock` package record, so review and include that generated
    fourth file in the release commit.
-2. Run the complete local gates:
+2. Run one intentional unlocked Cargo command to update the tracked root package
+   record in `backend/Cargo.lock`, then run every final Cargo gate with the
+   lockfile enforced. Do not run another unlocked Cargo command during release
+   verification.
 
    ```powershell
+   cargo check --manifest-path backend/Cargo.toml
    npm --prefix frontend ci
    npm run test:release
    npm --prefix frontend run test
    npm --prefix frontend run build
    cargo fmt --manifest-path backend/Cargo.toml --check
-   cargo test --manifest-path backend/Cargo.toml
-   cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+   cargo test --manifest-path backend/Cargo.toml --locked
+   cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
    ```
 
-3. Verify the exact release version before committing it:
-
-   ```powershell
-   node infrastructure/release/verify-version.mjs v0.2.0
-   ```
-
-4. Review, commit, tag, and push the release atomically. Replace `v0.2.0` only
+3. Validate, review, commit, tag, and push the release in one guarded flow.
+   Replace `v0.2.0` only
    with the chosen new version; run this from a current local `main` branch.
 
    ```powershell
    $releaseTag = "v0.2.0"
+   & node infrastructure/release/verify-version.mjs $releaseTag
+   if ($LASTEXITCODE -ne 0) { throw "Release versions do not match $releaseTag." }
+
    $expectedReleaseFiles = @(
      "backend/Cargo.lock"
      "backend/Cargo.toml"
      "backend/tauri.conf.json"
      "frontend/package.json"
    ) | Sort-Object
-   $branch = (& git branch --show-current).Trim()
-   if ($LASTEXITCODE -ne 0 -or $branch -cne "main") { throw "Release from a current local main branch." }
+
+   function Assert-ReleaseTagAvailable([string] $tag) {
+     & git show-ref --verify --quiet "refs/tags/$tag"
+     $localTagStatus = $LASTEXITCODE
+     if ($localTagStatus -eq 0) { throw "Local tag $tag already exists; never move, delete, or reuse it." }
+     if ($localTagStatus -ne 1) { throw "Could not determine whether local tag $tag exists." }
+
+     $remoteRef = "refs/tags/$tag"
+     $remoteTagLines = @(& git ls-remote --refs origin $remoteRef)
+     $remoteTagStatus = $LASTEXITCODE
+     if ($remoteTagStatus -ne 0) { throw "Could not query remote tag $tag; do not create it." }
+     if ($remoteTagLines.Count -ne 0) { throw "Remote tag $tag already exists; never move, delete, or reuse it." }
+   }
+
+   $branchOutput = & git branch --show-current
+   $branchStatus = $LASTEXITCODE
+   $branch = ([string] $branchOutput).Trim()
+   if ($branchStatus -ne 0 -or $branch -cne "main") { throw "Release from a current local main branch." }
+
+   Assert-ReleaseTagAvailable $releaseTag
 
    & git diff --cached --quiet
    $initialIndexStatus = $LASTEXITCODE
@@ -341,6 +361,15 @@ existing release tag.
    $stagedFiles = @($stagedFileOutput | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object)
    $stagedDifference = @(Compare-Object -ReferenceObject $expectedReleaseFiles -DifferenceObject $stagedFiles)
    if ($stagedDifference.Count -ne 0) { throw "Release commit must stage exactly Cargo.lock and the three version manifests." }
+
+   & git diff --quiet
+   $unstagedStatus = $LASTEXITCODE
+   if ($unstagedStatus -eq 1) { throw "Unstaged tracked changes remain outside the release commit." }
+   if ($unstagedStatus -ne 0) { throw "Could not inspect unstaged tracked changes." }
+   $untrackedFiles = @(& git ls-files --others --exclude-standard)
+   if ($LASTEXITCODE -ne 0) { throw "Could not inspect untracked files." }
+   if ($untrackedFiles.Count -ne 0) { throw "Untracked files remain; release only from a clean worktree." }
+
    git diff --cached --stat -- $expectedReleaseFiles
    if ($LASTEXITCODE -ne 0) { throw "Could not inspect the staged release diff stat." }
    git diff --cached -- $expectedReleaseFiles
@@ -352,21 +381,21 @@ existing release tag.
    $worktreeState = @(& git status --porcelain)
    if ($LASTEXITCODE -ne 0 -or $worktreeState.Count -ne 0) { throw "Commit must leave a clean worktree." }
 
-   & git show-ref --verify --quiet "refs/tags/$releaseTag"
-   if ($LASTEXITCODE -eq 0) { throw "Local tag $releaseTag already exists; never move, delete, or reuse it." }
-   if ($LASTEXITCODE -ne 1) { throw "Could not determine whether local tag $releaseTag exists." }
-
-   $remoteRef = "refs/tags/$releaseTag"
-   $remoteTagLines = @(& git ls-remote --refs origin $remoteRef)
-   if ($LASTEXITCODE -ne 0) { throw "Could not query remote tag $releaseTag; do not create it." }
-   if ($remoteTagLines.Count -ne 0) { throw "Remote tag $releaseTag already exists; never move, delete, or reuse it." }
+   & node infrastructure/release/verify-version.mjs $releaseTag
+   if ($LASTEXITCODE -ne 0) { throw "Release versions no longer match $releaseTag." }
+   Assert-ReleaseTagAvailable $releaseTag
 
    & git tag $releaseTag
    if ($LASTEXITCODE -ne 0) { throw "Could not create tag $releaseTag." }
-   $tagCommit = (& git rev-list -n 1 $releaseTag).Trim()
-   if ($LASTEXITCODE -ne 0) { throw "Could not resolve tag $releaseTag." }
-   $headCommit = (& git rev-parse HEAD).Trim()
-   if ($LASTEXITCODE -ne 0 -or $tagCommit -cne $headCommit) { throw "Release tag must point to HEAD." }
+   $tagCommitOutput = & git rev-list -n 1 $releaseTag
+   $tagCommitStatus = $LASTEXITCODE
+   if ($tagCommitStatus -ne 0) { throw "Could not resolve tag $releaseTag." }
+   $tagCommit = ([string] $tagCommitOutput).Trim()
+   $headCommitOutput = & git rev-parse HEAD
+   $headCommitStatus = $LASTEXITCODE
+   if ($headCommitStatus -ne 0) { throw "Could not resolve HEAD." }
+   $headCommit = ([string] $headCommitOutput).Trim()
+   if (-not $tagCommit -or $tagCommit -cne $headCommit) { throw "Release tag must point to HEAD." }
 
    & git push --atomic origin main $releaseTag
    if ($LASTEXITCODE -ne 0) { throw "Atomic main-and-tag push failed." }
@@ -375,11 +404,11 @@ existing release tag.
    Never create a tag for an uncommitted tree or retag a different commit. If the
    workflow fails, fix the issue in a new commit and use a new patch version.
 
-5. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. It must
+4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. It must
    validate the three versions, use the reviewed immutable action commits, and
    leave the release as a draft. A draft can remain partial or blocked while that
    workflow is still running or has failed; do not publish or manually complete it.
-6. Inspect and verify the resulting draft. It must contain exactly one Windows x64
+5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
    `.msi` and its matching `.msi.sha256` checksum:
 
    ```powershell

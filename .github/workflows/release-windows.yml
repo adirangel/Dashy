@@ -52,8 +52,8 @@ jobs:
       - name: Verify Rust
         run: |
           cargo fmt --manifest-path backend/Cargo.toml --check
-          cargo test --manifest-path backend/Cargo.toml
-          cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path backend/Cargo.toml --locked
+          cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
 
       - name: Install pinned Tauri CLI
         run: cargo install tauri-cli --version 2.11.4 --locked
@@ -66,7 +66,7 @@ jobs:
           tauriScript: cargo tauri
           uploadPlainBinary: false
           uploadWorkflowArtifacts: false
-          args: --bundles msi --target x86_64-pc-windows-msvc
+          args: --bundles msi --target x86_64-pc-windows-msvc -- --locked
 
       - name: Create MSI checksum
         id: checksum
