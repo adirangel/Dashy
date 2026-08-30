@@ -69,21 +69,134 @@ function jsonManifestVersion(root, relativePath) {
   return version;
 }
 
-function cargoPackageVersion(source) {
-  const packageHeader = /^\s*\[package\]\s*(?:#.*)?$/m.exec(source);
-  if (!packageHeader) {
-    throw new Error("backend/Cargo.toml has no [package] section.");
+function tomlCodeLines(source) {
+  let stringMode = "normal";
+  const lines = [];
+
+  for (const sourceLine of source.split(/\r?\n/)) {
+    const code = Array(sourceLine.length).fill(" ");
+    let index = 0;
+
+    while (index < sourceLine.length) {
+      if (stringMode === "multiline-basic") {
+        if (sourceLine[index] === "\\") {
+          index += Math.min(2, sourceLine.length - index);
+        } else if (sourceLine[index] === '"') {
+          let quoteEnd = index;
+          while (sourceLine[quoteEnd] === '"') quoteEnd += 1;
+          if (quoteEnd - index >= 3) stringMode = "normal";
+          index = quoteEnd;
+        } else {
+          index += 1;
+        }
+        continue;
+      }
+
+      if (stringMode === "multiline-literal") {
+        if (sourceLine[index] === "'") {
+          let quoteEnd = index;
+          while (sourceLine[quoteEnd] === "'") quoteEnd += 1;
+          if (quoteEnd - index >= 3) stringMode = "normal";
+          index = quoteEnd;
+        } else {
+          index += 1;
+        }
+        continue;
+      }
+
+      const character = sourceLine[index];
+      if (character === "#") break;
+
+      if (sourceLine.startsWith('"""', index)) {
+        stringMode = "multiline-basic";
+        index += 3;
+        continue;
+      }
+      if (sourceLine.startsWith("'''", index)) {
+        stringMode = "multiline-literal";
+        index += 3;
+        continue;
+      }
+
+      if (character === '"') {
+        code[index] = '"';
+        let stringEnd = index + 1;
+        let closed = false;
+        while (stringEnd < sourceLine.length) {
+          if (sourceLine[stringEnd] === "\\") {
+            stringEnd += 2;
+          } else if (sourceLine[stringEnd] === '"') {
+            stringEnd += 1;
+            closed = true;
+            break;
+          } else {
+            stringEnd += 1;
+          }
+        }
+        if (!closed) {
+          throw new Error("backend/Cargo.toml has an unterminated string.");
+        }
+        code[stringEnd - 1] = '"';
+        index = stringEnd;
+        continue;
+      }
+
+      if (character === "'") {
+        const stringEnd = sourceLine.indexOf("'", index + 1);
+        if (stringEnd < 0) {
+          throw new Error("backend/Cargo.toml has an unterminated string.");
+        }
+        code[index] = "'";
+        code[stringEnd] = "'";
+        index = stringEnd + 1;
+        continue;
+      }
+
+      code[index] = character;
+      index += 1;
+    }
+
+    lines.push({ code: code.join(""), source: sourceLine });
   }
 
-  const bodyStart = packageHeader.index + packageHeader[0].length;
-  const remainder = source.slice(bodyStart);
-  const nextSection = /^\s*\[[^\]\r\n]+\].*$/m.exec(remainder);
-  const packageSection = remainder.slice(0, nextSection?.index);
-  const versionMatch = /^\s*version\s*=\s*"([^"\r\n]+)"\s*(?:#.*)?$/m.exec(packageSection);
-  if (!versionMatch || !VERSION_PATTERN.test(versionMatch[1])) {
-    throw new Error("backend/Cargo.toml has no valid stable package version.");
+  if (stringMode !== "normal") {
+    throw new Error("backend/Cargo.toml has an unterminated multiline string.");
   }
-  return versionMatch[1];
+  return lines;
+}
+
+function cargoPackageVersion(source) {
+  let foundPackage = false;
+  let inPackage = false;
+
+  for (const line of tomlCodeLines(source)) {
+    const table = /^\s*(\[\[?[^\]\r\n]+\]\]?)\s*$/.exec(line.code);
+    if (table) {
+      if (table[1] === "[package]") {
+        foundPackage = true;
+        inPackage = true;
+      } else if (inPackage) {
+        break;
+      }
+      continue;
+    }
+
+    if (!inPackage) continue;
+    const versionPrefix = /^\s*version\s*=\s*/.exec(line.code);
+    if (!versionPrefix) continue;
+    const versionMatch = /^"([^"\r\n]+)"\s*(?:#.*)?$/.exec(
+      line.source.slice(versionPrefix[0].length),
+    );
+    if (versionMatch && VERSION_PATTERN.test(versionMatch[1])) {
+      return versionMatch[1];
+    }
+    break;
+  }
+
+  if (!foundPackage) {
+    throw new Error("backend/Cargo.toml has no [package] section.");
+  }
+  throw new Error("backend/Cargo.toml has no valid stable package version.");
 }
 
 export function readReleaseVersions(root = process.cwd()) {

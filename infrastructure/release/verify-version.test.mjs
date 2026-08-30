@@ -92,6 +92,52 @@ test("reads only the Cargo package version, ignoring decoy version keys", async 
   assert.deepEqual(readReleaseVersions(root), matching);
 });
 
+test("ignores version and table decoys inside Cargo multiline basic strings", async () => {
+  const root = await createManifests({
+    cargo: [
+      '[package]',
+      'name = "dashy"',
+      '# version = "7.7.7"',
+      '# [dependencies.comment-decoy]',
+      'description = """',
+      // TOML represents three content quotes as two quotes plus an escaped quote.
+      'A quoted marker: ""\\"',
+      'version = "9.9.9"',
+      '[dependencies.decoy]',
+      '"""',
+      'version = "0.1.0"',
+      '',
+      '[dependencies]',
+      'example = "1.0.0"',
+      '',
+    ].join("\n"),
+  });
+
+  assert.deepEqual(readReleaseVersions(root), matching);
+});
+
+test("ignores version and table decoys inside Cargo multiline literal strings", async () => {
+  const root = await createManifests({
+    cargo: [
+      '[package]',
+      'name = "dashy"',
+      '# version = "7.7.7"',
+      '# [dependencies.comment-decoy]',
+      "description = '''",
+      'version = "8.8.8"',
+      '[workspace.package]',
+      "'''",
+      'version = "0.1.0"',
+      '',
+      '[dependencies]',
+      'example = "1.0.0"',
+      '',
+    ].join("\n"),
+  });
+
+  assert.deepEqual(readReleaseVersions(root), matching);
+});
+
 test("rejects Cargo manifests without an exact package version", async () => {
   const noPackage = await createManifests({
     cargo: '[workspace.package]\nversion = "0.1.0"\n',
@@ -102,6 +148,14 @@ test("rejects Cargo manifests without an exact package version", async () => {
     cargo: '[package]\nname = "dashy"\n[dependencies]\nversion = "0.1.0"\n',
   });
   assert.throws(() => readReleaseVersions(noVersion), /Cargo\.toml.*package version/);
+
+  const unterminated = await createManifests({
+    cargo: '[package]\ndescription = """never closed\nversion = "0.1.0"\n',
+  });
+  assert.throws(
+    () => readReleaseVersions(unterminated),
+    /Cargo\.toml.*unterminated multiline string/,
+  );
 });
 
 test("reports malformed JSON and missing manifest files safely", async () => {
