@@ -12,6 +12,8 @@ export type AppSettings = {
   monitor: MonitorPreference | null;
   locale: SupportedLocale;
   alwaysShowOverFullscreen: boolean;
+  onboardingCompleted: boolean;
+  enabledProviders: ProviderId[];
 };
 export type SettingsPatch = Partial<AppSettings>;
 export type MonitorInfo = StoredMonitorRect & {

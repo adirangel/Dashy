@@ -35,7 +35,7 @@ describe("window routing", () => {
     mocks.listenForLocaleChanges.mockResolvedValue(mocks.unlistenLocale);
     mocks.listenForEdgeView.mockResolvedValue(mocks.unlistenEdgeView);
     mocks.listenForDashboardCacheChanged.mockResolvedValue(mocks.unlistenDashboardCacheChanged);
-    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false });
+    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     mocks.listMonitors.mockResolvedValue([]);
     mocks.setTrayLabels.mockResolvedValue(undefined);
     mocks.getDashboardSnapshot.mockResolvedValue(unavailableDashboardSnapshot());
@@ -55,7 +55,7 @@ describe("window routing", () => {
   });
 
   it("bootstraps the independent main WebView from persisted Rust locale", async () => {
-    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false });
+    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     render(<App windowLabel="main" />);
 
     await waitFor(() => expect(document.documentElement.lang).toBe("he"));
@@ -80,7 +80,7 @@ describe("window routing", () => {
   });
 
   it("does not let a stale startup read overwrite a newer locale event", async () => {
-    let resolveSettings!: (value: { placement: "right"; monitor: null; locale: "he"; alwaysShowOverFullscreen: false }) => void;
+    let resolveSettings!: (value: { placement: "right"; monitor: null; locale: "he"; alwaysShowOverFullscreen: false; onboardingCompleted: true; enabledProviders: ["claude", "codex", "github"] }) => void;
     mocks.getSettings.mockReturnValue(new Promise((resolve) => { resolveSettings = resolve; }));
     let localeHandler: ((locale: unknown) => void) | undefined;
     mocks.listenForLocaleChanges.mockImplementation(async (handler: (locale: unknown) => void) => {
@@ -91,7 +91,7 @@ describe("window routing", () => {
     await waitFor(() => expect(localeHandler).toBeTypeOf("function"));
 
     localeHandler?.("ja");
-    resolveSettings({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false });
+    resolveSettings({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
 
     await waitFor(() => expect(document.documentElement.lang).toBe("ja"));
     expect(document.documentElement.dir).toBe("ltr");

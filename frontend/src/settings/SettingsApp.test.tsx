@@ -28,6 +28,8 @@ import { SettingsApp, translatedTrayLabels } from "./SettingsApp";
 const initialSettings = {
   placement: "right" as const, monitor: null, locale: "en" as const,
   alwaysShowOverFullscreen: false,
+  onboardingCompleted: true,
+  enabledProviders: ["claude", "codex", "github"],
 };
 const monitors = [
   { id: "display-1", name: "Studio display", x: 0, y: 0, width: 1920, height: 1040, primary: true },

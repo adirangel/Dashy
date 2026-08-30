@@ -61,7 +61,7 @@ describe("native notch interaction bridge", () => {
     vi.clearAllMocks(); edgeHandler = undefined;
     exitTokenSequence = 0;
     mocks.isTauriRuntime.mockReturnValue(true);
-    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false });
+    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     mocks.getCurrentEdgeView.mockResolvedValue({ visibility: "hidden", placement: "right", provider: null });
     mocks.listenForEdgeView.mockImplementation(async (handler: (view: EdgeViewState) => void) => { edgeHandler = handler; return mocks.unlisten; });
     mocks.setNotchInteraction.mockResolvedValue(undefined);
