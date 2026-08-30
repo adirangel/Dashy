@@ -226,7 +226,7 @@ describe("ProviderManager", () => {
       confirmationLabel: "Open official login",
       busyLabel: "Connecting",
     },
-  ])("announces the localized $action status without moving focus", async ({
+  ])("announces the localized $action status and restores keyboard focus", async ({
     action, provider, initialStatus, actionLabel, confirmationLabel, busyLabel,
   }) => {
     const operation = deferred<ProviderSetupState>();
@@ -235,22 +235,42 @@ describe("ProviderManager", () => {
     render(<ProviderManagerHarness />);
 
     const actionButton = await screen.findByRole("button", { name: actionLabel });
-    fireEvent.click(actionButton);
-    const retainedFocus = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
-    retainedFocus.focus();
-    fireEvent.click(screen.getByRole("button", { name: confirmationLabel }));
-
     const card = screen.getByRole("article", { name: provider === "codex" ? "Codex" : "Claude" });
-    const liveStatus = await within(card).findByRole("status");
+    const liveStatus = within(card).getByRole("status");
+    fireEvent.click(actionButton);
+    const confirmation = screen.getByRole("button", { name: confirmationLabel });
+    confirmation.focus();
+    expect(confirmation).toHaveFocus();
+    fireEvent.keyDown(confirmation, { key: "Enter" });
+    fireEvent.click(confirmation, { detail: 0 });
+
+    expect(await within(card).findByRole("status")).toBe(liveStatus);
     expect(liveStatus).toHaveTextContent(busyLabel);
     expect(liveStatus).toHaveAttribute("aria-live", "polite");
-    expect(retainedFocus).toHaveFocus();
+    await waitFor(() => expect(within(card).getByRole("checkbox")).toHaveFocus());
+    expect(document.body).not.toHaveFocus();
 
     operation.resolve(setupStates({ [provider]: "connected" })
       .find((state) => state.definition.provider === provider)!);
     await waitFor(() => expect(card).not.toHaveAttribute("aria-busy"));
-    expect(within(card).queryByRole("status")).not.toBeInTheDocument();
-    expect(within(card).getByText("Connected")).toBeInTheDocument();
+    expect(within(card).getByRole("status")).toBe(liveStatus);
+    expect(liveStatus).toHaveTextContent("Connected");
+  });
+
+  it("does not move focus after pointer confirmation", async () => {
+    const operation = deferred<ProviderSetupState>();
+    apiMocks.getProviderSetupStates.mockResolvedValue(setupStates({ codex: "notInstalled" }));
+    apiMocks.installProvider.mockReturnValue(operation.promise);
+    render(<ProviderManagerHarness />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Install Codex" }));
+    const retainedFocus = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
+    retainedFocus.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm installation" }), { detail: 1 });
+
+    expect(retainedFocus).toHaveFocus();
+    operation.resolve(setupStates({ codex: "connected" })[1]);
+    await waitFor(() => expect(apiMocks.installProvider).toHaveBeenCalledTimes(1));
   });
 
   it("renders only sanitized action failure guidance and an official manual-help link", () => {

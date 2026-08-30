@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderId, ProviderStatus } from "../dashboard";
 import type { ProviderSetupDefinition } from "./api";
@@ -37,7 +37,7 @@ function Confirmation({
   definition: ProviderSetupDefinition;
   action: PendingAction["action"];
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (restoreKeyboardFocus: boolean) => void;
 }) {
   const { t } = useTranslation();
   const labelId = `provider-setup-${definition.provider}-${action}-confirmation`;
@@ -77,7 +77,9 @@ function Confirmation({
       <button
         className="provider-setup-confirmation-primary"
         type="button"
-        onClick={onConfirm}
+        onClick={(event) => onConfirm(
+          event.detail === 0 && document.activeElement === event.currentTarget,
+        )}
       >{t(confirmKey)}</button>
     </div>
   </div>;
@@ -91,6 +93,19 @@ export function ProviderManager({
 }: ProviderManagerProps) {
   const { t } = useTranslation();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [restoreFocusProvider, setRestoreFocusProvider] = useState<ProviderId | null>(null);
+  const selectionRefs = useRef<Partial<Record<ProviderId, HTMLInputElement | null>>>({});
+  const cardRefs = useRef<Partial<Record<ProviderId, HTMLElement | null>>>({});
+
+  useEffect(() => {
+    if (!restoreFocusProvider || pendingAction !== null) return;
+    const selection = selectionRefs.current[restoreFocusProvider];
+    const target = selection && !selection.disabled
+      ? selection
+      : cardRefs.current[restoreFocusProvider];
+    target?.focus();
+    setRestoreFocusProvider(null);
+  }, [pendingAction, restoreFocusProvider]);
 
   if (controller.states === null) {
     return <div className="provider-setup-grid">
@@ -124,31 +139,35 @@ export function ProviderManager({
       const pending = pendingAction?.provider === provider ? pendingAction : null;
       const isEnabled = enabledProviders.includes(provider);
 
-      const confirm = (action: PendingAction["action"]) => {
+      const confirm = (action: PendingAction["action"], restoreKeyboardFocus: boolean) => {
+        if (restoreKeyboardFocus) setRestoreFocusProvider(provider);
         setPendingAction(null);
         void controller[action](provider);
       };
 
       return <article
+        ref={(element) => { cardRefs.current[provider] = element; }}
         aria-labelledby={headingId}
         aria-busy={isBusy || undefined}
         className="provider-setup-card"
         data-provider={provider}
         data-status={state.status}
         key={provider}
+        tabIndex={-1}
       >
         <header className="provider-setup-card-header">
           <h2 className="provider-setup-name" id={headingId}>{name}</h2>
           <span
             className="provider-setup-status"
-            role={busyStatus ? "status" : undefined}
-            aria-live={busyStatus ? "polite" : undefined}
-            aria-atomic={busyStatus ? "true" : undefined}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
           >{busyStatus ?? t(statusKey(state.status))}</span>
         </header>
 
         <label className="provider-setup-selection">
           <input
+            ref={(element) => { selectionRefs.current[provider] = element; }}
             type="checkbox"
             checked={isEnabled}
             disabled={selectionDisabled}
@@ -181,7 +200,7 @@ export function ProviderManager({
           definition={state.definition}
           action={pending.action}
           onCancel={() => setPendingAction(null)}
-          onConfirm={() => confirm(pending.action)}
+          onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
         />}
 
         {controller.failureProvider === provider && <>

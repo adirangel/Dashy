@@ -157,9 +157,10 @@ describe("OnboardingApp", () => {
     render(<OnboardingApp />);
     fireEvent.click(await screen.findByRole("button", { name: "Finish setup" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    expect(await screen.findByText(
       "Dashy could not save your provider selection.",
-    );
+      { selector: ".onboarding-footer-status" },
+    )).toHaveAttribute("role", "status");
     expect(screen.queryByText(/secret filesystem path/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Finish setup" })).toBeEnabled();
   });

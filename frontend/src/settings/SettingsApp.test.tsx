@@ -230,7 +230,8 @@ describe("SettingsApp", () => {
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByLabelText("Placement")).toHaveValue("right");
-    expect(screen.getByRole("status")).toHaveTextContent("Try Dashy again later.");
+    expect(screen.getByText("Try Dashy again later.", { selector: ".settings-message" }))
+      .toHaveAttribute("role", "status");
     expect(document.body.textContent).not.toContain("raw monitor details");
   });
 
@@ -244,7 +245,8 @@ describe("SettingsApp", () => {
     expect(startup).toBeDisabled();
     expect(startup).toBePartiallyChecked();
     expect(startup).toHaveAttribute("aria-checked", "mixed");
-    expect(screen.getByRole("status")).toHaveTextContent("Try Dashy again later.");
+    expect(screen.getByText("Try Dashy again later.", { selector: ".settings-message" }))
+      .toHaveAttribute("role", "status");
     expect(document.body.textContent).not.toContain("raw registry details");
   });
 
