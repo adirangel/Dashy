@@ -1,15 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen, emitTo: vi.fn() }));
 
 import {
   beginNotchExit, completeNotchExit, getCurrentEdgeView, isDashboardCacheChangedEvent,
-  isEdgeViewState, isExitToken,
+  isEdgeViewState, isExitToken, listenForSettingsChanges,
 } from "./window";
 
 describe("strict edge-view validation", () => {
-  beforeEach(() => mocks.invoke.mockReset());
+  beforeEach(() => {
+    mocks.invoke.mockReset();
+    mocks.listen.mockReset();
+  });
+
+  afterEach(() => delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 
   it("queries the typed current-view native command with the exact wire name", async () => {
     const view = { visibility: "card" as const, placement: "right" as const, provider: "claude" as const };
@@ -71,5 +77,28 @@ describe("strict edge-view validation", () => {
       { revision: Number.MAX_SAFE_INTEGER }, { revision: 1, provider: "claude" },
       { revision: "1" },
     ]) expect(isDashboardCacheChangedEvent(invalid)).toBe(false);
+  });
+
+  it("forwards the complete native settings event and returns its unlisten function", async () => {
+    const unlisten = vi.fn();
+    let nativeHandler: ((event: { payload: unknown }) => void) | undefined;
+    mocks.listen.mockImplementation(async (_event, handler) => {
+      nativeHandler = handler;
+      return unlisten;
+    });
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    const handler = vi.fn();
+    const settings = {
+      placement: "right" as const,
+      monitor: null,
+      locale: "en" as const,
+      alwaysShowOverFullscreen: false,
+      onboardingCompleted: true,
+      enabledProviders: ["codex" as const],
+    };
+
+    await expect(listenForSettingsChanges(handler)).resolves.toBe(unlisten);
+    nativeHandler?.({ payload: settings });
+    expect(handler).toHaveBeenCalledExactlyOnceWith(settings);
   });
 });

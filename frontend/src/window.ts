@@ -52,6 +52,7 @@ export type NotchInteraction =
   | { kind: "escape" };
 
 const LOCALE_CHANGED_EVENT = "dashy://locale-changed";
+const SETTINGS_CHANGED_EVENT = "dashy://settings-changed";
 const EDGE_VIEW_EVENT = "dashy://edge-view";
 const DASHBOARD_CACHE_CHANGED_EVENT = "dashy://dashboard-cache-changed";
 const placements = new Set<EdgePlacement>(["right", "left", "top"]);
@@ -109,6 +110,8 @@ export function currentWindowLabel(): string {
 export const getSettings = () => invoke<AppSettings>("get_settings");
 export const updateSettings = (patch: SettingsPatch) =>
   invoke<AppSettings>("update_settings", { patch });
+export const completeOnboarding = (enabledProviders: ProviderId[]) =>
+  invoke<AppSettings>("complete_onboarding", { enabledProviders });
 export const listMonitors = () => invoke<MonitorInfo[]>("list_monitors");
 export const setTrayLabels = (labels: TrayLabels) =>
   invoke<void>("set_tray_labels", { labels });
@@ -145,6 +148,13 @@ export async function listenForDashboardCacheChanged(
   return listen<unknown>(DASHBOARD_CACHE_CHANGED_EVENT, ({ payload }) => {
     if (isDashboardCacheChangedEvent(payload)) handler(payload);
   });
+}
+
+export async function listenForSettingsChanges(
+  handler: (settings: AppSettings) => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime()) return () => undefined;
+  return listen<AppSettings>(SETTINGS_CHANGED_EVENT, ({ payload }) => handler(payload));
 }
 
 export async function emitLocaleChanged(locale: SupportedLocale): Promise<void> {

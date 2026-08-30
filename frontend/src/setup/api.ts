@@ -1,0 +1,79 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { ProviderId, ProviderStatus } from "../dashboard";
+
+export type ProviderSetupDefinition = {
+  provider: ProviderId;
+  publisher: string;
+  packageId: string;
+  installCommand: string;
+  installUrl: string;
+  loginCommand: string;
+};
+
+export type ProviderSetupState = {
+  definition: ProviderSetupDefinition;
+  status: ProviderStatus;
+};
+
+export type ProviderSetupAction = "install" | "login";
+
+const providerIds = new Set<ProviderId>(["claude", "codex", "github"]);
+const providerStatuses = new Set<ProviderStatus>([
+  "connected", "stale", "notInstalled", "notAuthenticated", "unavailable",
+]);
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const valueKeys = Object.keys(value);
+  return valueKeys.length === keys.length && valueKeys.every((key) => keys.includes(key));
+}
+
+function isProviderSetupDefinition(value: unknown): value is ProviderSetupDefinition {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return hasExactKeys(candidate, [
+    "provider", "publisher", "packageId", "installCommand", "installUrl", "loginCommand",
+  ])
+    && providerIds.has(candidate.provider as ProviderId)
+    && typeof candidate.publisher === "string"
+    && typeof candidate.packageId === "string"
+    && typeof candidate.installCommand === "string"
+    && typeof candidate.installUrl === "string"
+    && typeof candidate.loginCommand === "string";
+}
+
+function isProviderSetupState(value: unknown): value is ProviderSetupState {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return hasExactKeys(candidate, ["definition", "status"])
+    && isProviderSetupDefinition(candidate.definition)
+    && providerStatuses.has(candidate.status as ProviderStatus);
+}
+
+function providerSetupResponseError(): Error {
+  return new Error("invalid provider setup response");
+}
+
+export async function getProviderSetupStates(): Promise<ProviderSetupState[]> {
+  const response = await invoke<unknown>("get_provider_setup_states");
+  if (!Array.isArray(response) || !response.every(isProviderSetupState)) {
+    throw providerSetupResponseError();
+  }
+  return response;
+}
+
+async function runProviderSetupAction(
+  action: ProviderSetupAction,
+  provider: ProviderId,
+): Promise<ProviderSetupState> {
+  const response = await invoke<unknown>(`${action}_provider`, { request: { provider } });
+  if (!isProviderSetupState(response)) throw providerSetupResponseError();
+  return response;
+}
+
+export function installProvider(provider: ProviderId): Promise<ProviderSetupState> {
+  return runProviderSetupAction("install", provider);
+}
+
+export function loginProvider(provider: ProviderId): Promise<ProviderSetupState> {
+  return runProviderSetupAction("login", provider);
+}
