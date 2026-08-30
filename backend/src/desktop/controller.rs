@@ -131,6 +131,7 @@ impl ControllerRuntime {
 pub struct TauriWindowPort<R: Runtime> {
     main: WebviewWindow<R>,
     settings: Option<WebviewWindow<R>>,
+    onboarding: Option<WebviewWindow<R>>,
 }
 
 impl<R: Runtime> TauriWindowPort<R> {
@@ -141,6 +142,7 @@ impl<R: Runtime> TauriWindowPort<R> {
         Ok(Self {
             main,
             settings: manager.get_webview_window("settings"),
+            onboarding: manager.get_webview_window("onboarding"),
         })
     }
 }
@@ -194,12 +196,17 @@ impl<R: Runtime> WindowPort for TauriWindowPort<R> {
     fn native_handles(&self) -> Vec<NativeWindowHandle> {
         #[cfg(windows)]
         {
-            let mut handles = Vec::with_capacity(2);
+            let mut handles = Vec::with_capacity(3);
             if let Ok(handle) = self.main.hwnd() {
                 handles.push(handle.0 as NativeWindowHandle);
             }
             if let Some(settings) = &self.settings {
                 if let Ok(handle) = settings.hwnd() {
+                    handles.push(handle.0 as NativeWindowHandle);
+                }
+            }
+            if let Some(onboarding) = &self.onboarding {
+                if let Ok(handle) = onboarding.hwnd() {
                     handles.push(handle.0 as NativeWindowHandle);
                 }
             }

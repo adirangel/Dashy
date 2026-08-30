@@ -21,5 +21,12 @@
       "autostart:allow-disable",
       "autostart:allow-is-enabled"
     ]
+  },
+  {
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "onboarding-capability",
+    "description": "Permissions for the Dashy onboarding window",
+    "windows": ["onboarding"],
+    "permissions": ["core:default"]
   }
 ]

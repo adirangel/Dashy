@@ -130,6 +130,10 @@ pub fn run() {
                 tray: tray_state,
             });
 
+            if !current_settings.onboarding_completed {
+                desktop::show_onboarding_window(app.handle()).map_err(std::io::Error::other)?;
+            }
+
             let dashboard = app.state::<AppState>().dashboard.clone();
             let enabled_providers = current_settings.enabled_providers.clone();
             tauri::async_runtime::spawn(async move {
@@ -198,7 +202,13 @@ fn handle_menu_action(app: &AppHandle, id: &str) {
         "placement_top" => update_placement(app, &state, EdgePlacement::Top),
         "monitor_primary" => update_monitor(app, &state, None),
         "settings" => {
-            let _ = desktop::show_settings_window(app);
+            let Ok(settings) = state.settings.current() else {
+                return;
+            };
+            let _ = match settings_window_label(&settings) {
+                "onboarding" => desktop::show_onboarding_window(app),
+                _ => desktop::show_settings_window(app),
+            };
         }
         "quit" => {
             state.runtime.cancel();
@@ -208,6 +218,14 @@ fn handle_menu_action(app: &AppHandle, id: &str) {
             select_monitor(app, &state, &id["monitor_".len()..]);
         }
         _ => {}
+    }
+}
+
+fn settings_window_label(settings: &desktop::settings::AppSettings) -> &'static str {
+    if settings.onboarding_completed {
+        "settings"
+    } else {
+        "onboarding"
     }
 }
 
@@ -243,6 +261,9 @@ fn update_monitor(app: &AppHandle, state: &DesktopState, monitor: Option<Monitor
 
 #[cfg(test)]
 mod config_tests {
+    use super::settings_window_label;
+    use crate::desktop::settings::AppSettings;
+
     #[test]
     fn main_window_transparency_disables_native_full_rectangle_chrome() {
         let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
@@ -276,5 +297,60 @@ mod config_tests {
             config["bundle"]["icon"],
             serde_json::json!(["icons/icon.ico"])
         );
+    }
+
+    #[test]
+    fn onboarding_window_is_hidden_safe_and_authorized_only_for_core_commands() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir.join("tauri.conf.json")).unwrap(),
+        )
+        .unwrap();
+        let onboarding = config["app"]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|window| window["label"] == "onboarding")
+            .unwrap();
+
+        assert_eq!(onboarding["title"], "Set up Dashy");
+        assert_eq!(onboarding["width"], 680);
+        assert_eq!(onboarding["height"], 640);
+        assert_eq!(onboarding["minWidth"], 520);
+        assert_eq!(onboarding["minHeight"], 560);
+        assert_eq!(onboarding["visible"], false);
+        assert_eq!(onboarding["center"], true);
+        assert_eq!(onboarding["resizable"], true);
+        assert_eq!(onboarding["decorations"], true);
+        assert_eq!(onboarding["transparent"], false);
+        assert_eq!(onboarding["skipTaskbar"], false);
+
+        let capabilities: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir.join("capabilities/default.json")).unwrap(),
+        )
+        .unwrap();
+        let onboarding_capability = capabilities
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|capability| capability["identifier"] == "onboarding-capability")
+            .unwrap();
+        assert_eq!(
+            onboarding_capability["windows"],
+            serde_json::json!(["onboarding"])
+        );
+        assert_eq!(
+            onboarding_capability["permissions"],
+            serde_json::json!(["core:default"])
+        );
+    }
+
+    #[test]
+    fn settings_action_targets_onboarding_until_setup_is_completed() {
+        let mut settings = AppSettings::default();
+        assert_eq!(settings_window_label(&settings), "onboarding");
+
+        settings.onboarding_completed = true;
+        assert_eq!(settings_window_label(&settings), "settings");
     }
 }

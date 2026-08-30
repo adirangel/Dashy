@@ -39,3 +39,20 @@ pub fn show_settings_window(app: &AppHandle) -> Result<(), String> {
         .and_then(|_| window.set_focus())
         .map_err(|error| format!("failed to show settings: {error}"))
 }
+
+pub fn show_onboarding_window(app: &AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("onboarding")
+        .ok_or_else(|| "onboarding window is unavailable".to_string())?;
+    window
+        .show()
+        .and_then(|_| window.set_focus())
+        .map_err(|error| format!("failed to show onboarding: {error}"))
+}
+
+pub fn hide_onboarding_window(app: &AppHandle) -> Result<(), String> {
+    app.get_webview_window("onboarding")
+        .ok_or_else(|| "onboarding window is unavailable".to_string())?
+        .hide()
+        .map_err(|error| format!("failed to hide onboarding: {error}"))
+}

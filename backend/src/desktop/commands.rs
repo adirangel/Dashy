@@ -18,6 +18,25 @@ fn emit_settings_changed(app: &AppHandle, settings: &AppSettings) -> Result<(), 
         .map_err(|error| format!("failed to publish settings: {error}"))
 }
 
+fn complete_onboarding_lifecycle<P, E, R, H>(
+    persist: P,
+    publish: E,
+    refresh_tray: R,
+    hide: H,
+) -> Result<AppSettings, String>
+where
+    P: FnOnce() -> Result<AppSettings, String>,
+    E: FnOnce(&AppSettings) -> Result<(), String>,
+    R: FnOnce(&AppSettings) -> Result<(), String>,
+    H: FnOnce() -> Result<(), String>,
+{
+    let settings = persist()?;
+    publish(&settings)?;
+    refresh_tray(&settings)?;
+    hide()?;
+    Ok(settings)
+}
+
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(
     tag = "kind",
@@ -101,15 +120,21 @@ pub async fn complete_onboarding(
     state: State<'_, DesktopState>,
     enabled_providers: Vec<ProviderId>,
 ) -> Result<AppSettings, String> {
-    let settings = state.settings.update(SettingsPatch {
-        onboarding_completed: Some(true),
-        enabled_providers: Some(enabled_providers),
-        ..Default::default()
-    })?;
-    state.controller.queue_interaction(EdgeInteraction::Dismiss);
-    emit_settings_changed(&app, &settings)?;
-    state.refresh_tray(&app, &settings)?;
-    Ok(settings)
+    complete_onboarding_lifecycle(
+        || {
+            state.settings.update(SettingsPatch {
+                onboarding_completed: Some(true),
+                enabled_providers: Some(enabled_providers),
+                ..Default::default()
+            })
+        },
+        |settings| {
+            state.controller.queue_interaction(EdgeInteraction::Dismiss);
+            emit_settings_changed(&app, settings)
+        },
+        |settings| state.refresh_tray(&app, settings),
+        || super::hide_onboarding_window(&app),
+    )
 }
 
 #[tauri::command]
@@ -200,8 +225,68 @@ pub async fn set_tray_labels(
 
 #[cfg(test)]
 mod tests {
-    use super::{ExitRequest, NotchInteraction};
+    use std::sync::Mutex;
+
+    use super::{complete_onboarding_lifecycle, ExitRequest, NotchInteraction};
     use crate::dashboard::models::ProviderId;
+    use crate::desktop::settings::AppSettings;
+
+    #[test]
+    fn onboarding_completion_runs_persist_publish_tray_and_hide_in_order() {
+        let calls = Mutex::new(Vec::new());
+        let settings = complete_onboarding_lifecycle(
+            || {
+                calls.lock().unwrap().push("persist");
+                Ok(AppSettings {
+                    onboarding_completed: true,
+                    enabled_providers: vec![ProviderId::Codex],
+                    ..Default::default()
+                })
+            },
+            |_| {
+                calls.lock().unwrap().push("publish");
+                Ok(())
+            },
+            |_| {
+                calls.lock().unwrap().push("tray");
+                Ok(())
+            },
+            || {
+                calls.lock().unwrap().push("hide");
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert_eq!(settings.enabled_providers, vec![ProviderId::Codex]);
+        assert_eq!(
+            *calls.lock().unwrap(),
+            ["persist", "publish", "tray", "hide"]
+        );
+    }
+
+    #[test]
+    fn onboarding_persistence_failure_keeps_the_window_open() {
+        let calls = Mutex::new(Vec::new());
+        let result = complete_onboarding_lifecycle(
+            || Err("save failed".to_owned()),
+            |_| {
+                calls.lock().unwrap().push("publish");
+                Ok(())
+            },
+            |_| {
+                calls.lock().unwrap().push("tray");
+                Ok(())
+            },
+            || {
+                calls.lock().unwrap().push("hide");
+                Ok(())
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "save failed");
+        assert!(calls.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn semantic_interaction_payloads_deserialize_without_native_pointer_data() {

@@ -41,6 +41,20 @@
         "decorations": true,
         "transparent": false,
         "skipTaskbar": false
+      },
+      {
+        "label": "onboarding",
+        "title": "Set up Dashy",
+        "width": 680,
+        "height": 640,
+        "minWidth": 520,
+        "minHeight": 560,
+        "visible": false,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "skipTaskbar": false
       }
     ]
   },

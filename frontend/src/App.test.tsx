@@ -3,8 +3,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  currentWindowLabel: vi.fn(), getSettings: vi.fn(), listMonitors: vi.fn(),
+  currentWindowLabel: vi.fn(), getSettings: vi.fn(), completeOnboarding: vi.fn(), listMonitors: vi.fn(),
   setTrayLabels: vi.fn(), getDashboardSnapshot: vi.fn(), isEnabled: vi.fn(),
+  providerSetupController: vi.fn(),
   isTauriRuntime: vi.fn(), listenForLocaleChanges: vi.fn(), unlistenLocale: vi.fn(),
   listenForEdgeView: vi.fn(), unlistenEdgeView: vi.fn(),
   listenForDashboardCacheChanged: vi.fn(), unlistenDashboardCacheChanged: vi.fn(),
@@ -12,11 +13,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./window", () => ({
   currentWindowLabel: mocks.currentWindowLabel, getSettings: mocks.getSettings,
+  completeOnboarding: mocks.completeOnboarding,
   listMonitors: mocks.listMonitors, setTrayLabels: mocks.setTrayLabels, updateSettings: vi.fn(),
   isTauriRuntime: mocks.isTauriRuntime, listenForLocaleChanges: mocks.listenForLocaleChanges,
   listenForEdgeView: mocks.listenForEdgeView, setNotchInteraction: vi.fn(),
   listenForDashboardCacheChanged: mocks.listenForDashboardCacheChanged,
   showNotchMenu: vi.fn(),
+}));
+vi.mock("./setup/useProviderSetup", () => ({
+  useProviderSetup: () => mocks.providerSetupController(),
 }));
 vi.mock("./dashboard", async (importOriginal) => {
   const original = await importOriginal<typeof import("./dashboard")>();
@@ -36,6 +41,11 @@ describe("window routing", () => {
     mocks.listenForEdgeView.mockResolvedValue(mocks.unlistenEdgeView);
     mocks.listenForDashboardCacheChanged.mockResolvedValue(mocks.unlistenDashboardCacheChanged);
     mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
+    mocks.completeOnboarding.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
+    mocks.providerSetupController.mockReturnValue({
+      states: [], busyProvider: null, failureProvider: null, loadFailed: false,
+      reload: vi.fn(), install: vi.fn(), login: vi.fn(),
+    });
     mocks.listMonitors.mockResolvedValue([]);
     mocks.setTrayLabels.mockResolvedValue(undefined);
     mocks.getDashboardSnapshot.mockResolvedValue(unavailableDashboardSnapshot());
@@ -47,6 +57,13 @@ describe("window routing", () => {
   it("renders the settings surface for the native settings label", async () => {
     render(<App windowLabel="settings" />);
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("renders the localized onboarding surface only for the native onboarding label", async () => {
+    render(<App windowLabel="onboarding" />);
+    expect(await screen.findByRole("heading", { name: "Choose what Dashy watches" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notch-app")).not.toBeInTheDocument();
   });
 
   it("renders the compile-safe notch placeholder for other native labels", () => {
