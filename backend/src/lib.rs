@@ -300,6 +300,31 @@ mod config_tests {
     }
 
     #[test]
+    fn windows_bundle_is_an_upgradeable_x64_msi_with_online_webview_bootstrap() {
+        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
+        let bundle = &config["bundle"];
+        let windows = &bundle["windows"];
+
+        assert_eq!(bundle["targets"], serde_json::json!(["msi"]));
+        assert_eq!(windows["allowDowngrades"], false);
+        assert_eq!(
+            windows["webviewInstallMode"],
+            serde_json::json!({
+                "type": "downloadBootstrapper",
+                "silent": true
+            })
+        );
+        assert_eq!(windows["wix"]["language"], "en-US");
+        assert_eq!(
+            windows["wix"]["upgradeCode"],
+            "ea949cb5-35f6-540d-a3ee-0cc7721c122c"
+        );
+        assert!(windows["certificateThumbprint"].is_null());
+    }
+
+    #[test]
     fn onboarding_window_is_hidden_safe_and_authorized_only_for_core_commands() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let config: serde_json::Value = serde_json::from_str(
