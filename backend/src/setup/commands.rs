@@ -1,14 +1,14 @@
 use std::{future::Future, sync::Arc};
 
 use serde::Deserialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, WebviewWindow};
 
 use crate::dashboard::{
     commands::{emit_dashboard_cache_changed, AppState},
     models::{DashboardSnapshot, ProviderId},
 };
 use crate::setup::{
-    models::{ProviderSetupDefinition, ProviderSetupState},
+    models::{ProviderRepairAction, ProviderSetupDefinition, ProviderSetupState},
     service::SetupService,
 };
 
@@ -41,18 +41,20 @@ pub async fn get_provider_setup_states(
 
 #[tauri::command]
 pub async fn install_provider(
+    window: WebviewWindow,
     app: AppHandle,
     dashboard: State<'_, AppState>,
     setup: State<'_, SetupState>,
     request: ProviderSetupRequest,
 ) -> Result<ProviderSetupState, String> {
+    crate::authorize_caller(&window, &["onboarding", "settings"])?;
     let provider = request.provider;
     let dashboard = dashboard.dashboard.clone();
     run_provider_setup_action(
         provider,
         setup.setup.install(provider),
         move |provider| async move {
-            let snapshot = dashboard.refresh_provider(provider).await;
+            let snapshot = dashboard.refresh_provider_after_mutation(provider).await;
             provider_setup_state(provider, &snapshot)
         },
         || emit_dashboard_cache_changed(&app),
@@ -62,18 +64,20 @@ pub async fn install_provider(
 
 #[tauri::command]
 pub async fn login_provider(
+    window: WebviewWindow,
     app: AppHandle,
     dashboard: State<'_, AppState>,
     setup: State<'_, SetupState>,
     request: ProviderSetupRequest,
 ) -> Result<ProviderSetupState, String> {
+    crate::authorize_caller(&window, &["onboarding", "settings"])?;
     let provider = request.provider;
     let dashboard = dashboard.dashboard.clone();
     run_provider_setup_action(
         provider,
         setup.setup.login(provider),
         move |provider| async move {
-            let snapshot = dashboard.refresh_provider(provider).await;
+            let snapshot = dashboard.refresh_provider_after_mutation(provider).await;
             provider_setup_state(provider, &snapshot)
         },
         || emit_dashboard_cache_changed(&app),
@@ -102,14 +106,31 @@ where
 }
 
 fn provider_setup_state(provider: ProviderId, snapshot: &DashboardSnapshot) -> ProviderSetupState {
-    let status = match provider {
-        ProviderId::Claude => snapshot.claude.status,
-        ProviderId::Codex => snapshot.codex.status,
-        ProviderId::GitHub => snapshot.github.status,
+    let (status, error_kind) = match provider {
+        ProviderId::Claude => (snapshot.claude.status, snapshot.claude.error_kind),
+        ProviderId::Codex => (snapshot.codex.status, snapshot.codex.error_kind),
+        ProviderId::GitHub => (snapshot.github.status, snapshot.github.error_kind),
     };
     ProviderSetupState {
         definition: ProviderSetupDefinition::for_provider(provider),
         status,
+        repair_action: match error_kind {
+            Some(crate::dashboard::models::ProviderErrorKind::MissingExecutable) => {
+                Some(ProviderRepairAction::Install)
+            }
+            Some(crate::dashboard::models::ProviderErrorKind::Authentication) => {
+                Some(ProviderRepairAction::Login)
+            }
+            _ => match status {
+                crate::dashboard::models::ProviderStatus::NotInstalled => {
+                    Some(ProviderRepairAction::Install)
+                }
+                crate::dashboard::models::ProviderStatus::NotAuthenticated => {
+                    Some(ProviderRepairAction::Login)
+                }
+                _ => None,
+            },
+        },
     }
 }
 
@@ -119,9 +140,12 @@ mod tests {
 
     use async_trait::async_trait;
 
-    use super::{run_provider_setup_action, ProviderSetupRequest};
+    use super::{provider_setup_state, run_provider_setup_action, ProviderSetupRequest};
     use crate::dashboard::{
-        models::{ProviderId, ProviderStatus},
+        models::{
+            DashboardSnapshot, GitHubSnapshot, ProviderErrorKind, ProviderId, ProviderStatus,
+            UsageSnapshot,
+        },
         process::{AllowedProgram, VisibleProcessError, VisibleRunner},
     };
     use crate::setup::{
@@ -156,6 +180,47 @@ mod tests {
         }
     }
 
+    fn stale_snapshot(provider: ProviderId, cause: ProviderErrorKind) -> DashboardSnapshot {
+        let now = chrono::Utc::now();
+        let mut snapshot = DashboardSnapshot {
+            github: GitHubSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
+            codex: UsageSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
+            claude: UsageSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
+            refreshed_at: now,
+        };
+        match provider {
+            ProviderId::GitHub => {
+                snapshot.github = GitHubSnapshot::failed(ProviderStatus::Stale, cause)
+            }
+            ProviderId::Codex => {
+                snapshot.codex = UsageSnapshot::failed(ProviderStatus::Stale, cause)
+            }
+            ProviderId::Claude => {
+                snapshot.claude = UsageSnapshot::failed(ProviderStatus::Stale, cause)
+            }
+        }
+        snapshot
+    }
+
+    #[test]
+    fn stale_setup_states_preserve_the_actionable_repair_for_every_provider() {
+        for provider in ProviderId::ALL {
+            let install = serde_json::to_value(provider_setup_state(
+                provider,
+                &stale_snapshot(provider, ProviderErrorKind::MissingExecutable),
+            ))
+            .unwrap();
+            assert_eq!(install["repairAction"], "install", "{provider:?}");
+
+            let login = serde_json::to_value(provider_setup_state(
+                provider,
+                &stale_snapshot(provider, ProviderErrorKind::Authentication),
+            ))
+            .unwrap();
+            assert_eq!(login["repairAction"], "login", "{provider:?}");
+        }
+    }
+
     #[tokio::test]
     async fn failed_setup_still_reconciles_then_notifies_and_preserves_sanitized_error() {
         let trace = Arc::new(Mutex::new(Vec::new()));
@@ -173,6 +238,7 @@ mod tests {
                 std::future::ready(ProviderSetupState {
                     definition: ProviderSetupDefinition::for_provider(provider),
                     status: ProviderStatus::NotInstalled,
+                    repair_action: Some(crate::setup::models::ProviderRepairAction::Install),
                 })
             },
             move || {

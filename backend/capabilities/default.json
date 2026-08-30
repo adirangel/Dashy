@@ -7,7 +7,15 @@
     "permissions": [
       "core:default",
       "core:window:allow-set-position",
-      "core:window:allow-start-dragging"
+      "core:window:allow-start-dragging",
+      "allow-get-dashboard-snapshot",
+      "allow-refresh-dashboard-provider",
+      "allow-get-settings",
+      "allow-get-current-edge-view",
+      "allow-set-notch-interaction",
+      "allow-begin-notch-exit",
+      "allow-complete-notch-exit",
+      "allow-show-notch-menu"
     ]
   },
   {
@@ -19,7 +27,23 @@
       "core:default",
       "autostart:allow-enable",
       "autostart:allow-disable",
-      "autostart:allow-is-enabled"
+      "autostart:allow-is-enabled",
+      "allow-get-settings",
+      "allow-update-settings",
+      "allow-list-monitors",
+      "allow-set-tray-labels",
+      "allow-get-dashboard-snapshot",
+      "allow-get-provider-setup-states",
+      "allow-install-provider",
+      "allow-login-provider",
+      {
+        "identifier": "opener:allow-open-url",
+        "allow": [
+          { "url": "https://code.claude.com/docs/en/setup" },
+          { "url": "https://learn.chatgpt.com/docs/codex/cli" },
+          { "url": "https://cli.github.com/" }
+        ]
+      }
     ]
   },
   {
@@ -27,6 +51,21 @@
     "identifier": "onboarding-capability",
     "description": "Permissions for the Dashy onboarding window",
     "windows": ["onboarding"],
-    "permissions": ["core:default"]
+    "permissions": [
+      "core:default",
+      "allow-get-settings",
+      "allow-get-provider-setup-states",
+      "allow-install-provider",
+      "allow-login-provider",
+      "allow-complete-onboarding",
+      {
+        "identifier": "opener:allow-open-url",
+        "allow": [
+          { "url": "https://code.claude.com/docs/en/setup" },
+          { "url": "https://learn.chatgpt.com/docs/codex/cli" },
+          { "url": "https://cli.github.com/" }
+        ]
+      }
+    ]
   }
 ]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-notch-interaction"
+description = "Enables the set_notch_interaction command without any pre-configured scope."
+commands.allow = ["set_notch_interaction"]
+
+[[permission]]
+identifier = "deny-set-notch-interaction"
+description = "Denies the set_notch_interaction command without any pre-configured scope."
+commands.deny = ["set_notch_interaction"]

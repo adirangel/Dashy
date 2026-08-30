@@ -50,6 +50,11 @@ impl DashboardCacheRevision {
 }
 
 const DASHBOARD_CACHE_CHANGED_EVENT: &str = "dashy://dashboard-cache-changed";
+const DASHBOARD_CACHE_EVENT_TARGETS: [&str; 3] = ["main", "settings", "onboarding"];
+
+pub(crate) fn dashboard_cache_event_targets() -> [&'static str; 3] {
+    DASHBOARD_CACHE_EVENT_TARGETS
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 struct DashboardCacheChangedEvent {
@@ -58,12 +63,15 @@ struct DashboardCacheChangedEvent {
 
 pub fn emit_dashboard_cache_changed(app: &AppHandle) -> Result<(), String> {
     let revision = app.state::<AppState>().cache_change_revision.next();
-    app.emit_to(
-        "main",
-        DASHBOARD_CACHE_CHANGED_EVENT,
-        DashboardCacheChangedEvent { revision },
-    )
-    .map_err(|error| format!("failed to notify the main dashboard cache: {error}"))
+    for target in dashboard_cache_event_targets() {
+        app.emit_to(
+            target,
+            DASHBOARD_CACHE_CHANGED_EVENT,
+            DashboardCacheChangedEvent { revision },
+        )
+        .map_err(|error| format!("failed to notify the dashboard cache: {error}"))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -85,10 +93,12 @@ pub async fn get_dashboard_snapshot(
 
 #[tauri::command]
 pub async fn refresh_dashboard_provider(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
     desktop: tauri::State<'_, crate::desktop::DesktopState>,
     provider: ProviderId,
 ) -> Result<DashboardSnapshot, String> {
+    crate::authorize_caller(&window, &["main"])?;
     let enabled = desktop.settings.current()?.enabled_providers;
     if !enabled.contains(&provider) {
         return Err("provider is disabled".to_owned());
@@ -99,7 +109,7 @@ pub async fn refresh_dashboard_provider(
 
 #[cfg(test)]
 mod tests {
-    use super::DashboardCacheRevision;
+    use super::{dashboard_cache_event_targets, DashboardCacheRevision};
 
     #[test]
     fn cache_change_revision_is_bounded_nonzero_and_wraps_safely() {
@@ -107,5 +117,13 @@ mod tests {
         assert_eq!(revisions.next(), u32::MAX);
         assert_eq!(revisions.next(), 1);
         assert_eq!(revisions.next(), 2);
+    }
+
+    #[test]
+    fn cache_events_target_all_existing_app_windows() {
+        assert_eq!(
+            dashboard_cache_event_targets(),
+            ["main", "settings", "onboarding"]
+        );
     }
 }

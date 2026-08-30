@@ -15,6 +15,23 @@ use desktop::{
 };
 use tauri::{AppHandle, Manager};
 
+const UNAUTHORIZED_WINDOW_ERROR: &str = "command is not available from this window";
+
+pub(crate) fn authorize_caller_label(label: &str, allowed: &[&str]) -> Result<(), String> {
+    if allowed.contains(&label) {
+        Ok(())
+    } else {
+        Err(UNAUTHORIZED_WINDOW_ERROR.to_owned())
+    }
+}
+
+pub(crate) fn authorize_caller(
+    window: &tauri::WebviewWindow,
+    allowed: &[&str],
+) -> Result<(), String> {
+    authorize_caller_label(window.label(), allowed)
+}
+
 pub fn run() {
     use dashboard::{
         commands::{get_dashboard_snapshot, refresh_dashboard_provider},
@@ -51,6 +68,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -234,6 +252,7 @@ fn update_placement(app: &AppHandle, state: &DesktopState, placement: EdgePlacem
         placement: Some(placement),
         ..Default::default()
     }) {
+        let _ = desktop::commands::emit_settings_changed(app, &settings);
         let _ = state.refresh_tray(app, &settings);
     }
 }
@@ -255,13 +274,14 @@ fn update_monitor(app: &AppHandle, state: &DesktopState, monitor: Option<Monitor
         monitor: Some(monitor),
         ..Default::default()
     }) {
+        let _ = desktop::commands::emit_settings_changed(app, &settings);
         let _ = state.refresh_tray(app, &settings);
     }
 }
 
 #[cfg(test)]
 mod config_tests {
-    use super::settings_window_label;
+    use super::{authorize_caller_label, settings_window_label};
     use crate::desktop::settings::AppSettings;
 
     #[test]
@@ -337,7 +357,7 @@ mod config_tests {
     }
 
     #[test]
-    fn onboarding_window_is_hidden_safe_and_authorized_only_for_core_commands() {
+    fn onboarding_window_is_hidden_safe_and_uses_least_privilege_commands() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let config: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(manifest_dir.join("tauri.conf.json")).unwrap(),
@@ -378,7 +398,132 @@ mod config_tests {
         );
         assert_eq!(
             onboarding_capability["permissions"],
-            serde_json::json!(["core:default"])
+            serde_json::json!([
+                "core:default",
+                "allow-get-settings",
+                "allow-get-provider-setup-states",
+                "allow-install-provider",
+                "allow-login-provider",
+                "allow-complete-onboarding",
+                {
+                    "identifier": "opener:allow-open-url",
+                    "allow": [
+                        { "url": "https://code.claude.com/docs/en/setup" },
+                        { "url": "https://learn.chatgpt.com/docs/codex/cli" },
+                        { "url": "https://cli.github.com/" }
+                    ]
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn custom_command_capabilities_are_least_privilege_per_window() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let capabilities: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir.join("capabilities/default.json")).unwrap(),
+        )
+        .unwrap();
+        let capability = |identifier: &str| {
+            capabilities
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|capability| capability["identifier"] == identifier)
+                .unwrap()
+        };
+
+        let main = capability("main-capability");
+        assert_eq!(
+            main["permissions"],
+            serde_json::json!([
+                "core:default",
+                "core:window:allow-set-position",
+                "core:window:allow-start-dragging",
+                "allow-get-dashboard-snapshot",
+                "allow-refresh-dashboard-provider",
+                "allow-get-settings",
+                "allow-get-current-edge-view",
+                "allow-set-notch-interaction",
+                "allow-begin-notch-exit",
+                "allow-complete-notch-exit",
+                "allow-show-notch-menu"
+            ])
+        );
+
+        let settings = capability("settings-capability");
+        assert_eq!(
+            settings["permissions"],
+            serde_json::json!([
+                "core:default",
+                "autostart:allow-enable",
+                "autostart:allow-disable",
+                "autostart:allow-is-enabled",
+                "allow-get-settings",
+                "allow-update-settings",
+                "allow-list-monitors",
+                "allow-set-tray-labels",
+                "allow-get-dashboard-snapshot",
+                "allow-get-provider-setup-states",
+                "allow-install-provider",
+                "allow-login-provider",
+                {
+                    "identifier": "opener:allow-open-url",
+                    "allow": [
+                        { "url": "https://code.claude.com/docs/en/setup" },
+                        { "url": "https://learn.chatgpt.com/docs/codex/cli" },
+                        { "url": "https://cli.github.com/" }
+                    ]
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn app_manifest_generates_permissions_for_every_registered_custom_command() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let manifests: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir.join("gen/schemas/acl-manifests.json")).unwrap(),
+        )
+        .unwrap();
+        let permissions = manifests["__app-acl__"]["permissions"].as_object().unwrap();
+        let generated = permissions
+            .keys()
+            .filter_map(|identifier| identifier.strip_prefix("allow-"))
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = [
+            "begin-notch-exit",
+            "complete-notch-exit",
+            "complete-onboarding",
+            "get-current-edge-view",
+            "get-dashboard-snapshot",
+            "get-provider-setup-states",
+            "get-settings",
+            "install-provider",
+            "list-monitors",
+            "login-provider",
+            "refresh-dashboard-provider",
+            "set-notch-interaction",
+            "set-tray-labels",
+            "show-notch-menu",
+            "update-settings",
+        ]
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(generated, expected);
+    }
+
+    #[test]
+    fn mutation_caller_validation_rejects_other_windows_with_a_sanitized_error() {
+        assert!(authorize_caller_label("settings", &["settings"]).is_ok());
+        assert!(authorize_caller_label("onboarding", &["onboarding", "settings"]).is_ok());
+        assert_eq!(
+            authorize_caller_label("main", &["settings"]),
+            Err("command is not available from this window".to_owned())
+        );
+        assert_eq!(
+            authorize_caller_label("untrusted", &["main"]),
+            Err("command is not available from this window".to_owned())
         );
     }
 

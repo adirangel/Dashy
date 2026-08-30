@@ -51,7 +51,15 @@ impl ProviderSetupDefinition {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum ProviderRepairAction {
+    Install,
+    Login,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderSetupState {
     pub definition: ProviderSetupDefinition,
     pub status: ProviderStatus,
+    pub repair_action: Option<ProviderRepairAction>,
 }
