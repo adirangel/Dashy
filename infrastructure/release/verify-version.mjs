@@ -8,7 +8,10 @@ const VERSION_SOURCES = Object.freeze({
   tauri: "backend/tauri.conf.json",
   cargo: "backend/Cargo.toml",
   frontend: "frontend/package.json",
+  frontendLock: "frontend/package-lock.json#version",
+  frontendLockRoot: 'frontend/package-lock.json#packages[""].version',
 });
+const FRONTEND_LOCK_PATH = "frontend/package-lock.json";
 const VERSION_KEYS = Object.freeze(Object.keys(VERSION_SOURCES));
 
 export function validateReleaseVersions(tag, versions) {
@@ -58,15 +61,42 @@ function readJsonManifest(root, relativePath) {
   }
 }
 
+function requireStableVersion(version, sourceLabel) {
+  if (typeof version !== "string" || !VERSION_PATTERN.test(version)) {
+    throw new Error(`${sourceLabel} has no valid version.`);
+  }
+  return version;
+}
+
 function jsonManifestVersion(root, relativePath) {
   const manifest = readJsonManifest(root, relativePath);
   const version = manifest && typeof manifest === "object" && !Array.isArray(manifest)
     ? manifest.version
     : undefined;
-  if (typeof version !== "string" || !VERSION_PATTERN.test(version)) {
-    throw new Error(`${relativePath} has no valid version.`);
-  }
-  return version;
+  return requireStableVersion(version, relativePath);
+}
+
+function frontendLockVersions(root) {
+  const manifest = readJsonManifest(root, FRONTEND_LOCK_PATH);
+  const object = manifest && typeof manifest === "object" && !Array.isArray(manifest)
+    ? manifest
+    : {};
+  const packages = object.packages && typeof object.packages === "object"
+    && !Array.isArray(object.packages)
+    ? object.packages
+    : {};
+  const rootPackage = packages[""] && typeof packages[""] === "object"
+    && !Array.isArray(packages[""])
+    ? packages[""]
+    : {};
+
+  return {
+    frontendLock: requireStableVersion(object.version, VERSION_SOURCES.frontendLock),
+    frontendLockRoot: requireStableVersion(
+      rootPackage.version,
+      VERSION_SOURCES.frontendLockRoot,
+    ),
+  };
 }
 
 function tomlCodeLines(source) {
@@ -204,6 +234,7 @@ export function readReleaseVersions(root = process.cwd()) {
     tauri: jsonManifestVersion(root, VERSION_SOURCES.tauri),
     cargo: cargoPackageVersion(readManifest(root, VERSION_SOURCES.cargo)),
     frontend: jsonManifestVersion(root, VERSION_SOURCES.frontend),
+    ...frontendLockVersions(root),
   };
 }
 

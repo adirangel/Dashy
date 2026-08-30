@@ -7,11 +7,15 @@ not treat a developer workstation as a clean-machine result.
 ## Automated gates
 
 - [ ] The release tag is `vMAJOR.MINOR.PATCH` and exactly matches the versions in
-      `backend/tauri.conf.json`, `backend/Cargo.toml`, and `frontend/package.json`.
-- [ ] Maintainers edited only those three version manifests; the Cargo gates
-      ran unlocked once to regenerate the tracked `backend/Cargo.lock`, then every
-      final Cargo test, Clippy, and Tauri build gate enforced `--locked`; the
-      release commit contains exactly those four reviewed files.
+      `backend/tauri.conf.json`, `backend/Cargo.toml`, `frontend/package.json`, and
+      both `version` fields at the root of `frontend/package-lock.json` and its
+      `packages[""]` entry.
+- [ ] Maintainers edited only the three version manifests, then ran
+      `npm --prefix frontend install --package-lock-only` immediately after the
+      frontend edit and one unlocked Cargo gate to regenerate the tracked lockfiles.
+      Every final Cargo test, Clippy, and Tauri build gate enforced `--locked`; the
+      release commit contains exactly the three manifests, `backend/Cargo.lock`,
+      and `frontend/package-lock.json` (five reviewed files total).
 - [ ] The matching release tag was created once for the version commit; no existing
       tag was moved, deleted, or reused.
 - [ ] `npm run test:release` passes for the release tag.
@@ -20,6 +24,15 @@ not treat a developer workstation as a clean-machine result.
 - [ ] Rust formatting, tests, and Clippy pass.
 - [ ] The MSI bundle completes for `x86_64-pc-windows-msvc`.
 - [ ] Every action in `release-windows.yml` uses the reviewed immutable commit pin.
+- [ ] The read-only build job fetched `origin/main` and proved the tag commit is an
+      ancestor before dependency setup or build execution.
+- [ ] The build job had only `contents: read`, the separate release job had only
+      `contents: write`, and the release job did not check out or execute repository
+      code.
+- [ ] The immutable-pinned official artifact actions transferred exactly the MSI
+      and its matching `.sha256`; the download action validated the workflow
+      artifact digest, and the release step revalidated file names, sizes, SHA-256
+      values, checksum content, and digest metadata format.
 - [ ] The tagged `release-windows.yml` run completed successfully.
 - [ ] The GitHub Release remains a draft during review and smoke testing.
 - [ ] The draft contains exactly one `.msi` asset and its one matching

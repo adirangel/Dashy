@@ -284,9 +284,18 @@ existing release tag.
    - `backend/Cargo.toml`
    - `frontend/package.json`
 
-   Edit only those three version manifests manually. The Cargo gates regenerate the
-   tracked `backend/Cargo.lock` package record, so review and include that generated
-   fourth file in the release commit.
+   Edit only those three version manifests manually. Immediately after changing
+   `frontend/package.json`, update the two tracked root-version fields in the npm
+   lockfile without changing dependency versions:
+
+   ```powershell
+   npm --prefix frontend install --package-lock-only
+   ```
+
+   Review the generated `frontend/package-lock.json` change. The Cargo gate below
+   also regenerates the tracked `backend/Cargo.lock` package record. The release
+   commit therefore contains exactly five files: the three manually edited
+   manifests and those two generated lockfiles.
 2. Run one intentional unlocked Cargo command to update the tracked root package
    record in `backend/Cargo.lock`, then run every final Cargo gate with the
    lockfile enforced. Do not run another unlocked Cargo command during release
@@ -316,6 +325,7 @@ existing release tag.
      "backend/Cargo.lock"
      "backend/Cargo.toml"
      "backend/tauri.conf.json"
+     "frontend/package-lock.json"
      "frontend/package.json"
    ) | Sort-Object
 
@@ -352,7 +362,7 @@ existing release tag.
    if ($LASTEXITCODE -ne 0) { throw "Could not inspect the release diff." }
 
    git add -- $expectedReleaseFiles
-   if ($LASTEXITCODE -ne 0) { throw "Could not stage the four release files." }
+   if ($LASTEXITCODE -ne 0) { throw "Could not stage the five release files." }
    git diff --cached --check
    if ($LASTEXITCODE -ne 0) { throw "Staged release diff has whitespace errors." }
    $stagedFileOutput = & git diff --cached --name-only
@@ -360,7 +370,7 @@ existing release tag.
    if ($stagedFileStatus -ne 0) { throw "Could not enumerate staged release files." }
    $stagedFiles = @($stagedFileOutput | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object)
    $stagedDifference = @(Compare-Object -ReferenceObject $expectedReleaseFiles -DifferenceObject $stagedFiles)
-   if ($stagedDifference.Count -ne 0) { throw "Release commit must stage exactly Cargo.lock and the three version manifests." }
+   if ($stagedDifference.Count -ne 0) { throw "Release commit must stage exactly both lockfiles and the three version manifests." }
 
    & git diff --quiet
    $unstagedStatus = $LASTEXITCODE
@@ -404,10 +414,16 @@ existing release tag.
    Never create a tag for an uncommitted tree or retag a different commit. If the
    workflow fails, fix the issue in a new commit and use a new patch version.
 
-4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. It must
-   validate the three versions, use the reviewed immutable action commits, and
-   leave the release as a draft. A draft can remain partial or blocked while that
-   workflow is still running or has failed; do not publish or manually complete it.
+4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. Its
+   read-only build job first fetches `origin/main` and rejects any tag whose commit
+   is not in that branch's history. It validates the three manifest versions and
+   both frontend lockfile version fields, builds and hashes the MSI, then transfers
+   only that MSI and its matching checksum through immutable-pinned official
+   artifact actions. A separate job with only `contents: write` downloads and
+   revalidates those exact files before creating or recovering the draft; it does
+   not check out or execute repository code. A draft can remain partial or blocked
+   while that workflow is still running or has failed; do not publish or manually
+   complete it.
 5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
    `.msi` and its matching `.msi.sha256` checksum:
 
@@ -429,7 +445,7 @@ existing release tag.
    }
    ```
 
-7. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
+6. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
    a clean Windows x64 machine. Publish the draft only when every automated and
    clean-machine gate passes.
 
