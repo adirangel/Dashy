@@ -283,6 +283,10 @@ existing release tag.
    - `backend/tauri.conf.json`
    - `backend/Cargo.toml`
    - `frontend/package.json`
+
+   Edit only those three version manifests manually. The Cargo gates regenerate the
+   tracked `backend/Cargo.lock` package record, so review and include that generated
+   fourth file in the release commit.
 2. Run the complete local gates:
 
    ```powershell
@@ -306,16 +310,42 @@ existing release tag.
 
    ```powershell
    $releaseTag = "v0.2.0"
+   $expectedReleaseFiles = @(
+     "backend/Cargo.lock"
+     "backend/Cargo.toml"
+     "backend/tauri.conf.json"
+     "frontend/package.json"
+   ) | Sort-Object
    $branch = (& git branch --show-current).Trim()
    if ($LASTEXITCODE -ne 0 -or $branch -cne "main") { throw "Release from a current local main branch." }
 
+   & git diff --cached --quiet
+   $initialIndexStatus = $LASTEXITCODE
+   if ($initialIndexStatus -eq 1) { throw "Staged changes already exist; unstage and inspect them before a release." }
+   if ($initialIndexStatus -ne 0) { throw "Could not inspect the staged index." }
+
    git diff --check
    if ($LASTEXITCODE -ne 0) { throw "Release diff has whitespace errors." }
-   git diff -- backend/tauri.conf.json backend/Cargo.toml frontend/package.json
-   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the version diff." }
+   git diff --stat -- $expectedReleaseFiles
+   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the release diff stat." }
+   git diff -- $expectedReleaseFiles
+   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the release diff." }
 
-   git add backend/tauri.conf.json backend/Cargo.toml frontend/package.json
-   if ($LASTEXITCODE -ne 0) { throw "Could not stage release versions." }
+   git add -- $expectedReleaseFiles
+   if ($LASTEXITCODE -ne 0) { throw "Could not stage the four release files." }
+   git diff --cached --check
+   if ($LASTEXITCODE -ne 0) { throw "Staged release diff has whitespace errors." }
+   $stagedFileOutput = & git diff --cached --name-only
+   $stagedFileStatus = $LASTEXITCODE
+   if ($stagedFileStatus -ne 0) { throw "Could not enumerate staged release files." }
+   $stagedFiles = @($stagedFileOutput | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object)
+   $stagedDifference = @(Compare-Object -ReferenceObject $expectedReleaseFiles -DifferenceObject $stagedFiles)
+   if ($stagedDifference.Count -ne 0) { throw "Release commit must stage exactly Cargo.lock and the three version manifests." }
+   git diff --cached --stat -- $expectedReleaseFiles
+   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the staged release diff stat." }
+   git diff --cached -- $expectedReleaseFiles
+   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the staged release diff." }
+
    git commit -m "release: $releaseTag"
    if ($LASTEXITCODE -ne 0) { throw "Could not commit release versions." }
 
