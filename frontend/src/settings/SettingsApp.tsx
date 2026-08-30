@@ -5,10 +5,12 @@ import { getDashboardSnapshot, type ProviderId } from "../dashboard";
 import i18n, { SUPPORTED_LOCALES, resolveLocale, setLocale, type SupportedLocale } from "../i18n";
 import { ProviderManager } from "../setup/ProviderManager";
 import { useProviderSetup } from "../setup/useProviderSetup";
+import { useWindowActivationRevision } from "../useWindowActivation";
 import {
   getSettings,
   emitLocaleChanged,
   listMonitors,
+  listenForSettingsChanges,
   setTrayLabels,
   updateSettings,
   type AppSettings,
@@ -64,28 +66,81 @@ function StartupCheckbox({
 
 export function SettingsApp() {
   const { t } = useTranslation();
-  const providerSetup = useProviderSetup();
+  const activationRevision = useWindowActivationRevision();
+  const providerSetup = useProviderSetup(activationRevision);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settingsReadyRevision, setSettingsReadyRevision] = useState(0);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [startup, setStartup] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const providerSaveInFlight = useRef(false);
+  const settingsRequest = useRef(0);
+  const activationRevisionRef = useRef(activationRevision);
+  const mounted = useRef(true);
+  activationRevisionRef.current = activationRevision;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      settingsRequest.current += 1;
+    };
+  }, []);
+
+  const applyConfirmedSettings = useCallback(async (
+    loadedSettings: AppSettings,
+    request: number,
+    readyRevision: number,
+  ) => {
+    const locale = resolveLocale(loadedSettings.locale);
+    await setLocale(locale);
+    if (!mounted.current || request !== settingsRequest.current) return;
+    setSettings({ ...loadedSettings, locale });
+    setSettingsReadyRevision(readyRevision);
+    await applyTrayLocale(locale).catch(() => {
+      if (mounted.current && request === settingsRequest.current) {
+        setMessage(i18n.t("guidance.retryLater", { provider: "Dashy" }));
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;
+    let unlisten: (() => void) | undefined;
+    void listenForSettingsChanges((loadedSettings) => {
+      if (!active) return;
+      const request = ++settingsRequest.current;
+      void applyConfirmedSettings(loadedSettings, request, activationRevisionRef.current);
+    }).then((stopListening) => {
+      if (!active) {
+        stopListening();
+        return;
+      }
+      unlisten = stopListening;
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [applyConfirmedSettings]);
+
+  useEffect(() => {
+    if (activationRevision <= 0) return;
+    let active = true;
+    const request = ++settingsRequest.current;
     const showOptionalFailure = () => {
       if (active) setMessage(i18n.t("guidance.retryLater", { provider: "Dashy" }));
     };
     void getSettings()
-      .then(async (loadedSettings) => {
-        const locale = resolveLocale(loadedSettings.locale);
-        if (!active) return;
-        setSettings({ ...loadedSettings, locale });
-        await setLocale(locale);
-        await applyTrayLocale(locale).catch(() => undefined);
-      })
-      .catch(showOptionalFailure);
+      .then((loadedSettings) => applyConfirmedSettings(
+        loadedSettings,
+        request,
+        activationRevision,
+      ))
+      .catch(() => {
+        if (active && request === settingsRequest.current) showOptionalFailure();
+      });
     void listMonitors()
       .then((loadedMonitors) => { if (active) setMonitors(loadedMonitors); })
       .catch(showOptionalFailure);
@@ -96,7 +151,7 @@ export function SettingsApp() {
       })
       .catch(showOptionalFailure);
     return () => { active = false; };
-  }, []);
+  }, [activationRevision, applyConfirmedSettings]);
 
   const save = useCallback(async (patch: SettingsPatch) => {
     setBusy(true);
@@ -122,13 +177,15 @@ export function SettingsApp() {
     }, ...monitors];
   }, [monitors, settings]);
 
-  if (settings === null) {
+  if (activationRevision <= 0
+    || settings === null
+    || settingsReadyRevision !== activationRevision) {
     return <main
       className="settings-app"
       data-testid="settings-scroll-surface"
       data-scroll-owner="settings"
       tabIndex={0}
-    ><p role="status">{t("status.loading")}</p></main>;
+    ><p role="status">{message || t("status.loading")}</p></main>;
   }
 
   const savePlacement = (placement: EdgePlacement) => { void save({ placement }); };

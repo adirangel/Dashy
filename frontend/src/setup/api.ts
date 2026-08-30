@@ -13,6 +13,7 @@ export type ProviderSetupDefinition = {
 export type ProviderSetupState = {
   definition: ProviderSetupDefinition;
   status: ProviderStatus;
+  repairAction: ProviderSetupAction | null;
 };
 
 export type ProviderSetupAction = "install" | "login";
@@ -21,6 +22,11 @@ const providerIds = new Set<ProviderId>(["claude", "codex", "github"]);
 const providerStatuses = new Set<ProviderStatus>([
   "connected", "stale", "notInstalled", "notAuthenticated", "unavailable",
 ]);
+const approvedInstallUrls: Record<ProviderId, string> = {
+  claude: "https://code.claude.com/docs/en/setup",
+  codex: "https://learn.chatgpt.com/docs/codex/cli",
+  github: "https://cli.github.com/",
+};
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const valueKeys = Object.keys(value);
@@ -37,16 +43,19 @@ function isProviderSetupDefinition(value: unknown): value is ProviderSetupDefini
     && typeof candidate.publisher === "string"
     && typeof candidate.packageId === "string"
     && typeof candidate.installCommand === "string"
-    && typeof candidate.installUrl === "string"
+    && candidate.installUrl === approvedInstallUrls[candidate.provider as ProviderId]
     && typeof candidate.loginCommand === "string";
 }
 
 function isProviderSetupState(value: unknown): value is ProviderSetupState {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return hasExactKeys(candidate, ["definition", "status"])
+  return hasExactKeys(candidate, ["definition", "status", "repairAction"])
     && isProviderSetupDefinition(candidate.definition)
-    && providerStatuses.has(candidate.status as ProviderStatus);
+    && providerStatuses.has(candidate.status as ProviderStatus)
+    && (candidate.repairAction === null
+      || candidate.repairAction === "install"
+      || candidate.repairAction === "login");
 }
 
 function providerSetupResponseError(): Error {

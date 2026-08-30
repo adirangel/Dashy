@@ -4,11 +4,13 @@ import type { ProviderId } from "../dashboard";
 import i18n, { resolveLocale, setLocale } from "../i18n";
 import { ProviderManager } from "../setup/ProviderManager";
 import { useProviderSetup } from "../setup/useProviderSetup";
+import { useWindowActivationRevision } from "../useWindowActivation";
 import { completeOnboarding, getSettings, type AppSettings } from "../window";
 
 export function OnboardingApp() {
   const { t } = useTranslation();
-  const controller = useProviderSetup();
+  const activationRevision = useWindowActivationRevision();
+  const controller = useProviderSetup(activationRevision);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [enabledProviders, setEnabledProviders] = useState<ProviderId[]>([]);
   const [selectionReady, setSelectionReady] = useState(false);
@@ -57,7 +59,13 @@ export function OnboardingApp() {
     }
   }, [enabledProviders, selectionReady, t]);
 
-  return <main className="onboarding-app">
+  return <main
+    className="onboarding-app"
+    data-testid="onboarding-scroll-surface"
+    data-scroll-owner="onboarding"
+    style={{ height: "100vh", minHeight: 0, overflowY: "auto" }}
+    tabIndex={0}
+  >
     <header className="onboarding-header">
       <p className="onboarding-eyebrow">{t("setup.eyebrow")}</p>
       <h1 className="onboarding-title">{t("setup.title")}</h1>

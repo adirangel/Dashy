@@ -9,7 +9,10 @@ const apiMocks = vi.hoisted(() => ({
   getProviderSetupStates: vi.fn(),
   installProvider: vi.fn(),
   loginProvider: vi.fn(),
+  openUrl: vi.fn(),
 }));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: apiMocks.openUrl }));
 
 vi.mock("./api", async (importOriginal) => {
   const original = await importOriginal<typeof import("./api")>();
@@ -37,10 +40,17 @@ const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = 
   github: { publisher: "GitHub", packageId: "GitHub.cli", installCommand: "winget install --id GitHub.cli --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://cli.github.com/", loginCommand: "gh auth login --web" },
 };
 
-function setupStates(status: Partial<Record<ProviderId, ProviderStatus>> = {}): ProviderSetupState[] {
+function setupStates(
+  status: Partial<Record<ProviderId, ProviderStatus>> = {},
+  repairAction: Partial<Record<ProviderId, "install" | "login" | null>> = {},
+): ProviderSetupState[] {
   return (["claude", "codex", "github"] as ProviderId[]).map((provider) => ({
     definition: { provider, ...metadata[provider] },
     status: status[provider] ?? "connected",
+    repairAction: repairAction[provider]
+      ?? (status[provider] === "notInstalled"
+        ? "install"
+        : status[provider] === "notAuthenticated" ? "login" : null),
   }));
 }
 
@@ -120,6 +130,7 @@ describe("ProviderManager", () => {
     apiMocks.getProviderSetupStates.mockResolvedValue(setupStates());
     apiMocks.installProvider.mockResolvedValue(setupStates({ codex: "connected" })[1]);
     apiMocks.loginProvider.mockResolvedValue(setupStates({ claude: "connected" })[0]);
+    apiMocks.openUrl.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -196,7 +207,7 @@ describe("ProviderManager", () => {
     expect(mocks.login).not.toHaveBeenCalled();
   });
 
-  it("marks only the active provider card busy and disables its setup action", () => {
+  it("marks only the active provider card busy and disables setup actions across every card", () => {
     renderManager({
       codexStatus: "notInstalled", githubStatus: "stale",
       busyProvider: "codex", busyAction: "install",
@@ -206,7 +217,42 @@ describe("ProviderManager", () => {
     expect(codexCard).toHaveAttribute("aria-busy", "true");
     expect(githubCard).not.toHaveAttribute("aria-busy");
     expect(within(codexCard).getByRole("button", { name: "Install Codex" })).toBeDisabled();
-    expect(within(githubCard).getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(within(githubCard).getByRole("button", { name: "Retry" })).toBeDisabled();
+  });
+
+  it("disables confirmation actions while any setup operation is active", () => {
+    const providerStates = setupStates({
+      claude: "notAuthenticated",
+      codex: "notInstalled",
+    });
+    const controller = {
+      states: providerStates,
+      busyProvider: null as ProviderId | null,
+      busyAction: null as "install" | "login" | null,
+      failureProvider: null,
+      loadFailed: false,
+      install: mocks.install,
+      login: mocks.login,
+      reload: mocks.reload,
+    };
+    const view = render(<ProviderManager
+      controller={controller}
+      enabledProviders={["claude", "codex", "github"]}
+      onEnabledChange={mocks.onEnabledChange}
+    />);
+    const claudeCard = screen.getByRole("article", { name: "Claude" });
+    fireEvent.click(within(claudeCard).getByRole("button", { name: "Connect Claude" }));
+    expect(within(claudeCard).getByRole("group")).toBeInTheDocument();
+
+    view.rerender(<ProviderManager
+      controller={{ ...controller, busyProvider: "codex", busyAction: "install" }}
+      enabledProviders={["claude", "codex", "github"]}
+      onEnabledChange={mocks.onEnabledChange}
+    />);
+
+    const confirmation = within(screen.getByRole("article", { name: "Claude" })).getByRole("group");
+    expect(within(confirmation).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(confirmation).getByRole("button", { name: "Open official login" })).toBeDisabled();
   });
 
   it.each([
@@ -273,13 +319,40 @@ describe("ProviderManager", () => {
     await waitFor(() => expect(apiMocks.installProvider).toHaveBeenCalledTimes(1));
   });
 
-  it("renders only sanitized action failure guidance and an official manual-help link", () => {
+  it("opens the validated official manual-help URL through the native opener", async () => {
     renderManager({ codexStatus: "notInstalled", failureProvider: "codex" });
     const codexCard = screen.getByRole("article", { name: "Codex" });
     expect(within(codexCard).getByRole("alert")).toHaveTextContent("Provider setup needs attention.");
-    expect(within(codexCard).getByRole("link", { name: "Open official installation guide" }))
-      .toHaveAttribute("href", "https://learn.chatgpt.com/docs/codex/cli");
+    fireEvent.click(within(codexCard).getByRole("button", {
+      name: "Open official installation guide",
+    }));
+    await waitFor(() => expect(apiMocks.openUrl)
+      .toHaveBeenCalledExactlyOnceWith("https://learn.chatgpt.com/docs/codex/cli"));
     expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it("renders a localized sanitized failure when the native guide opener rejects", async () => {
+    apiMocks.openUrl.mockRejectedValue(new Error("shell raw-secret"));
+    renderManager({ codexStatus: "notInstalled", failureProvider: "codex" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open official installation guide" }));
+
+    expect(await screen.findByText("Dashy could not open the official installation guide."))
+      .toHaveAttribute("role", "alert");
+    expect(document.body.textContent).not.toContain("shell raw-secret");
+  });
+
+  it.each([
+    ["install", "Install GitHub"],
+    ["login", "Connect GitHub"],
+  ] as const)("offers a stale provider's explicit %s repair action", (repairAction, label) => {
+    renderManager({
+      states: setupStates({ github: "stale" }, { github: repairAction }),
+    });
+
+    const githubCard = screen.getByRole("article", { name: "GitHub" });
+    expect(within(githubCard).getByRole("button", { name: label })).toBeEnabled();
+    expect(within(githubCard).queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
   it.each(["stale", "unavailable"] as const)(

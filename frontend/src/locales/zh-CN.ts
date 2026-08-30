@@ -12,7 +12,7 @@ const zhCN = {
     installing: "正在安装", connecting: "正在连接",
     install: "安装 {{provider}}", connect: "连接 {{provider}}", retry: "重试", cancel: "取消", confirmInstall: "确认安装", confirmLogin: "打开官方登录",
     installDisclosure: "Dashy 将打开可见终端并运行此 WinGet 命令。", loginDisclosure: "Dashy 将在可见终端和浏览器中打开服务商的官方登录流程。",
-    publisher: "发布者", packageId: "软件包", command: "命令", manualHelp: "打开官方安装指南", finish: "完成设置",
+    publisher: "发布者", packageId: "软件包", command: "命令", manualHelp: "打开官方安装指南", manualHelpFailure: "Dashy 无法打开官方安装指南。", finish: "完成设置",
     finishFailure: "Dashy 无法保存服务商选择。", actionFailure: "服务商设置需要处理。", loading: "正在检查已安装的工具",
   },
   settings: { title: "设置", placement: "位置", right: "右侧", left: "左侧", top: "顶部", monitor: "显示器", language: "语言", fullscreen: "始终显示在全屏应用之上", startup: "开机启动", providerStatus: "服务状态" },

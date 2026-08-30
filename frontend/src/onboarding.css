@@ -2,9 +2,10 @@
   --setup-surface: rgba(13, 18, 21, .94);
   --setup-panel: rgba(255, 255, 255, .045);
   --setup-border: rgba(255, 255, 255, .12);
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   padding: 30px;
-  overflow: auto;
+  overflow-y: auto;
   color: var(--text-primary);
   background: radial-gradient(circle at 12% 0%, rgba(98, 230, 167, .1), transparent 32%), #080b0d;
 }

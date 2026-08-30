@@ -10,7 +10,7 @@ export type Messages = {
     installing: string; connecting: string;
     install: string; connect: string; retry: string; cancel: string;
     confirmInstall: string; confirmLogin: string; installDisclosure: string; loginDisclosure: string;
-    publisher: string; packageId: string; command: string; manualHelp: string;
+    publisher: string; packageId: string; command: string; manualHelp: string; manualHelpFailure: string;
     finish: string; finishFailure: string; actionFailure: string; loading: string;
   };
   settings: { title: string; placement: string; right: string; left: string; top: string; monitor: string; language: string; fullscreen: string; startup: string; providerStatus: string };
@@ -30,7 +30,7 @@ const en = {
     installing: "Installing", connecting: "Connecting",
     install: "Install {{provider}}", connect: "Connect {{provider}}", retry: "Retry", cancel: "Cancel", confirmInstall: "Confirm installation", confirmLogin: "Open official login",
     installDisclosure: "Dashy will open a visible terminal and run this WinGet command.", loginDisclosure: "Dashy will open the provider's official login in a visible terminal and browser.",
-    publisher: "Publisher", packageId: "Package", command: "Command", manualHelp: "Open official installation guide", finish: "Finish setup",
+    publisher: "Publisher", packageId: "Package", command: "Command", manualHelp: "Open official installation guide", manualHelpFailure: "Dashy could not open the official installation guide.", finish: "Finish setup",
     finishFailure: "Dashy could not save your provider selection.", actionFailure: "Provider setup needs attention.", loading: "Checking installed tools",
   },
   settings: { title: "Settings", placement: "Placement", right: "Right", left: "Left", top: "Top", monitor: "Monitor", language: "Language", fullscreen: "Always show over fullscreen apps", startup: "Launch at startup", providerStatus: "Provider status" },

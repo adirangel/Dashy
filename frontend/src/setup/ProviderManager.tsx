@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ProviderId, ProviderStatus } from "../dashboard";
 import type { ProviderSetupDefinition } from "./api";
 import type { ProviderSetupController } from "./useProviderSetup";
@@ -33,11 +34,13 @@ function Confirmation({
   action,
   onCancel,
   onConfirm,
+  disabled,
 }: {
   definition: ProviderSetupDefinition;
   action: PendingAction["action"];
   onCancel: () => void;
   onConfirm: (restoreKeyboardFocus: boolean) => void;
+  disabled: boolean;
 }) {
   const { t } = useTranslation();
   const labelId = `provider-setup-${definition.provider}-${action}-confirmation`;
@@ -72,11 +75,13 @@ function Confirmation({
       <button
         className="provider-setup-confirmation-cancel"
         type="button"
+        disabled={disabled}
         onClick={onCancel}
       >{t("setup.cancel")}</button>
       <button
         className="provider-setup-confirmation-primary"
         type="button"
+        disabled={disabled}
         onClick={(event) => onConfirm(
           event.detail === 0 && document.activeElement === event.currentTarget,
         )}
@@ -94,6 +99,7 @@ export function ProviderManager({
   const { t } = useTranslation();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [restoreFocusProvider, setRestoreFocusProvider] = useState<ProviderId | null>(null);
+  const [manualHelpFailureProvider, setManualHelpFailureProvider] = useState<ProviderId | null>(null);
   const selectionRefs = useRef<Partial<Record<ProviderId, HTMLInputElement | null>>>({});
   const cardRefs = useRef<Partial<Record<ProviderId, HTMLElement | null>>>({});
 
@@ -114,7 +120,11 @@ export function ProviderManager({
           ? <>
             <p className="provider-setup-error" role="alert">{t("setup.actionFailure")}</p>
             <div className="provider-setup-actions">
-              <button type="button" onClick={() => { void controller.reload(); }}>{t("setup.retry")}</button>
+              <button
+                type="button"
+                disabled={controller.busyProvider !== null}
+                onClick={() => { void controller.reload(); }}
+              >{t("setup.retry")}</button>
             </div>
           </>
           : <p className="provider-setup-loading" role="status">{t("setup.loading")}</p>}
@@ -125,6 +135,7 @@ export function ProviderManager({
   const statesByProvider = new Map(
     controller.states.map((state) => [state.definition.provider, state]),
   );
+  const setupActionActive = controller.busyProvider !== null;
 
   return <div className="provider-setup-grid">
     {providerOrder.map((provider) => {
@@ -179,19 +190,20 @@ export function ProviderManager({
         </label>
 
         <div className="provider-setup-actions">
-          {state.status === "notInstalled" && <button
+          {state.repairAction === "install" && <button
             type="button"
-            disabled={isBusy}
+            disabled={setupActionActive}
             onClick={() => setPendingAction({ provider, action: "install" })}
           >{t("setup.install", { provider: name })}</button>}
-          {state.status === "notAuthenticated" && <button
+          {state.repairAction === "login" && <button
             type="button"
-            disabled={isBusy}
+            disabled={setupActionActive}
             onClick={() => setPendingAction({ provider, action: "login" })}
           >{t("setup.connect", { provider: name })}</button>}
-          {(state.status === "stale" || state.status === "unavailable") && <button
+          {(state.status === "stale" || state.status === "unavailable")
+            && state.repairAction === null && <button
             type="button"
-            disabled={isBusy}
+            disabled={setupActionActive}
             onClick={() => { void controller.reload(); }}
           >{t("setup.retry")}</button>}
         </div>
@@ -199,18 +211,27 @@ export function ProviderManager({
         {pending && <Confirmation
           definition={state.definition}
           action={pending.action}
+          disabled={setupActionActive}
           onCancel={() => setPendingAction(null)}
           onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
         />}
 
         {controller.failureProvider === provider && <>
-          <p className="provider-setup-error" role="alert">{t("setup.actionFailure")}</p>
-          <a
+          <p className="provider-setup-error" role="alert">
+            {t(manualHelpFailureProvider === provider
+              ? "setup.manualHelpFailure"
+              : "setup.actionFailure")}
+          </p>
+          <button
             className="provider-setup-manual-help"
-            href={state.definition.installUrl}
-            target="_blank"
-            rel="noreferrer"
-          >{t("setup.manualHelp")}</a>
+            type="button"
+            disabled={setupActionActive}
+            onClick={() => {
+              setManualHelpFailureProvider(null);
+              void openUrl(state.definition.installUrl)
+                .catch(() => setManualHelpFailureProvider(provider));
+            }}
+          >{t("setup.manualHelp")}</button>
         </>}
       </article>;
     })}

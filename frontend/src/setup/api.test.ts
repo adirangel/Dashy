@@ -13,6 +13,7 @@ const codex = {
     loginCommand: "codex login",
   },
   status: "notInstalled",
+  repairAction: "install",
 };
 
 describe("provider setup IPC", () => {
@@ -25,6 +26,35 @@ describe("provider setup IPC", () => {
 
   it("rejects extra native fields before they reach the UI", async () => {
     mocks.invoke.mockResolvedValue([{ ...codex, token: "secret" }]);
+    await expect(getProviderSetupStates()).rejects.toThrow(/invalid provider setup response/i);
+  });
+
+  it.each([
+    { ...codex, repairAction: undefined },
+    { ...codex, repairAction: "repair" },
+    { ...codex, repairAction: 1 },
+  ])("rejects a missing or invalid repair action before it reaches the UI", async (payload) => {
+    const response = { ...payload } as Record<string, unknown>;
+    if (payload.repairAction === undefined) delete response.repairAction;
+    mocks.invoke.mockResolvedValue([response]);
+
+    await expect(getProviderSetupStates()).rejects.toThrow(/invalid provider setup response/i);
+  });
+
+  it("accepts an explicit null repair action", async () => {
+    mocks.invoke.mockResolvedValue([{ ...codex, status: "connected", repairAction: null }]);
+
+    await expect(getProviderSetupStates()).resolves.toEqual([
+      { ...codex, status: "connected", repairAction: null },
+    ]);
+  });
+
+  it("rejects a provider guide URL outside the native allowlist", async () => {
+    mocks.invoke.mockResolvedValue([{
+      ...codex,
+      definition: { ...codex.definition, installUrl: "https://example.invalid/codex" },
+    }]);
+
     await expect(getProviderSetupStates()).rejects.toThrow(/invalid provider setup response/i);
   });
 

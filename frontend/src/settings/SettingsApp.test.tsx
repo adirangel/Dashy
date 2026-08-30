@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSnapshot } from "../dashboard";
 import type { ProviderSetupState } from "../setup/api";
@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(), updateSettings: vi.fn(), listMonitors: vi.fn(), setTrayLabels: vi.fn(),
   getDashboardSnapshot: vi.fn(), enable: vi.fn(), disable: vi.fn(), isEnabled: vi.fn(),
   emitLocaleChanged: vi.fn(),
+  listenForSettingsChanges: vi.fn(), unlistenSettingsChanges: vi.fn(),
+  activationRevision: vi.fn(),
   getProviderSetupStates: vi.fn(), installProvider: vi.fn(), loginProvider: vi.fn(),
 }));
 
@@ -15,6 +17,10 @@ vi.mock("../window", () => ({
   getSettings: mocks.getSettings, updateSettings: mocks.updateSettings,
   listMonitors: mocks.listMonitors, setTrayLabels: mocks.setTrayLabels,
   emitLocaleChanged: mocks.emitLocaleChanged,
+  listenForSettingsChanges: mocks.listenForSettingsChanges,
+}));
+vi.mock("../useWindowActivation", () => ({
+  useWindowActivationRevision: () => mocks.activationRevision(),
 }));
 vi.mock("../dashboard", async (importOriginal) => {
   const original = await importOriginal<typeof import("../dashboard")>();
@@ -60,6 +66,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "claude auth login --claudeai",
     },
     status: "connected",
+    repairAction: null,
   },
   {
     definition: {
@@ -68,6 +75,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "codex login",
     },
     status: "connected",
+    repairAction: null,
   },
   {
     definition: {
@@ -76,6 +84,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "gh auth login --web",
     },
     status: "connected",
+    repairAction: null,
   },
 ];
 
@@ -99,6 +108,8 @@ describe("SettingsApp", () => {
     mocks.updateSettings.mockImplementation(async (patch: Record<string, unknown>) => ({ ...initialSettings, ...patch }));
     mocks.setTrayLabels.mockResolvedValue(undefined);
     mocks.emitLocaleChanged.mockResolvedValue(undefined);
+    mocks.listenForSettingsChanges.mockResolvedValue(mocks.unlistenSettingsChanges);
+    mocks.activationRevision.mockReturnValue(1);
     mocks.enable.mockResolvedValue(undefined);
     mocks.disable.mockResolvedValue(undefined);
   });
@@ -145,6 +156,81 @@ describe("SettingsApp", () => {
     expect(await screen.findByText("Provider setup needs attention.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it("keeps every hidden-window data source dormant until activation", async () => {
+    mocks.activationRevision.mockReturnValue(0);
+    render(<SettingsApp />);
+    await waitFor(() => expect(mocks.listenForSettingsChanges).toHaveBeenCalledTimes(1));
+
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+    expect(mocks.listMonitors).not.toHaveBeenCalled();
+    expect(mocks.isEnabled).not.toHaveBeenCalled();
+    expect(mocks.getProviderSetupStates).not.toHaveBeenCalled();
+  });
+
+  it("reloads persisted settings on focus before exposing editable controls", async () => {
+    const focusedSettings = deferred<typeof initialSettings>();
+    mocks.getSettings
+      .mockResolvedValueOnce(initialSettings)
+      .mockReturnValueOnce(focusedSettings.promise);
+    const view = render(<SettingsApp />);
+    await screen.findByRole("heading", { name: "Settings" });
+
+    mocks.activationRevision.mockReturnValue(2);
+    view.rerender(<SettingsApp />);
+
+    expect(screen.queryByLabelText("Placement")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading");
+    focusedSettings.resolve({ ...initialSettings, enabledProviders: ["codex"] });
+    expect(await screen.findByLabelText("Placement")).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+  });
+
+  it("applies settings events, ignores an older pending read, and cleans up its listener", async () => {
+    const staleRead = deferred<typeof initialSettings>();
+    mocks.getSettings.mockReturnValue(staleRead.promise);
+    let settingsHandler: ((settings: typeof initialSettings) => void) | undefined;
+    mocks.listenForSettingsChanges.mockImplementation(async (handler) => {
+      settingsHandler = handler;
+      return mocks.unlistenSettingsChanges;
+    });
+    const view = render(<SettingsApp />);
+    await waitFor(() => expect(settingsHandler).toBeTypeOf("function"));
+
+    act(() => settingsHandler?.({ ...initialSettings, enabledProviders: ["codex"] }));
+    expect(await screen.findByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+
+    staleRead.resolve(initialSettings);
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" }))
+      .not.toBeChecked());
+    view.unmount();
+    expect(mocks.unlistenSettingsChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the latest persisted provider set on first open after onboarding completes", async () => {
+    mocks.activationRevision.mockReturnValue(0);
+    let settingsHandler: ((settings: typeof initialSettings) => void) | undefined;
+    mocks.listenForSettingsChanges.mockImplementation(async (handler) => {
+      settingsHandler = handler;
+      return mocks.unlistenSettingsChanges;
+    });
+    const view = render(<SettingsApp />);
+    await waitFor(() => expect(settingsHandler).toBeTypeOf("function"));
+    act(() => settingsHandler?.({ ...initialSettings, enabledProviders: ["claude"] }));
+
+    mocks.getSettings.mockResolvedValue({ ...initialSettings, enabledProviders: ["codex"] });
+    mocks.activationRevision.mockReturnValue(1);
+    view.rerender(<SettingsApp />);
+    const github = await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" });
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+
+    fireEvent.click(github);
+    await waitFor(() => expect(mocks.updateSettings)
+      .toHaveBeenCalledWith({ enabledProviders: ["codex", "github"] }));
   });
 
   it("persists an independently enabled provider set from Settings", async () => {

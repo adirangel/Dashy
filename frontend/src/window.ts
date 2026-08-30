@@ -150,6 +150,25 @@ export async function listenForDashboardCacheChanged(
   });
 }
 
+export async function isCurrentWindowActive(): Promise<boolean> {
+  if (!isTauriRuntime()) return true;
+  const currentWindow = getCurrentWindow();
+  const signals = await Promise.allSettled([
+    currentWindow.isVisible(),
+    currentWindow.isFocused(),
+  ]);
+  return signals.some((signal) => signal.status === "fulfilled" && signal.value);
+}
+
+export async function listenForCurrentWindowActivation(
+  handler: () => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime()) return () => undefined;
+  return getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+    if (focused) handler();
+  });
+}
+
 export async function listenForSettingsChanges(
   handler: (settings: AppSettings) => void,
 ): Promise<UnlistenFn> {

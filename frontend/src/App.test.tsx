@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   listenForEdgeView: vi.fn(), unlistenEdgeView: vi.fn(),
   listenForSettingsChanges: vi.fn(), unlistenSettingsChanges: vi.fn(),
   listenForDashboardCacheChanged: vi.fn(), unlistenDashboardCacheChanged: vi.fn(),
+  isCurrentWindowActive: vi.fn(),
+  listenForCurrentWindowActivation: vi.fn(), unlistenWindowActivation: vi.fn(),
 }));
 
 vi.mock("./window", () => ({
@@ -20,6 +22,8 @@ vi.mock("./window", () => ({
   listenForEdgeView: mocks.listenForEdgeView, setNotchInteraction: vi.fn(),
   listenForSettingsChanges: mocks.listenForSettingsChanges,
   listenForDashboardCacheChanged: mocks.listenForDashboardCacheChanged,
+  isCurrentWindowActive: mocks.isCurrentWindowActive,
+  listenForCurrentWindowActivation: mocks.listenForCurrentWindowActivation,
   showNotchMenu: vi.fn(),
 }));
 vi.mock("./setup/useProviderSetup", () => ({
@@ -43,6 +47,8 @@ describe("window routing", () => {
     mocks.listenForEdgeView.mockResolvedValue(mocks.unlistenEdgeView);
     mocks.listenForSettingsChanges.mockResolvedValue(mocks.unlistenSettingsChanges);
     mocks.listenForDashboardCacheChanged.mockResolvedValue(mocks.unlistenDashboardCacheChanged);
+    mocks.isCurrentWindowActive.mockResolvedValue(true);
+    mocks.listenForCurrentWindowActivation.mockResolvedValue(mocks.unlistenWindowActivation);
     mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     mocks.completeOnboarding.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     mocks.providerSetupController.mockReturnValue({

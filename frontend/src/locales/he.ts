@@ -12,7 +12,7 @@ const he = {
     installing: "מתבצעת התקנה", connecting: "מתבצע חיבור",
     install: "התקנת {{provider}}", connect: "חיבור {{provider}}", retry: "ניסיון חוזר", cancel: "ביטול", confirmInstall: "אישור ההתקנה", confirmLogin: "פתיחת ההתחברות הרשמית",
     installDisclosure: "Dashy יפתח מסוף גלוי ויריץ את פקודת WinGet הזאת.", loginDisclosure: "Dashy יפתח את ההתחברות הרשמית של הספק במסוף גלוי ובדפדפן.",
-    publisher: "מפרסם", packageId: "חבילה", command: "פקודה", manualHelp: "פתיחת מדריך ההתקנה הרשמי", finish: "סיום ההגדרה",
+    publisher: "מפרסם", packageId: "חבילה", command: "פקודה", manualHelp: "פתיחת מדריך ההתקנה הרשמי", manualHelpFailure: "Dashy לא הצליח לפתוח את מדריך ההתקנה הרשמי.", finish: "סיום ההגדרה",
     finishFailure: "Dashy לא הצליח לשמור את בחירת הספקים.", actionFailure: "הגדרת הספק דורשת טיפול.", loading: "בודק כלים מותקנים",
   },
   settings: { title: "הגדרות", placement: "מיקום", right: "ימין", left: "שמאל", top: "למעלה", monitor: "צג", language: "שפה", fullscreen: "הצג תמיד מעל יישומים במסך מלא", startup: "הפעל בעת האתחול", providerStatus: "מצב ספקים" },

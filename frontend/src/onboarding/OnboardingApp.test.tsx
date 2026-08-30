@@ -5,6 +5,7 @@ import type { ProviderId, ProviderStatus } from "../dashboard";
 import { setLocale } from "../i18n";
 import type { ProviderSetupDefinition, ProviderSetupState } from "../setup/api";
 import type { AppSettings } from "../window";
+import "../onboarding.css";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("../window", () => ({
 vi.mock("../setup/useProviderSetup", () => ({
   useProviderSetup: () => mocks.controller(),
 }));
+vi.mock("../useWindowActivation", () => ({ useWindowActivationRevision: () => 1 }));
 
 import { OnboardingApp } from "./OnboardingApp";
 
@@ -60,6 +62,9 @@ function states(status: Record<ProviderId, ProviderStatus>): ProviderSetupState[
   return (["claude", "codex", "github"] as ProviderId[]).map((provider) => ({
     definition: { provider, ...metadata[provider] },
     status: status[provider],
+    repairAction: status[provider] === "notInstalled"
+      ? "install"
+      : status[provider] === "notAuthenticated" ? "login" : null,
   }));
 }
 
@@ -71,6 +76,7 @@ function controller(providerStates = states({
   return {
     states: providerStates,
     busyProvider: null,
+    busyAction: null,
     failureProvider: null,
     loadFailed: false,
     reload: vi.fn(),
@@ -163,5 +169,22 @@ describe("OnboardingApp", () => {
     )).toHaveAttribute("role", "status");
     expect(screen.queryByText(/secret filesystem path/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Finish setup" })).toBeEnabled();
+  });
+
+  it("owns a viewport-constrained keyboard-scrollable surface containing consent and finish controls", async () => {
+    render(<OnboardingApp />);
+
+    const surface = await screen.findByTestId("onboarding-scroll-surface");
+    const finish = await screen.findByRole("button", { name: "Finish setup" });
+    const consent = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
+    const style = getComputedStyle(surface);
+
+    expect(surface).toHaveAttribute("tabindex", "0");
+    expect(surface).toHaveAttribute("data-scroll-owner", "onboarding");
+    expect(surface).toContainElement(consent);
+    expect(surface).toContainElement(finish);
+    expect(style.height).toBe("100vh");
+    expect(style.minHeight).toBe("0px");
+    expect(style.overflowY).toBe("auto");
   });
 });

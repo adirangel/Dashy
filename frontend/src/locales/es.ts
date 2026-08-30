@@ -12,7 +12,7 @@ const es = {
     installing: "Instalando", connecting: "Conectando",
     install: "Instalar {{provider}}", connect: "Conectar {{provider}}", retry: "Reintentar", cancel: "Cancelar", confirmInstall: "Confirmar instalación", confirmLogin: "Abrir inicio de sesión oficial",
     installDisclosure: "Dashy abrirá una terminal visible y ejecutará este comando de WinGet.", loginDisclosure: "Dashy abrirá el inicio de sesión oficial del proveedor en una terminal visible y en el navegador.",
-    publisher: "Editor", packageId: "Paquete", command: "Comando", manualHelp: "Abrir la guía oficial de instalación", finish: "Finalizar configuración",
+    publisher: "Editor", packageId: "Paquete", command: "Comando", manualHelp: "Abrir la guía oficial de instalación", manualHelpFailure: "Dashy no pudo abrir la guía oficial de instalación.", finish: "Finalizar configuración",
     finishFailure: "Dashy no pudo guardar la selección de proveedores.", actionFailure: "La configuración del proveedor requiere atención.", loading: "Comprobando las herramientas instaladas",
   },
   settings: { title: "Configuración", placement: "Posición", right: "Derecha", left: "Izquierda", top: "Arriba", monitor: "Monitor", language: "Idioma", fullscreen: "Mostrar siempre sobre aplicaciones a pantalla completa", startup: "Abrir al iniciar", providerStatus: "Estado de proveedores" },

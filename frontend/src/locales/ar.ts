@@ -12,7 +12,7 @@ const ar = {
     installing: "جارٍ التثبيت", connecting: "جارٍ الاتصال",
     install: "تثبيت {{provider}}", connect: "ربط {{provider}}", retry: "إعادة المحاولة", cancel: "إلغاء", confirmInstall: "تأكيد التثبيت", confirmLogin: "فتح تسجيل الدخول الرسمي",
     installDisclosure: "سيفتح Dashy طرفية ظاهرة وينفذ أمر WinGet هذا.", loginDisclosure: "سيفتح Dashy تسجيل الدخول الرسمي للموفر في طرفية ظاهرة والمتصفح.",
-    publisher: "الناشر", packageId: "الحزمة", command: "الأمر", manualHelp: "فتح دليل التثبيت الرسمي", finish: "إنهاء الإعداد",
+    publisher: "الناشر", packageId: "الحزمة", command: "الأمر", manualHelp: "فتح دليل التثبيت الرسمي", manualHelpFailure: "تعذر على Dashy فتح دليل التثبيت الرسمي.", finish: "إنهاء الإعداد",
     finishFailure: "تعذر على Dashy حفظ اختيار الموفرين.", actionFailure: "يحتاج إعداد الموفر إلى إجراء.", loading: "جارٍ فحص الأدوات المثبتة",
   },
   settings: { title: "الإعدادات", placement: "الموضع", right: "يمين", left: "يسار", top: "أعلى", monitor: "الشاشة", language: "اللغة", fullscreen: "العرض دائمًا فوق تطبيقات ملء الشاشة", startup: "التشغيل عند بدء النظام", providerStatus: "حالة المزوّدين" },

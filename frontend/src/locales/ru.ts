@@ -12,7 +12,7 @@ const ru = {
     installing: "Установка", connecting: "Подключение",
     install: "Установить {{provider}}", connect: "Подключить {{provider}}", retry: "Повторить", cancel: "Отмена", confirmInstall: "Подтвердить установку", confirmLogin: "Открыть официальный вход",
     installDisclosure: "Dashy откроет видимый терминал и выполнит эту команду WinGet.", loginDisclosure: "Dashy откроет официальный вход провайдера в видимом терминале и браузере.",
-    publisher: "Издатель", packageId: "Пакет", command: "Команда", manualHelp: "Открыть официальное руководство по установке", finish: "Завершить настройку",
+    publisher: "Издатель", packageId: "Пакет", command: "Команда", manualHelp: "Открыть официальное руководство по установке", manualHelpFailure: "Dashy не удалось открыть официальное руководство по установке.", finish: "Завершить настройку",
     finishFailure: "Dashy не удалось сохранить выбор провайдеров.", actionFailure: "Настройка провайдера требует внимания.", loading: "Проверка установленных инструментов",
   },
   settings: { title: "Настройки", placement: "Положение", right: "Справа", left: "Слева", top: "Сверху", monitor: "Монитор", language: "Язык", fullscreen: "Всегда показывать поверх полноэкранных приложений", startup: "Запускать при входе", providerStatus: "Состояние сервисов" },
