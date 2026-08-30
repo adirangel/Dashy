@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -56,26 +58,14 @@ jobs:
       - name: Install pinned Tauri CLI
         run: cargo install tauri-cli --version 2.11.4 --locked
 
-      - name: Build MSI and create draft release
+      - name: Build MSI
         id: tauri
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: backend
           tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: "Dashy v__VERSION__"
-          releaseBody: |
-            Private Windows x64 test build.
-
-            This MSI is not code-signed. Windows may show an Unknown publisher or SmartScreen warning.
-            Complete the Windows release checklist before publishing this draft.
-          releaseDraft: true
-          prerelease: false
-          generateReleaseNotes: true
-          uploadUpdaterJson: false
-          uploadUpdaterSignatures: false
+          uploadPlainBinary: false
+          uploadWorkflowArtifacts: false
           args: --bundles msi --target x86_64-pc-windows-msvc
 
       - name: Create MSI checksum
@@ -90,11 +80,115 @@ jobs:
           $checksumPath = "$($msi[0]).sha256"
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msi[0]).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($msi[0]))" | Set-Content -Encoding ascii -NoNewline -LiteralPath $checksumPath
+          "msi_path=$($msi[0])" >> $env:GITHUB_OUTPUT
           "checksum_path=$checksumPath" >> $env:GITHUB_OUTPUT
 
-      - name: Upload checksum to the draft release
+      - name: Create or verify draft release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          MSI_PATH: ${{ steps.checksum.outputs.msi_path }}
           CHECKSUM_PATH: ${{ steps.checksum.outputs.checksum_path }}
-        run: gh release upload $env:GITHUB_REF_NAME $env:CHECKSUM_PATH --clobber
+          RELEASE_NOTES: |
+            Private Windows x64 test build.
+
+            This MSI is not code-signed. Windows may show an Unknown publisher or SmartScreen warning.
+            Complete the Windows release checklist before publishing this draft.
+        run: |
+          $tag = $env:RELEASE_TAG
+          $repo = $env:GITHUB_REPOSITORY
+          $msiPath = $env:MSI_PATH
+          $checksumPath = $env:CHECKSUM_PATH
+
+          if ($tag -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "Refusing non-semantic release tag."
+          }
+          if (-not $repo) { throw "GITHUB_REPOSITORY is unavailable." }
+          if (-not (Test-Path -LiteralPath $msiPath -PathType Leaf)) {
+            throw "The MSI output is unavailable."
+          }
+          if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
+            throw "The MSI checksum is unavailable."
+          }
+          if ([IO.Path]::GetExtension($msiPath) -cne '.msi') {
+            throw "The release artifact is not an MSI."
+          }
+          if ($checksumPath -cne "$msiPath.sha256") {
+            throw "The checksum does not match the MSI path."
+          }
+
+          $msiName = [IO.Path]::GetFileName($msiPath)
+          $checksumName = [IO.Path]::GetFileName($checksumPath)
+          $expectedNames = @($msiName, $checksumName)
+          if ($msiName -ceq $checksumName) { throw "Release asset names must be unique." }
+
+          $msiHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msiPath).Hash.ToLowerInvariant()
+          $expectedChecksum = "$msiHash  $msiName"
+          $actualChecksum = Get-Content -Raw -LiteralPath $checksumPath
+          if ($actualChecksum -cne $expectedChecksum) {
+            throw "The checksum file does not describe the selected MSI."
+          }
+
+          function Assert-DraftRelease($release, [bool] $requireBothAssets) {
+            if (-not $release.isDraft) { throw "Refusing to modify a non-draft release." }
+            if ($release.isPrerelease) { throw "Refusing an unexpected prerelease." }
+
+            $assets = @($release.assets)
+            $unexpected = @($assets | Where-Object { $expectedNames -cnotcontains $_.name })
+            if ($unexpected.Count) {
+              throw "Draft release contains unexpected assets: $($unexpected.name -join ', ')."
+            }
+            if ($requireBothAssets -and $assets.Count -ne 2) {
+              throw "Draft release must contain exactly the MSI and its checksum."
+            }
+
+            foreach ($asset in $assets) {
+              $localPath = if ($asset.name -ceq $msiName) { $msiPath } else { $checksumPath }
+              if ([int64]$asset.size -ne (Get-Item -LiteralPath $localPath).Length) {
+                throw "Existing release asset size does not match $($asset.name)."
+              }
+              $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localPath).Hash.ToLowerInvariant()
+              $localDigest = "sha256:$localHash"
+              if ($asset.digest -cne $localDigest) {
+                throw "Existing release asset digest does not match $($asset.name)."
+              }
+            }
+          }
+
+          $releaseJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,assets 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if ($releaseExists) {
+            $release = $releaseJson | ConvertFrom-Json
+            Assert-DraftRelease $release $false
+
+            $remoteNames = @($release.assets | ForEach-Object name)
+            $missingPaths = @()
+            if ($remoteNames -cnotcontains $msiName) { $missingPaths += $msiPath }
+            if ($remoteNames -cnotcontains $checksumName) { $missingPaths += $checksumPath }
+            if ($missingPaths.Count) {
+              & gh release upload $tag @missingPaths --repo $repo
+              if ($LASTEXITCODE -ne 0) { throw "Release asset upload failed." }
+            }
+          } else {
+            & gh release create $tag $msiPath $checksumPath `
+              --repo $repo `
+              --draft `
+              --verify-tag `
+              --title "Dashy $tag" `
+              --generate-notes `
+              --notes $env:RELEASE_NOTES
+            if ($LASTEXITCODE -ne 0) { throw "Draft release creation failed." }
+          }
+
+          $finalJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,assets
+          if ($LASTEXITCODE -ne 0) { throw "Draft release verification failed." }
+          $finalRelease = $finalJson | ConvertFrom-Json
+          Assert-DraftRelease $finalRelease $true
+
+          $finalNames = @($finalRelease.assets | ForEach-Object name)
+          foreach ($expectedName in $expectedNames) {
+            if ($finalNames -cnotcontains $expectedName) {
+              throw "Draft release is missing $expectedName."
+            }
+          }
