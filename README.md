@@ -98,7 +98,25 @@ The dashboard primes its local cache on startup and refreshes periodically. Each
 provider remains isolated: one unavailable or signed-out CLI does not prevent the
 other providers from working.
 
-## Prerequisites
+## Install Dashy on Windows
+
+1. Open the [latest GitHub Release](https://github.com/adirangel/Dashy/releases/latest).
+2. Download the Windows x64 `.msi` asset.
+3. Run the installer and leave **Launch Dashy** selected on the final page.
+4. In first-run setup, choose any combination of Claude, Codex, and GitHub.
+5. Approve only the provider tools you want Dashy to install or connect.
+
+The current private-test MSI is not code-signed, so Windows may show an
+**Unknown publisher** or SmartScreen warning. Code signing is required before a
+public release.
+
+Node.js, Rust, Cargo, Tauri, and Visual Studio Build Tools are development
+requirements only. End users do not install them.
+
+## Contributor prerequisites
+
+The requirements in this section apply only when developing or packaging Dashy
+from this repository. They are not needed to install the Windows MSI above.
 
 | Tool | Purpose |
 |---|---|
@@ -123,13 +141,14 @@ Official installation references:
 - [GitHub CLI](https://cli.github.com/)
 - [WinGet documentation](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
 
-The included PowerShell installer uses WinGet package IDs and requests the Visual
-Studio Build Tools C++ workload with recommended components. The official installer
-may request elevation.
+The included `install.ps1` contributor bootstrap script uses WinGet package IDs
+and requests the Visual Studio Build Tools C++ workload with recommended
+components. The official installer may request elevation.
 
-## Install the project
+## Contributor setup
 
-Open PowerShell in the repository. First inspect the machine without changing it:
+Open PowerShell in the repository. This contributor bootstrap script first lets you
+inspect the development machine without changing it:
 
 ```powershell
 .\install.ps1 -CheckOnly
@@ -149,10 +168,12 @@ tool, refreshes only the current PowerShell process's `PATH`, installs Tauri CLI
 only when needed, and runs `npm ci` in `frontend`. If a newly installed command is
 still unavailable, open a new PowerShell window and rerun the installer.
 
-## Sign in to providers
+## Provider CLI sign-in for contributors
 
-The installer deliberately never signs in for you. Complete only the providers you
-want Dashy to display:
+The contributor bootstrap script deliberately never signs in for you. The installed
+MSI instead presents provider onboarding on first run; use that flow to select the
+providers you want Dashy to display. When developing from this repository, complete
+only the provider CLI logins you need:
 
 ```powershell
 gh auth login
