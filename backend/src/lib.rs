@@ -1,5 +1,6 @@
 pub mod dashboard;
 pub mod desktop;
+pub mod setup;
 
 use std::sync::Arc;
 

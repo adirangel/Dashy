@@ -37,6 +37,7 @@ pub enum AllowedProgram {
     Gh,
     Codex,
     Claude,
+    Winget,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +70,7 @@ impl AllowedProgram {
             Self::Gh => "gh",
             Self::Codex => "codex",
             Self::Claude => "claude",
+            Self::Winget => "winget",
         }
     }
 }
@@ -180,6 +182,22 @@ pub enum ProcessError {
     Io,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VisibleProcessError {
+    NotInstalled,
+    UnsupportedPlatform,
+    Failed,
+}
+
+#[async_trait]
+pub trait VisibleRunner: Send + Sync {
+    async fn run_visible(
+        &self,
+        program: AllowedProgram,
+        args: Vec<String>,
+    ) -> Result<(), VisibleProcessError>;
+}
+
 #[async_trait]
 pub trait CaptureRunner: Send + Sync {
     async fn capture(
@@ -217,6 +235,46 @@ pub trait InteractiveRunner: Send + Sync {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SystemProcessRunner;
+
+#[async_trait]
+impl VisibleRunner for SystemProcessRunner {
+    async fn run_visible(
+        &self,
+        program: AllowedProgram,
+        args: Vec<String>,
+    ) -> Result<(), VisibleProcessError> {
+        #[cfg(windows)]
+        {
+            const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+            let launch = program_launch(program);
+            let status = Command::new(&launch.executable)
+                .args(&launch.prefix_args)
+                .args(args)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .creation_flags(CREATE_NEW_CONSOLE)
+                .status()
+                .await
+                .map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        VisibleProcessError::NotInstalled
+                    } else {
+                        VisibleProcessError::Failed
+                    }
+                })?;
+            return status
+                .success()
+                .then_some(())
+                .ok_or(VisibleProcessError::Failed);
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (program, args);
+            Err(VisibleProcessError::UnsupportedPlatform)
+        }
+    }
+}
 
 struct BoundedReadTask {
     handle: Option<JoinHandle<Result<Vec<u8>, ProcessError>>>,
@@ -1410,6 +1468,7 @@ mod tests {
         assert_eq!(AllowedProgram::Gh.executable(), "gh");
         assert_eq!(AllowedProgram::Codex.executable(), "codex");
         assert_eq!(AllowedProgram::Claude.executable(), "claude");
+        assert_eq!(AllowedProgram::Winget.executable(), "winget");
     }
 
     #[cfg(windows)]
