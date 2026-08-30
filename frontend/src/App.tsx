@@ -3,6 +3,7 @@ import { resolveLocale, setLocale } from "./i18n";
 import { SettingsApp } from "./settings/SettingsApp";
 import { NotchApp } from "./notch/NotchApp";
 import "./settings.css";
+import "./onboarding.css";
 import { currentWindowLabel, getSettings, isTauriRuntime, listenForLocaleChanges } from "./window";
 
 type AppProps = { windowLabel?: string };

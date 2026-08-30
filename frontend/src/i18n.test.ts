@@ -28,6 +28,17 @@ describe("localization contract", () => {
     }
   });
 
+  it("exposes the complete provider setup leaf-key contract", () => {
+    expect(leafKeys(localeResources.en.translation.setup, "setup").sort()).toEqual([
+      "setup.actionFailure", "setup.cancel", "setup.command", "setup.confirmInstall",
+      "setup.confirmLogin", "setup.connect", "setup.connected", "setup.description",
+      "setup.eyebrow", "setup.finish", "setup.finishFailure", "setup.install",
+      "setup.installDisclosure", "setup.loading", "setup.loginDisclosure", "setup.manualHelp",
+      "setup.needsAttention", "setup.notInstalled", "setup.packageId", "setup.publisher",
+      "setup.retry", "setup.signInRequired", "setup.title", "setup.useProvider",
+    ]);
+  });
+
   it("uses RTL only for Hebrew and Arabic", () => {
     expect(directionForLocale("he")).toBe("rtl");
     expect(directionForLocale("ar")).toBe("rtl");
