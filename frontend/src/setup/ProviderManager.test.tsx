@@ -92,6 +92,12 @@ function HookProbe() {
   </>;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => { resolve = fulfill; });
+  return { promise, resolve };
+}
+
 describe("ProviderManager", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -253,6 +259,35 @@ describe("useProviderSetup", () => {
     await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent('"failureProvider":"codex"'));
     expect(screen.getByTestId("hook-state")).toHaveTextContent('"busyProvider":null');
     expect(document.body.textContent).not.toContain("raw-secret-install-error");
+  });
+
+  it("serializes provider actions until the active promise settles", async () => {
+    const install = deferred<ProviderSetupState>();
+    const login = deferred<ProviderSetupState>();
+    apiMocks.installProvider.mockReturnValue(install.promise);
+    apiMocks.loginProvider.mockReturnValue(login.promise);
+    render(<HookProbe />);
+    await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent("connected"));
+
+    fireEvent.click(screen.getByRole("button", { name: "hook install" }));
+    await waitFor(() => expect(screen.getByTestId("hook-state"))
+      .toHaveTextContent('"busyProvider":"codex"'));
+    fireEvent.click(screen.getByRole("button", { name: "hook login" }));
+
+    expect(apiMocks.loginProvider).not.toHaveBeenCalled();
+    expect(screen.getByTestId("hook-state")).toHaveTextContent('"busyProvider":"codex"');
+
+    install.resolve(setupStates({ codex: "connected" })[1]);
+    await waitFor(() => expect(screen.getByTestId("hook-state"))
+      .toHaveTextContent('"busyProvider":null'));
+
+    fireEvent.click(screen.getByRole("button", { name: "hook login" }));
+    await waitFor(() => expect(apiMocks.loginProvider).toHaveBeenCalledExactlyOnceWith("claude"));
+    expect(screen.getByTestId("hook-state")).toHaveTextContent('"busyProvider":"claude"');
+
+    login.resolve(setupStates({ claude: "connected" })[0]);
+    await waitFor(() => expect(screen.getByTestId("hook-state"))
+      .toHaveTextContent('"busyProvider":null'));
   });
 
   it("reports a sanitized load failure and clears it after a successful retry", async () => {

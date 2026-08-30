@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProviderId } from "../dashboard";
 import {
   getProviderSetupStates,
@@ -22,6 +22,7 @@ export function useProviderSetup(): ProviderSetupController {
   const [busyProvider, setBusyProvider] = useState<ProviderId | null>(null);
   const [failureProvider, setFailureProvider] = useState<ProviderId | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  const actionInFlight = useRef(false);
 
   const reload = useCallback(async () => {
     try {
@@ -41,6 +42,8 @@ export function useProviderSetup(): ProviderSetupController {
     provider: ProviderId,
     action: (target: ProviderId) => Promise<ProviderSetupState>,
   ) => {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setBusyProvider(provider);
     setFailureProvider(null);
     try {
@@ -51,6 +54,7 @@ export function useProviderSetup(): ProviderSetupController {
     } catch {
       setFailureProvider(provider);
     } finally {
+      actionInFlight.current = false;
       setBusyProvider(null);
     }
   }, []);
