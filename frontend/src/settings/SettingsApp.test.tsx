@@ -79,6 +79,12 @@ const providerSetupStates: ProviderSetupState[] = [
   },
 ];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => { resolve = fulfill; });
+  return { promise, resolve };
+}
+
 describe("SettingsApp", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -161,6 +167,27 @@ describe("SettingsApp", () => {
       .toHaveBeenCalledWith({ enabledProviders: ["claude", "codex"] }));
     expect(github).toBeChecked();
     expect(document.body.textContent).not.toContain("raw-settings-secret");
+  });
+
+  it("prevents a second provider selection from racing an unconfirmed save", async () => {
+    const firstSave = deferred<typeof initialSettings>();
+    mocks.updateSettings.mockReturnValueOnce(firstSave.promise);
+    render(<SettingsApp />);
+
+    const github = await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" });
+    const codex = screen.getByRole("checkbox", { name: "Use Codex in Dashy" });
+    fireEvent.click(github);
+    await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalledTimes(1));
+
+    expect(github).toBeDisabled();
+    expect(codex).toBeDisabled();
+    fireEvent.click(codex);
+    expect(mocks.updateSettings).toHaveBeenCalledTimes(1);
+
+    firstSave.resolve({ ...initialSettings, enabledProviders: ["claude", "codex"] });
+    await waitFor(() => expect(github).not.toBeChecked());
+    expect(codex).toBeEnabled();
+    expect(mocks.updateSettings).toHaveBeenCalledTimes(1);
   });
 
   it("persists placement, monitor, language, and fullscreen choices", async () => {

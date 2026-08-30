@@ -70,6 +70,7 @@ export function SettingsApp() {
   const [startup, setStartup] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const providerSaveInFlight = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -161,8 +162,14 @@ export function SettingsApp() {
     }
   };
   const saveProviders = async (enabledProviders: ProviderId[]) => {
-    const saved = await save({ enabledProviders });
-    if (saved) setSettings(saved);
+    if (providerSaveInFlight.current) return;
+    providerSaveInFlight.current = true;
+    try {
+      const saved = await save({ enabledProviders });
+      if (saved) setSettings(saved);
+    } finally {
+      providerSaveInFlight.current = false;
+    }
   };
   const refreshAll = async () => {
     setBusy(true);
@@ -208,6 +215,7 @@ export function SettingsApp() {
         controller={providerSetup}
         enabledProviders={settings.enabledProviders}
         onEnabledChange={(enabledProviders) => { void saveProviders(enabledProviders); }}
+        selectionDisabled={busy}
       />
     </section>
     <p className="settings-message" role="status" aria-live="polite">{message}</p>

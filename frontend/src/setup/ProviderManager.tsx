@@ -8,6 +8,7 @@ type ProviderManagerProps = {
   controller: ProviderSetupController;
   enabledProviders: ProviderId[];
   onEnabledChange: (providers: ProviderId[]) => void;
+  selectionDisabled?: boolean;
 };
 
 type PendingAction = {
@@ -78,6 +79,7 @@ export function ProviderManager({
   controller,
   enabledProviders,
   onEnabledChange,
+  selectionDisabled = false,
 }: ProviderManagerProps) {
   const { t } = useTranslation();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -133,6 +135,7 @@ export function ProviderManager({
           <input
             type="checkbox"
             checked={isEnabled}
+            disabled={selectionDisabled}
             onChange={(event) => onEnabledChange(event.target.checked
               ? [...enabledProviders, provider]
               : enabledProviders.filter((enabled) => enabled !== provider))}
