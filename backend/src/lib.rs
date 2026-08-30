@@ -321,7 +321,19 @@ mod config_tests {
             windows["wix"]["upgradeCode"],
             "ea949cb5-35f6-540d-a3ee-0cc7721c122c"
         );
-        assert!(windows["certificateThumbprint"].is_null());
+        let windows = windows.as_object().unwrap();
+        for signing_key in [
+            "certificateThumbprint",
+            "digestAlgorithm",
+            "signCommand",
+            "timestampUrl",
+            "tsp",
+        ] {
+            assert!(
+                windows.get(signing_key).is_none(),
+                "unsigned bundles must omit the {signing_key} signing field"
+            );
+        }
     }
 
     #[test]
