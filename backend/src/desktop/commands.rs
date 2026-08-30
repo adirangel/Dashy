@@ -83,12 +83,14 @@ where
     };
     refresh_newly_enabled_then_notify(&previous, &persisted.enabled_providers, refresh, notify)
         .await?;
-    let _side_effect_guard = settings_side_effect_gate
-        .lock()
-        .map_err(|_| "settings side-effect lock poisoned".to_owned())?;
-    let current = load_current()?;
-    after(&current)?;
-    Ok(current)
+    super::with_authoritative_settings_side_effect(
+        settings_side_effect_gate,
+        load_current,
+        |current| {
+            after(current)?;
+            Ok(current.clone())
+        },
+    )
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]

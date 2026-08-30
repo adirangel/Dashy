@@ -136,22 +136,29 @@ pub fn run() {
             let settings_for_refresh = settings.clone();
             let probe_for_refresh = probe.clone();
             let tray_for_refresh = tray_state.clone();
+            let settings_side_effect_gate = Arc::new(std::sync::Mutex::new(()));
+            let settings_side_effect_gate_for_refresh = settings_side_effect_gate.clone();
             let runtime = start_controller_runtime(
                 controller.clone(),
                 settings_changes,
                 Arc::new(move || {
-                    let settings = settings_for_refresh.current()?;
-                    let monitors = probe_for_refresh
-                        .monitors()
-                        .map_err(|error| error.to_string())?;
-                    tray_for_refresh.refresh(&app_handle, &settings, &monitors)
+                    desktop::with_authoritative_settings_side_effect(
+                        &settings_side_effect_gate_for_refresh,
+                        || settings_for_refresh.current(),
+                        |settings| {
+                            let monitors = probe_for_refresh
+                                .monitors()
+                                .map_err(|error| error.to_string())?;
+                            tray_for_refresh.refresh(&app_handle, settings, &monitors)
+                        },
+                    )
                 }),
             );
 
             app.manage(DesktopState {
                 settings,
                 provider_selection_gate: tokio::sync::Mutex::new(()),
-                settings_side_effect_gate: std::sync::Mutex::new(()),
+                settings_side_effect_gate,
                 controller,
                 probe,
                 runtime,
