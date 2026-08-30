@@ -3,6 +3,7 @@ dist/
 target/
 backend/gen/
 .superpowers/
+.worktrees/
 *.log
 *.tsbuildinfo
 .DS_Store
