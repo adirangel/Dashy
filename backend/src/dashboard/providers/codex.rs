@@ -236,7 +236,6 @@ mod tests {
         providers::DataProvider,
     };
 
-    #[allow(dead_code)]
     fn fixture_with_general_windows(primary_used: u8, secondary_used: u8) -> String {
         serde_json::to_string(&json!({
             "rateLimitsByLimitId": {
