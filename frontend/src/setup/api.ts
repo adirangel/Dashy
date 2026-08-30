@@ -66,7 +66,9 @@ async function runProviderSetupAction(
   provider: ProviderId,
 ): Promise<ProviderSetupState> {
   const response = await invoke<unknown>(`${action}_provider`, { request: { provider } });
-  if (!isProviderSetupState(response)) throw providerSetupResponseError();
+  if (!isProviderSetupState(response) || response.definition.provider !== provider) {
+    throw providerSetupResponseError();
+  }
   return response;
 }
 

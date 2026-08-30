@@ -50,6 +50,7 @@ function renderManager(options: {
   githubStatus?: ProviderStatus;
   enabledProviders?: ProviderId[];
   busyProvider?: ProviderId | null;
+  busyAction?: "install" | "login" | null;
   failureProvider?: ProviderId | null;
   states?: ProviderSetupState[] | null;
   loadFailed?: boolean;
@@ -66,6 +67,7 @@ function renderManager(options: {
     controller={{
       states,
       busyProvider: options.busyProvider ?? null,
+      busyAction: options.busyAction ?? null,
       failureProvider: options.failureProvider ?? null,
       loadFailed: options.loadFailed ?? false,
       install: mocks.install,
@@ -83,6 +85,7 @@ function HookProbe() {
     <output data-testid="hook-state">{JSON.stringify({
       states: controller.states,
       busyProvider: controller.busyProvider,
+      busyAction: controller.busyAction,
       failureProvider: controller.failureProvider,
       loadFailed: controller.loadFailed,
     })}</output>
@@ -90,6 +93,15 @@ function HookProbe() {
     <button type="button" onClick={() => { void controller.login("claude"); }}>hook login</button>
     <button type="button" onClick={() => { void controller.reload(); }}>hook reload</button>
   </>;
+}
+
+function ProviderManagerHarness() {
+  const controller = useProviderSetup();
+  return <ProviderManager
+    controller={controller}
+    enabledProviders={["claude", "codex", "github"]}
+    onEnabledChange={mocks.onEnabledChange}
+  />;
 }
 
 function deferred<T>() {
@@ -124,6 +136,26 @@ describe("ProviderManager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm installation" }));
     expect(mocks.install).toHaveBeenCalledExactlyOnceWith("codex");
   });
+
+  it.each(["he", "ar"] as const)(
+    "isolates exact package and command values from %s directionality",
+    async (locale) => {
+      await setLocale(locale);
+      renderManager({ codexStatus: "notInstalled" });
+      fireEvent.click(within(screen.getByRole("article", { name: "Codex" }))
+        .getByRole("button"));
+
+      for (const value of [
+        screen.getByText("OpenAI.Codex"),
+        screen.getByText(/winget install --id OpenAI\.Codex/),
+      ]) {
+        expect(value.tagName).toBe("BDI");
+        expect(value).toHaveAttribute("dir", "ltr");
+        expect(value).toHaveClass("provider-setup-technical-value");
+        expect(value).toHaveStyle({ unicodeBidi: "isolate" });
+      }
+    },
+  );
 
   it("requires a separate confirmation before login", async () => {
     renderManager({ claudeStatus: "notAuthenticated" });
@@ -165,13 +197,60 @@ describe("ProviderManager", () => {
   });
 
   it("marks only the active provider card busy and disables its setup action", () => {
-    renderManager({ codexStatus: "notInstalled", githubStatus: "stale", busyProvider: "codex" });
+    renderManager({
+      codexStatus: "notInstalled", githubStatus: "stale",
+      busyProvider: "codex", busyAction: "install",
+    });
     const codexCard = screen.getByRole("article", { name: "Codex" });
     const githubCard = screen.getByRole("article", { name: "GitHub" });
     expect(codexCard).toHaveAttribute("aria-busy", "true");
     expect(githubCard).not.toHaveAttribute("aria-busy");
     expect(within(codexCard).getByRole("button", { name: "Install Codex" })).toBeDisabled();
     expect(within(githubCard).getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  it.each([
+    {
+      action: "install" as const,
+      provider: "codex" as const,
+      initialStatus: "notInstalled" as const,
+      actionLabel: "Install Codex",
+      confirmationLabel: "Confirm installation",
+      busyLabel: "Installing",
+    },
+    {
+      action: "login" as const,
+      provider: "claude" as const,
+      initialStatus: "notAuthenticated" as const,
+      actionLabel: "Connect Claude",
+      confirmationLabel: "Open official login",
+      busyLabel: "Connecting",
+    },
+  ])("announces the localized $action status without moving focus", async ({
+    action, provider, initialStatus, actionLabel, confirmationLabel, busyLabel,
+  }) => {
+    const operation = deferred<ProviderSetupState>();
+    apiMocks.getProviderSetupStates.mockResolvedValue(setupStates({ [provider]: initialStatus }));
+    apiMocks[`${action}Provider`].mockReturnValue(operation.promise);
+    render(<ProviderManagerHarness />);
+
+    const actionButton = await screen.findByRole("button", { name: actionLabel });
+    fireEvent.click(actionButton);
+    const retainedFocus = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
+    retainedFocus.focus();
+    fireEvent.click(screen.getByRole("button", { name: confirmationLabel }));
+
+    const card = screen.getByRole("article", { name: provider === "codex" ? "Codex" : "Claude" });
+    const liveStatus = await within(card).findByRole("status");
+    expect(liveStatus).toHaveTextContent(busyLabel);
+    expect(liveStatus).toHaveAttribute("aria-live", "polite");
+    expect(retainedFocus).toHaveFocus();
+
+    operation.resolve(setupStates({ [provider]: "connected" })
+      .find((state) => state.definition.provider === provider)!);
+    await waitFor(() => expect(card).not.toHaveAttribute("aria-busy"));
+    expect(within(card).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(card).getByText("Connected")).toBeInTheDocument();
   });
 
   it("renders only sanitized action failure guidance and an official manual-help link", () => {

@@ -127,37 +127,41 @@ export function NotchApp({
     let active = true;
     let unlisten: (() => void) | undefined;
     let eventRevision = 0;
+    let hasSettings = false;
     const applySettings = (settings: Awaited<ReturnType<typeof getSettings>>) => {
+      hasSettings = true;
       if (!placementProp) setPersistedPlacement(settings.placement);
       setEnabledProviders(PROVIDERS.filter((provider) => settings.enabledProviders.includes(provider)));
       setSettingsReady(true);
     };
-    void listenForSettingsChanges((settings) => {
-      if (!active) return;
-      eventRevision += 1;
-      applySettings(settings);
-    }).then(async (stop) => {
-      if (!active) {
-        stop();
-        return;
+    void (async () => {
+      try {
+        const stop = await listenForSettingsChanges((settings) => {
+          if (!active) return;
+          eventRevision += 1;
+          applySettings(settings);
+        });
+        if (!active) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+      } catch {
+        // The one-shot settings query below remains available without events.
       }
-      unlisten = stop;
+      if (!active) return;
+
       const queryRevision = eventRevision;
       try {
         const settings = await getSettings();
         if (active && eventRevision === queryRevision) applySettings(settings);
       } catch {
-        if (active && eventRevision === queryRevision) {
-          setEnabledProviders(PROVIDERS);
+        if (active && !hasSettings && eventRevision === queryRevision) {
+          setEnabledProviders([]);
           setSettingsReady(true);
         }
       }
-    }).catch(() => {
-      if (active) {
-        setEnabledProviders(PROVIDERS);
-        setSettingsReady(true);
-      }
-    });
+    })();
     return () => { active = false; unlisten?.(); };
   }, [native, placementProp]);
 

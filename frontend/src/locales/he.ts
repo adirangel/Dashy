@@ -9,6 +9,7 @@ const he = {
   setup: {
     eyebrow: "DASHY / הגדרה", title: "בחרו במה Dashy יצפה", description: "חברו רק את הכלים שבהם אתם משתמשים. אפשר לשנות זאת מאוחר יותר בהגדרות.",
     useProvider: "השתמשו ב־{{provider}} ב־Dashy", connected: "מחובר", notInstalled: "לא מותקן", signInRequired: "נדרשת התחברות", needsAttention: "דורש טיפול",
+    installing: "מתבצעת התקנה", connecting: "מתבצע חיבור",
     install: "התקנת {{provider}}", connect: "חיבור {{provider}}", retry: "ניסיון חוזר", cancel: "ביטול", confirmInstall: "אישור ההתקנה", confirmLogin: "פתיחת ההתחברות הרשמית",
     installDisclosure: "Dashy יפתח מסוף גלוי ויריץ את פקודת WinGet הזאת.", loginDisclosure: "Dashy יפתח את ההתחברות הרשמית של הספק במסוף גלוי ובדפדפן.",
     publisher: "מפרסם", packageId: "חבילה", command: "פקודה", manualHelp: "פתיחת מדריך ההתקנה הרשמי", finish: "סיום ההגדרה",

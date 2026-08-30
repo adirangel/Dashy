@@ -9,6 +9,7 @@ const ar = {
   setup: {
     eyebrow: "DASHY / الإعداد", title: "اختر ما يراقبه Dashy", description: "صِل الأدوات التي تستخدمها فقط. يمكنك تغيير ذلك لاحقًا من الإعدادات.",
     useProvider: "استخدام {{provider}} في Dashy", connected: "متصل", notInstalled: "غير مثبت", signInRequired: "يلزم تسجيل الدخول", needsAttention: "يحتاج إلى إجراء",
+    installing: "جارٍ التثبيت", connecting: "جارٍ الاتصال",
     install: "تثبيت {{provider}}", connect: "ربط {{provider}}", retry: "إعادة المحاولة", cancel: "إلغاء", confirmInstall: "تأكيد التثبيت", confirmLogin: "فتح تسجيل الدخول الرسمي",
     installDisclosure: "سيفتح Dashy طرفية ظاهرة وينفذ أمر WinGet هذا.", loginDisclosure: "سيفتح Dashy تسجيل الدخول الرسمي للموفر في طرفية ظاهرة والمتصفح.",
     publisher: "الناشر", packageId: "الحزمة", command: "الأمر", manualHelp: "فتح دليل التثبيت الرسمي", finish: "إنهاء الإعداد",

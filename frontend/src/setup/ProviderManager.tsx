@@ -55,10 +55,18 @@ function Confirmation({
         <dt>{t("setup.publisher")}</dt>
         <dd>{definition.publisher}</dd>
         <dt>{t("setup.packageId")}</dt>
-        <dd>{definition.packageId}</dd>
+        <dd><bdi
+          className="provider-setup-technical-value"
+          dir="ltr"
+          style={{ unicodeBidi: "isolate" }}
+        >{definition.packageId}</bdi></dd>
       </>}
       <dt>{t("setup.command")}</dt>
-      <dd><code>{action === "install" ? definition.installCommand : definition.loginCommand}</code></dd>
+      <dd><code><bdi
+        className="provider-setup-technical-value"
+        dir="ltr"
+        style={{ unicodeBidi: "isolate" }}
+      >{action === "install" ? definition.installCommand : definition.loginCommand}</bdi></code></dd>
     </dl>
     <div className="provider-setup-confirmation-actions">
       <button
@@ -110,6 +118,9 @@ export function ProviderManager({
       const name = t(`providers.${provider}`);
       const headingId = `provider-setup-${provider}-name`;
       const isBusy = controller.busyProvider === provider;
+      const busyStatus = isBusy && controller.busyAction
+        ? t(controller.busyAction === "install" ? "setup.installing" : "setup.connecting")
+        : null;
       const pending = pendingAction?.provider === provider ? pendingAction : null;
       const isEnabled = enabledProviders.includes(provider);
 
@@ -128,7 +139,12 @@ export function ProviderManager({
       >
         <header className="provider-setup-card-header">
           <h2 className="provider-setup-name" id={headingId}>{name}</h2>
-          <span className="provider-setup-status">{t(statusKey(state.status))}</span>
+          <span
+            className="provider-setup-status"
+            role={busyStatus ? "status" : undefined}
+            aria-live={busyStatus ? "polite" : undefined}
+            aria-atomic={busyStatus ? "true" : undefined}
+          >{busyStatus ?? t(statusKey(state.status))}</span>
         </header>
 
         <label className="provider-setup-selection">

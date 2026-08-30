@@ -9,6 +9,7 @@ const ja = {
   setup: {
     eyebrow: "DASHY / セットアップ", title: "Dashy で確認するサービスを選択", description: "使用するツールだけを接続してください。後で設定から変更できます。",
     useProvider: "Dashy で {{provider}} を使用", connected: "接続済み", notInstalled: "未インストール", signInRequired: "サインインが必要", needsAttention: "確認が必要",
+    installing: "インストール中", connecting: "接続中",
     install: "{{provider}} をインストール", connect: "{{provider}} に接続", retry: "再試行", cancel: "キャンセル", confirmInstall: "インストールを確認", confirmLogin: "公式ログインを開く",
     installDisclosure: "Dashy は表示されたターミナルを開き、この WinGet コマンドを実行します。", loginDisclosure: "Dashy は表示されたターミナルとブラウザーでプロバイダーの公式ログインを開きます。",
     publisher: "発行元", packageId: "パッケージ", command: "コマンド", manualHelp: "公式インストールガイドを開く", finish: "セットアップを完了",

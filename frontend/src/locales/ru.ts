@@ -9,6 +9,7 @@ const ru = {
   setup: {
     eyebrow: "DASHY / НАСТРОЙКА", title: "Выберите, что отслеживает Dashy", description: "Подключите только те инструменты, которыми пользуетесь. Это можно изменить позже в настройках.",
     useProvider: "Использовать {{provider}} в Dashy", connected: "Подключено", notInstalled: "Не установлено", signInRequired: "Требуется вход", needsAttention: "Требует внимания",
+    installing: "Установка", connecting: "Подключение",
     install: "Установить {{provider}}", connect: "Подключить {{provider}}", retry: "Повторить", cancel: "Отмена", confirmInstall: "Подтвердить установку", confirmLogin: "Открыть официальный вход",
     installDisclosure: "Dashy откроет видимый терминал и выполнит эту команду WinGet.", loginDisclosure: "Dashy откроет официальный вход провайдера в видимом терминале и браузере.",
     publisher: "Издатель", packageId: "Пакет", command: "Команда", manualHelp: "Открыть официальное руководство по установке", finish: "Завершить настройку",

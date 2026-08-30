@@ -7,6 +7,7 @@ export type Messages = {
   setup: {
     eyebrow: string; title: string; description: string; useProvider: string;
     connected: string; notInstalled: string; signInRequired: string; needsAttention: string;
+    installing: string; connecting: string;
     install: string; connect: string; retry: string; cancel: string;
     confirmInstall: string; confirmLogin: string; installDisclosure: string; loginDisclosure: string;
     publisher: string; packageId: string; command: string; manualHelp: string;
@@ -26,6 +27,7 @@ const en = {
   setup: {
     eyebrow: "DASHY / SETUP", title: "Choose what Dashy watches", description: "Connect only the tools you use. You can change this later in Settings.",
     useProvider: "Use {{provider}} in Dashy", connected: "Connected", notInstalled: "Not installed", signInRequired: "Sign in required", needsAttention: "Needs attention",
+    installing: "Installing", connecting: "Connecting",
     install: "Install {{provider}}", connect: "Connect {{provider}}", retry: "Retry", cancel: "Cancel", confirmInstall: "Confirm installation", confirmLogin: "Open official login",
     installDisclosure: "Dashy will open a visible terminal and run this WinGet command.", loginDisclosure: "Dashy will open the provider's official login in a visible terminal and browser.",
     publisher: "Publisher", packageId: "Package", command: "Command", manualHelp: "Open official installation guide", finish: "Finish setup",

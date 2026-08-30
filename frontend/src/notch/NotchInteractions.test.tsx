@@ -125,6 +125,50 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByTestId("notch-app")).toBeEmptyDOMElement();
   });
 
+  it("uses the settings query when listener registration fails", async () => {
+    mocks.listenForSettingsChanges.mockRejectedValue(new Error("listener unavailable"));
+    mocks.getSettings.mockResolvedValue({
+      placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+      onboardingCompleted: true, enabledProviders: ["codex"],
+    });
+
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+
+    await waitFor(() => expect(mocks.getSettings).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByRole("button", { name: /Claude|Codex|GitHub/ }))
+      .toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Codex/i })).toBeInTheDocument();
+  });
+
+  it("fails closed without rendering a surface when settings bootstrap is unavailable", async () => {
+    mocks.listenForSettingsChanges.mockRejectedValue(new Error("listener unavailable"));
+    mocks.getSettings.mockRejectedValue(new Error("settings unavailable"));
+
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+
+    await waitFor(() => expect(mocks.getSettings).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("notch-surface")).not.toBeInTheDocument();
+    expect(screen.getByTestId("notch-app")).toBeEmptyDOMElement();
+  });
+
+  it("does not query settings after listener registration rejects following cleanup", async () => {
+    let rejectListener!: (reason: Error) => void;
+    mocks.listenForSettingsChanges.mockReturnValue(new Promise((_, reject) => {
+      rejectListener = reject;
+    }));
+
+    const view = await renderNativeNotch();
+    view.unmount();
+    await act(async () => {
+      rejectListener(new Error("listener unavailable"));
+      await Promise.resolve();
+    });
+
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+  });
+
   it("applies settings changes in fixed provider order and keeps selection valid", async () => {
     await renderNativeNotch();
     await emitEdgeView({ visibility: "card", placement: "right", provider: "codex" });

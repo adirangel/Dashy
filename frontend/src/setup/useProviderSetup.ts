@@ -4,12 +4,14 @@ import {
   getProviderSetupStates,
   installProvider,
   loginProvider,
+  type ProviderSetupAction,
   type ProviderSetupState,
 } from "./api";
 
 export type ProviderSetupController = {
   states: ProviderSetupState[] | null;
   busyProvider: ProviderId | null;
+  busyAction: ProviderSetupAction | null;
   failureProvider: ProviderId | null;
   loadFailed: boolean;
   reload: () => Promise<void>;
@@ -20,6 +22,7 @@ export type ProviderSetupController = {
 export function useProviderSetup(): ProviderSetupController {
   const [states, setStates] = useState<ProviderSetupState[] | null>(null);
   const [busyProvider, setBusyProvider] = useState<ProviderId | null>(null);
+  const [busyAction, setBusyAction] = useState<ProviderSetupAction | null>(null);
   const [failureProvider, setFailureProvider] = useState<ProviderId | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const actionInFlight = useRef(false);
@@ -39,12 +42,14 @@ export function useProviderSetup(): ProviderSetupController {
   }, [reload]);
 
   const runAction = useCallback(async (
+    actionName: ProviderSetupAction,
     provider: ProviderId,
     action: (target: ProviderId) => Promise<ProviderSetupState>,
   ) => {
     if (actionInFlight.current) return;
     actionInFlight.current = true;
     setBusyProvider(provider);
+    setBusyAction(actionName);
     setFailureProvider(null);
     try {
       const nextState = await action(provider);
@@ -56,17 +61,18 @@ export function useProviderSetup(): ProviderSetupController {
     } finally {
       actionInFlight.current = false;
       setBusyProvider(null);
+      setBusyAction(null);
     }
   }, []);
 
   const install = useCallback(
-    (provider: ProviderId) => runAction(provider, installProvider),
+    (provider: ProviderId) => runAction("install", provider, installProvider),
     [runAction],
   );
   const login = useCallback(
-    (provider: ProviderId) => runAction(provider, loginProvider),
+    (provider: ProviderId) => runAction("login", provider, loginProvider),
     [runAction],
   );
 
-  return { states, busyProvider, failureProvider, loadFailed, reload, install, login };
+  return { states, busyProvider, busyAction, failureProvider, loadFailed, reload, install, login };
 }

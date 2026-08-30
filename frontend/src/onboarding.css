@@ -266,6 +266,10 @@
   overflow-wrap: anywhere;
 }
 
+.provider-setup-technical-value {
+  unicode-bidi: isolate;
+}
+
 .provider-setup-manual-help {
   color: var(--provider-accent);
   font-size: 13px;

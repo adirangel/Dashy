@@ -9,6 +9,7 @@ const zhCN = {
   setup: {
     eyebrow: "DASHY / 设置", title: "选择 Dashy 要监控的内容", description: "只连接你使用的工具。之后可随时在设置中更改。",
     useProvider: "在 Dashy 中使用 {{provider}}", connected: "已连接", notInstalled: "未安装", signInRequired: "需要登录", needsAttention: "需要处理",
+    installing: "正在安装", connecting: "正在连接",
     install: "安装 {{provider}}", connect: "连接 {{provider}}", retry: "重试", cancel: "取消", confirmInstall: "确认安装", confirmLogin: "打开官方登录",
     installDisclosure: "Dashy 将打开可见终端并运行此 WinGet 命令。", loginDisclosure: "Dashy 将在可见终端和浏览器中打开服务商的官方登录流程。",
     publisher: "发布者", packageId: "软件包", command: "命令", manualHelp: "打开官方安装指南", finish: "完成设置",

@@ -37,4 +37,17 @@ describe("provider setup IPC", () => {
       ["login_provider", { request: { provider: "codex" } }],
     ]);
   });
+
+  it.each([
+    ["install", installProvider],
+    ["login", loginProvider],
+  ] as const)("rejects a cross-provider %s response", async (_action, runAction) => {
+    mocks.invoke.mockResolvedValue({
+      ...codex,
+      definition: { ...codex.definition, provider: "claude" },
+      status: "connected",
+    });
+
+    await expect(runAction("codex")).rejects.toThrow(/invalid provider setup response/i);
+  });
 });

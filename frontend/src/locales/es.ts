@@ -9,6 +9,7 @@ const es = {
   setup: {
     eyebrow: "DASHY / CONFIGURACIÓN", title: "Elige qué supervisa Dashy", description: "Conecta solo las herramientas que utilizas. Puedes cambiarlo más adelante en Ajustes.",
     useProvider: "Usar {{provider}} en Dashy", connected: "Conectado", notInstalled: "No instalado", signInRequired: "Debes iniciar sesión", needsAttention: "Requiere atención",
+    installing: "Instalando", connecting: "Conectando",
     install: "Instalar {{provider}}", connect: "Conectar {{provider}}", retry: "Reintentar", cancel: "Cancelar", confirmInstall: "Confirmar instalación", confirmLogin: "Abrir inicio de sesión oficial",
     installDisclosure: "Dashy abrirá una terminal visible y ejecutará este comando de WinGet.", loginDisclosure: "Dashy abrirá el inicio de sesión oficial del proveedor en una terminal visible y en el navegador.",
     publisher: "Editor", packageId: "Paquete", command: "Comando", manualHelp: "Abrir la guía oficial de instalación", finish: "Finalizar configuración",
