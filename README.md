@@ -295,27 +295,82 @@ existing release tag.
    cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
    ```
 
-3. Commit the synchronized version change, then create and push its matching tag:
+3. Verify the exact release version before committing it:
 
    ```powershell
-   git commit -am "release: v0.2.0"
-   git tag v0.2.0
-   git push origin main
-   git push origin v0.2.0
+   node infrastructure/release/verify-version.mjs v0.2.0
    ```
 
-   Do not create a tag for an uncommitted tree, and do not retag a different
-   commit if the workflow fails. Fix the issue in a new commit and use a new patch
-   version instead.
+4. Review, commit, tag, and push the release atomically. Replace `v0.2.0` only
+   with the chosen new version; run this from a current local `main` branch.
 
-4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. It must
+   ```powershell
+   $releaseTag = "v0.2.0"
+   $branch = (& git branch --show-current).Trim()
+   if ($LASTEXITCODE -ne 0 -or $branch -cne "main") { throw "Release from a current local main branch." }
+
+   git diff --check
+   if ($LASTEXITCODE -ne 0) { throw "Release diff has whitespace errors." }
+   git diff -- backend/tauri.conf.json backend/Cargo.toml frontend/package.json
+   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the version diff." }
+
+   git add backend/tauri.conf.json backend/Cargo.toml frontend/package.json
+   if ($LASTEXITCODE -ne 0) { throw "Could not stage release versions." }
+   git commit -m "release: $releaseTag"
+   if ($LASTEXITCODE -ne 0) { throw "Could not commit release versions." }
+
+   $worktreeState = @(& git status --porcelain)
+   if ($LASTEXITCODE -ne 0 -or $worktreeState.Count -ne 0) { throw "Commit must leave a clean worktree." }
+
+   & git show-ref --verify --quiet "refs/tags/$releaseTag"
+   if ($LASTEXITCODE -eq 0) { throw "Local tag $releaseTag already exists; never move, delete, or reuse it." }
+   if ($LASTEXITCODE -ne 1) { throw "Could not determine whether local tag $releaseTag exists." }
+
+   $remoteRef = "refs/tags/$releaseTag"
+   $remoteTagLines = @(& git ls-remote --refs origin $remoteRef)
+   if ($LASTEXITCODE -ne 0) { throw "Could not query remote tag $releaseTag; do not create it." }
+   if ($remoteTagLines.Count -ne 0) { throw "Remote tag $releaseTag already exists; never move, delete, or reuse it." }
+
+   & git tag $releaseTag
+   if ($LASTEXITCODE -ne 0) { throw "Could not create tag $releaseTag." }
+   $tagCommit = (& git rev-list -n 1 $releaseTag).Trim()
+   if ($LASTEXITCODE -ne 0) { throw "Could not resolve tag $releaseTag." }
+   $headCommit = (& git rev-parse HEAD).Trim()
+   if ($LASTEXITCODE -ne 0 -or $tagCommit -cne $headCommit) { throw "Release tag must point to HEAD." }
+
+   & git push --atomic origin main $releaseTag
+   if ($LASTEXITCODE -ne 0) { throw "Atomic main-and-tag push failed." }
+   ```
+
+   Never create a tag for an uncommitted tree or retag a different commit. If the
+   workflow fails, fix the issue in a new commit and use a new patch version.
+
+5. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. It must
    validate the three versions, use the reviewed immutable action commits, and
    leave the release as a draft. A draft can remain partial or blocked while that
    workflow is still running or has failed; do not publish or manually complete it.
-5. Inspect the resulting draft. It must contain exactly one Windows x64 `.msi` and
-   its matching `.msi.sha256` checksum. Download both assets and verify the
-   downloaded MSI hash against the checksum file.
-6. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
+6. Inspect and verify the resulting draft. It must contain exactly one Windows x64
+   `.msi` and its matching `.msi.sha256` checksum:
+
+   ```powershell
+   $releaseTag = "v0.2.0"
+   $releaseDirectory = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "dashy-release-check-$([guid]::NewGuid())")
+   & gh release download $releaseTag --dir $releaseDirectory.FullName
+   if ($LASTEXITCODE -ne 0) { throw "Could not download draft release $releaseTag." }
+
+   $msi = @(Get-ChildItem -LiteralPath $releaseDirectory.FullName -File -Filter *.msi)
+   $checksums = @(Get-ChildItem -LiteralPath $releaseDirectory.FullName -File -Filter *.msi.sha256)
+   if ($msi.Count -ne 1 -or $checksums.Count -ne 1) { throw "Expected exactly one MSI and one checksum." }
+   if ($checksums[0].Name -cne "$($msi[0].Name).sha256") { throw "Checksum does not belong to the downloaded MSI." }
+
+   $expectedHash = ((Get-Content -Raw -LiteralPath $checksums[0].FullName) -split '\s+')[0]
+   $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msi[0].FullName).Hash
+   if (-not [string]::Equals($actualHash, $expectedHash, [StringComparison]::OrdinalIgnoreCase)) {
+     throw "Downloaded MSI checksum mismatch."
+   }
+   ```
+
+7. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
    a clean Windows x64 machine. Publish the draft only when every automated and
    clean-machine gate passes.
 

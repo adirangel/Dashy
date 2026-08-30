@@ -21,7 +21,8 @@ not treat a developer workstation as a clean-machine result.
 - [ ] The draft contains exactly one `.msi` asset and its one matching
       `.msi.sha256` asset, with no NSIS installer or plain executable.
 - [ ] The downloaded MSI SHA-256 matches the first field in its downloaded
-      `.msi.sha256` file.
+      `.msi.sha256` file. Use the reproducible download-and-compare command in
+      [Create a Windows release](../README.md#create-a-windows-release).
 - [ ] The draft title, tag, and generated notes identify the intended version.
 - [ ] The draft clearly states that the private-test MSI is unsigned and may show
       an Unknown publisher or SmartScreen warning, when code signing is not enabled.
