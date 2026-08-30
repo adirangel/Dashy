@@ -1,0 +1,37 @@
+:root {
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  color: #f4f7f5;
+  background: #0b0f11;
+}
+
+html, body, #root { height: 100%; }
+body { margin: 0; overflow: hidden; }
+.settings-app {
+  box-sizing: border-box;
+  height: 100vh;
+  min-height: 0;
+  padding: 28px 28px 52px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
+  background: linear-gradient(145deg, #111719, #080b0d);
+}
+.settings-app:focus-visible { outline: 2px solid #62e6a7; outline-offset: -4px; }
+.settings-app header p { margin: 0; color: #62e6a7; font-weight: 700; letter-spacing: .08em; }
+.settings-app h1 { margin: 4px 0 24px; font-size: 28px; }
+.settings-panel, .provider-status { display: grid; gap: 14px; padding: 18px; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; background: rgba(255,255,255,.045); }
+.settings-panel label:not(.settings-toggle) { display: grid; gap: 7px; color: #b7c1bc; font-size: 13px; }
+.settings-panel select { width: 100%; padding: 10px 12px; color: #f4f7f5; background: #151b1e; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; font: inherit; }
+.settings-toggle { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.provider-status { margin-top: 16px; }
+.provider-status > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.provider-status h2 { margin: 0; font-size: 17px; }
+.provider-status button { padding: 8px 12px; border: 0; border-radius: 9px; color: #07100c; background: #62e6a7; font-weight: 700; }
+.provider-status p { display: grid; grid-template-columns: minmax(72px, auto) 1fr; gap: 4px 12px; margin: 0; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.08); }
+.provider-status small { grid-column: 2; color: #98a39d; }
+.settings-message { min-height: 20px; color: #ffc56e; }
+[dir="rtl"] .settings-app { text-align: right; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }

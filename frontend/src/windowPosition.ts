@@ -1,3 +1,5 @@
+import { getCurrentWindow, PhysicalPosition, primaryMonitor } from "@tauri-apps/api/window";
+
 type Position = { x: number; y: number };
 type Size = { width: number; height: number };
 
@@ -22,7 +24,6 @@ export function topRightPosition({ workArea, windowSize, scaleFactor, margin }: 
 export async function positionDashyWindow(margin = 18): Promise<void> {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return;
 
-  const { getCurrentWindow, PhysicalPosition, primaryMonitor } = await import("@tauri-apps/api/window");
   const monitor = await primaryMonitor();
   if (!monitor) return;
 

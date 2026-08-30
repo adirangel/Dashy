@@ -1,0 +1,19 @@
+.visual-fixture-stage {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.visual-fixture-stage.fixture-bright {
+  background:
+    radial-gradient(circle at 27% 28%, rgba(255, 255, 255, .96), transparent 31%),
+    linear-gradient(135deg, #e7eef7 0%, #8ebdd3 48%, #edb9c3 100%);
+}
+
+.visual-fixture-stage.fixture-dark {
+  background:
+    radial-gradient(circle at 26% 42%, rgba(42, 82, 132, .7), transparent 34%),
+    linear-gradient(145deg, #060b16 0%, #112640 51%, #12191c 100%);
+}

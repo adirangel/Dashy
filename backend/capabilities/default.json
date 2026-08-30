@@ -1,10 +1,25 @@
-{
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "main-capability",
-  "description": "Permissions for the local Dashy desktop window",
-  "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "core:window:allow-set-position"
-  ]
-}
+[
+  {
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "main-capability",
+    "description": "Permissions for the Dashy notch window",
+    "windows": ["main"],
+    "permissions": [
+      "core:default",
+      "core:window:allow-set-position",
+      "core:window:allow-start-dragging"
+    ]
+  },
+  {
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "settings-capability",
+    "description": "Permissions for the Dashy settings window",
+    "windows": ["settings"],
+    "permissions": [
+      "core:default",
+      "autostart:allow-enable",
+      "autostart:allow-disable",
+      "autostart:allow-is-enabled"
+    ]
+  }
+]

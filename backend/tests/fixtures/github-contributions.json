@@ -1,0 +1,19 @@
+{
+  "data": {
+    "viewer": {
+      "login": "fixture-user",
+      "contributionsCollection": {
+        "contributionCalendar": {
+          "weeks": [{
+            "contributionDays": [
+              {"date":"2026-08-26","contributionCount":1,"contributionLevel":"FIRST_QUARTILE"},
+              {"date":"2026-08-27","contributionCount":2,"contributionLevel":"SECOND_QUARTILE"},
+              {"date":"2026-08-28","contributionCount":3,"contributionLevel":"THIRD_QUARTILE"},
+              {"date":"2026-08-29","contributionCount":0,"contributionLevel":"NONE"}
+            ]
+          }]
+        }
+      }
+    }
+  }
+}

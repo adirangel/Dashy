@@ -1,6 +1,7 @@
 node_modules/
 dist/
 target/
+backend/gen/
 *.log
 *.tsbuildinfo
 .DS_Store
