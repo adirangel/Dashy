@@ -1,10 +1,13 @@
-import { useEffect, useReducer, useRef, useState, type AnimationEvent, type KeyboardEvent } from "react";
+import {
+  useEffect, useReducer, useRef, useState,
+  type AnimationEvent, type CSSProperties, type KeyboardEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { DashboardSnapshot, ProviderId } from "../dashboard";
 import { useDashboardSnapshot } from "../useDashboardSnapshot";
 import {
   beginNotchExit, completeNotchExit, createExitToken, getCurrentEdgeView, getSettings,
-  isTauriRuntime, listenForEdgeView, setNotchInteraction, showNotchMenu,
+  isTauriRuntime, listenForEdgeView, listenForSettingsChanges, setNotchInteraction, showNotchMenu,
   type EdgePlacement, type EdgeViewState, type ExitToken, type NotchInteraction,
 } from "../window";
 import { GitHubCard } from "./GitHubCard";
@@ -82,6 +85,8 @@ export function NotchApp({
   const dashboard = useDashboardSnapshot();
   const native = isTauriRuntime();
   const [persistedPlacement, setPersistedPlacement] = useState<EdgePlacement>("right");
+  const [enabledProviders, setEnabledProviders] = useState<ProviderId[]>(native ? [] : PROVIDERS);
+  const [settingsReady, setSettingsReady] = useState(!native);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>(selectedProp ?? "claude");
   const initialEdgeView: EdgeViewState = {
     visibility: native ? "hidden" : "card",
@@ -118,12 +123,42 @@ export function NotchApp({
   };
 
   useEffect(() => {
-    if (placementProp || !native) return;
+    if (!native) return;
     let active = true;
-    void getSettings().then((settings) => {
-      if (active) setPersistedPlacement(settings.placement);
-    }).catch(() => undefined);
-    return () => { active = false; };
+    let unlisten: (() => void) | undefined;
+    let eventRevision = 0;
+    const applySettings = (settings: Awaited<ReturnType<typeof getSettings>>) => {
+      if (!placementProp) setPersistedPlacement(settings.placement);
+      setEnabledProviders(PROVIDERS.filter((provider) => settings.enabledProviders.includes(provider)));
+      setSettingsReady(true);
+    };
+    void listenForSettingsChanges((settings) => {
+      if (!active) return;
+      eventRevision += 1;
+      applySettings(settings);
+    }).then(async (stop) => {
+      if (!active) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+      const queryRevision = eventRevision;
+      try {
+        const settings = await getSettings();
+        if (active && eventRevision === queryRevision) applySettings(settings);
+      } catch {
+        if (active && eventRevision === queryRevision) {
+          setEnabledProviders(PROVIDERS);
+          setSettingsReady(true);
+        }
+      }
+    }).catch(() => {
+      if (active) {
+        setEnabledProviders(PROVIDERS);
+        setSettingsReady(true);
+      }
+    });
+    return () => { active = false; unlisten?.(); };
   }, [native, placementProp]);
 
   useEffect(() => {
@@ -172,6 +207,13 @@ export function NotchApp({
   }, [selectedProp]);
 
   useEffect(() => {
+    if (!enabledProviders.includes(selectedProvider) && enabledProviders[0]) {
+      lastSelected.current = enabledProviders[0];
+      setSelectedProvider(enabledProviders[0]);
+    }
+  }, [enabledProviders, selectedProvider]);
+
+  useEffect(() => {
     const armedProvider = focusRestoreArmed.current;
     if (!armedProvider || !isVisibleView(edgeView)) return;
     focusMetric(edgeView.provider ?? armedProvider);
@@ -205,11 +247,14 @@ export function NotchApp({
   const placement = placementProp ?? (native ? (surface.rendered?.placement ?? edgeView.placement) : persistedPlacement);
   const snapshot = snapshotProp !== undefined ? snapshotProp : dashboard.snapshot;
   const selectedIsStale = snapshot?.[selectedProvider].status === "stale";
-  const visible = surface.rendered !== null;
-  const showCard = surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned";
+  const visible = settingsReady && enabledProviders.length > 0 && surface.rendered !== null;
+  const showCard = visible && (surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned");
+  const railExtent = 30 + enabledProviders.length * 80;
+  const selectedIndex = Math.max(0, enabledProviders.indexOf(selectedProvider));
+  const joinOffset = (selectedIndex - (enabledProviders.length - 1) / 2) * 80;
   const logicalSize = showCard
     ? placement === "top" ? "340x430" : "370x360"
-    : placement === "top" ? "270x70" : "70x270";
+    : placement === "top" ? `${railExtent}x70` : `70x${railExtent}`;
   const send = (interaction: NotchInteraction) => {
     if (native) void setNotchInteraction(interaction).catch(() => undefined);
   };
@@ -261,9 +306,9 @@ export function NotchApp({
     if (forward || backward) {
       event.preventDefault();
       const active = (document.activeElement as HTMLElement | null)?.dataset.provider as ProviderId | undefined;
-      const currentIndex = PROVIDERS.indexOf(active ?? selectedProvider);
+      const currentIndex = Math.max(0, enabledProviders.indexOf(active ?? selectedProvider));
       const delta = forward ? 1 : -1;
-      focusProvider(PROVIDERS[(currentIndex + delta + PROVIDERS.length) % PROVIDERS.length]);
+      focusProvider(enabledProviders[(currentIndex + delta + enabledProviders.length) % enabledProviders.length]);
       return;
     }
     if (edgeView.visibility === "pinned" && event.key === "Tab") {
@@ -317,6 +362,10 @@ export function NotchApp({
       data-testid="notch-surface"
       data-placement={placement}
       data-logical-size={logicalSize}
+      style={{
+        "--rail-extent": `${railExtent}px`,
+        "--join-track-offset": `${joinOffset}px`,
+      } as CSSProperties}
       aria-hidden={surface.exit !== null || undefined}
       onAnimationEnd={onSurfaceAnimationEnd}
       onPointerEnter={() => { if (!surface.exit) send({ kind: "enterSafeRegion" }); }}
@@ -329,6 +378,7 @@ export function NotchApp({
     >
       <div className="notch-content" inert={surface.exit !== null}>
       <MetricRail
+        providers={enabledProviders}
         placement={placement}
         snapshot={snapshot}
         selectedProvider={selectedProvider}

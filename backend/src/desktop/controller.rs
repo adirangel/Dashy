@@ -363,6 +363,7 @@ impl DesktopController {
         };
         let surface_enabled =
             settings.onboarding_completed && !settings.enabled_providers.is_empty();
+        let provider_count = u8::try_from(settings.enabled_providers.len()).unwrap_or(u8::MAX);
         let monitors = match self.probe.monitors() {
             Ok(monitors) => monitors,
             Err(error) if !surface_enabled => {
@@ -410,6 +411,7 @@ impl DesktopController {
             placement: settings.placement,
             work_area: selected.work_rect,
             scale: selected.scale,
+            provider_count,
             foreground_fullscreen: fullscreen,
             always_show_over_fullscreen: settings.always_show_over_fullscreen,
             interaction: None,
@@ -434,6 +436,8 @@ impl DesktopController {
                 Some(input) => Some(EdgeInput {
                     cursor: None,
                     placement: settings.placement,
+                    provider_count: u8::try_from(settings.enabled_providers.len())
+                        .unwrap_or(u8::MAX),
                     foreground_fullscreen: false,
                     always_show_over_fullscreen: settings.always_show_over_fullscreen,
                     interaction: None,
@@ -591,6 +595,7 @@ impl DesktopController {
                     base_input.scale,
                     core.machine.state(),
                     core.machine.selected_provider(),
+                    base_input.provider_count,
                 ));
             }
         }

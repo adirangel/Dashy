@@ -6,9 +6,10 @@ import type { EdgeViewState } from "../window";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(), getCurrentEdgeView: vi.fn(), isTauriRuntime: vi.fn(), listenForEdgeView: vi.fn(),
+  listenForSettingsChanges: vi.fn(),
   beginNotchExit: vi.fn(), completeNotchExit: vi.fn(),
   createExitToken: vi.fn(),
-  setNotchInteraction: vi.fn(), showNotchMenu: vi.fn(), unlisten: vi.fn(),
+  setNotchInteraction: vi.fn(), showNotchMenu: vi.fn(), unlisten: vi.fn(), settingsUnlisten: vi.fn(),
   refreshProvider: vi.fn(),
   dashboard: {
     snapshot: null as DashboardSnapshot | null,
@@ -24,6 +25,7 @@ vi.mock("../window", () => ({
   beginNotchExit: mocks.beginNotchExit, completeNotchExit: mocks.completeNotchExit,
   createExitToken: mocks.createExitToken,
   listenForEdgeView: mocks.listenForEdgeView,
+  listenForSettingsChanges: mocks.listenForSettingsChanges,
   setNotchInteraction: mocks.setNotchInteraction, showNotchMenu: mocks.showNotchMenu,
 }));
 vi.mock("../useDashboardSnapshot", () => ({
@@ -43,6 +45,7 @@ const snapshot: DashboardSnapshot = {
   codex: { ...usage, remainingPercent: 68 }, claude: usage, refreshedAt: "2026-08-29T09:00:00Z",
 };
 let edgeHandler: ((view: EdgeViewState) => void) | undefined;
+let settingsHandler: ((settings: Awaited<ReturnType<typeof mocks.getSettings>>) => void) | undefined;
 let exitTokenSequence = 0;
 async function emitEdgeView(view: EdgeViewState) {
   await act(async () => { edgeHandler?.(view); await Promise.resolve(); });
@@ -59,11 +62,13 @@ function fireSurfaceAnimationEnd(element: Element) {
 describe("native notch interaction bridge", () => {
   beforeEach(() => {
     vi.clearAllMocks(); edgeHandler = undefined;
+    settingsHandler = undefined;
     exitTokenSequence = 0;
     mocks.isTauriRuntime.mockReturnValue(true);
     mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     mocks.getCurrentEdgeView.mockResolvedValue({ visibility: "hidden", placement: "right", provider: null });
     mocks.listenForEdgeView.mockImplementation(async (handler: (view: EdgeViewState) => void) => { edgeHandler = handler; return mocks.unlisten; });
+    mocks.listenForSettingsChanges.mockImplementation(async (handler: typeof settingsHandler) => { settingsHandler = handler; return mocks.settingsUnlisten; });
     mocks.setNotchInteraction.mockResolvedValue(undefined);
     mocks.beginNotchExit.mockResolvedValue(true);
     mocks.completeNotchExit.mockResolvedValue(true);
@@ -84,6 +89,83 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByTestId("notch-surface"))
       .toHaveAttribute("data-logical-size", "70x270");
     expect(screen.getByTestId("notch-surface")).not.toHaveClass("is-expanded");
+  });
+
+  it.each([
+    [["claude"], "right", 1, "110", "70x110"],
+    [["claude"], "top", 1, "110", "110x70"],
+    [["claude", "github"], "right", 2, "190", "70x190"],
+    [["claude", "github"], "top", 2, "190", "190x70"],
+    [["claude", "codex", "github"], "right", 3, "270", "70x270"],
+    [["claude", "codex", "github"], "top", 3, "270", "270x70"],
+  ] as const)("renders and sizes only enabled providers %#", async (enabledProviders, placement, count, extent, logicalSize) => {
+    mocks.getSettings.mockResolvedValue({
+      placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+      onboardingCompleted: true, enabledProviders: [...enabledProviders],
+    });
+
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement, provider: null });
+
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /Claude|Codex|GitHub/ })).toHaveLength(count));
+    expect(screen.getByTestId("notch-surface")).toHaveStyle({ "--rail-extent": `${extent}px` });
+    expect(screen.getByTestId("notch-surface")).toHaveAttribute("data-logical-size", logicalSize);
+  });
+
+  it("renders no native surface when every provider is disabled", async () => {
+    mocks.getSettings.mockResolvedValue({
+      placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+      onboardingCompleted: true, enabledProviders: [],
+    });
+
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+
+    await waitFor(() => expect(screen.queryByTestId("notch-surface")).not.toBeInTheDocument());
+    expect(screen.getByTestId("notch-app")).toBeEmptyDOMElement();
+  });
+
+  it("applies settings changes in fixed provider order and keeps selection valid", async () => {
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "card", placement: "right", provider: "codex" });
+    expect(screen.getByRole("heading", { name: "Codex" })).toBeInTheDocument();
+
+    await act(async () => {
+      settingsHandler?.({
+        placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+        onboardingCompleted: true, enabledProviders: ["github", "claude"],
+      });
+      await Promise.resolve();
+    });
+
+    const buttons = screen.getAllByRole("button", { name: /Claude|Codex|GitHub/ });
+    expect(buttons.map((button) => button.dataset.provider)).toEqual(["claude", "github"]);
+    expect(screen.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
+    expect(screen.getByTestId("notch-surface")).toHaveStyle({
+      "--rail-extent": "190px",
+      "--join-track-offset": "-40px",
+    });
+
+    await emitEdgeView({ visibility: "card", placement: "right", provider: "github" });
+    expect(screen.getByTestId("notch-surface")).toHaveStyle({ "--join-track-offset": "40px" });
+  });
+
+  it("wraps arrow-key focus through only enabled providers", async () => {
+    mocks.getSettings.mockResolvedValue({
+      placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+      onboardingCompleted: true, enabledProviders: ["claude", "github"],
+    });
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+    const claude = await screen.findByRole("button", { name: /Claude/i });
+    const github = screen.getByRole("button", { name: /GitHub/i });
+
+    claude.focus();
+    fireEvent.keyDown(screen.getByTestId("notch-surface"), { key: "ArrowUp" });
+    expect(github).toHaveFocus();
+    fireEvent.keyDown(screen.getByTestId("notch-surface"), { key: "ArrowDown" });
+    expect(claude).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /Codex/i })).not.toBeInTheDocument();
   });
 
   it("never calls DOM focus for a passive hidden-to-rail proximity reveal", async () => {
@@ -406,6 +488,7 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
     view.unmount();
     expect(mocks.unlisten).toHaveBeenCalledTimes(1);
+    expect(mocks.settingsUnlisten).toHaveBeenCalledTimes(1);
   });
 
   it("announces only the currently retained provider failure in the live region", async () => {

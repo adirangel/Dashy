@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   providerSetupController: vi.fn(),
   isTauriRuntime: vi.fn(), listenForLocaleChanges: vi.fn(), unlistenLocale: vi.fn(),
   listenForEdgeView: vi.fn(), unlistenEdgeView: vi.fn(),
+  listenForSettingsChanges: vi.fn(), unlistenSettingsChanges: vi.fn(),
   listenForDashboardCacheChanged: vi.fn(), unlistenDashboardCacheChanged: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock("./window", () => ({
   listMonitors: mocks.listMonitors, setTrayLabels: mocks.setTrayLabels, updateSettings: vi.fn(),
   isTauriRuntime: mocks.isTauriRuntime, listenForLocaleChanges: mocks.listenForLocaleChanges,
   listenForEdgeView: mocks.listenForEdgeView, setNotchInteraction: vi.fn(),
+  listenForSettingsChanges: mocks.listenForSettingsChanges,
   listenForDashboardCacheChanged: mocks.listenForDashboardCacheChanged,
   showNotchMenu: vi.fn(),
 }));
@@ -39,6 +41,7 @@ describe("window routing", () => {
     mocks.isTauriRuntime.mockReturnValue(true);
     mocks.listenForLocaleChanges.mockResolvedValue(mocks.unlistenLocale);
     mocks.listenForEdgeView.mockResolvedValue(mocks.unlistenEdgeView);
+    mocks.listenForSettingsChanges.mockResolvedValue(mocks.unlistenSettingsChanges);
     mocks.listenForDashboardCacheChanged.mockResolvedValue(mocks.unlistenDashboardCacheChanged);
     mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     mocks.completeOnboarding.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });

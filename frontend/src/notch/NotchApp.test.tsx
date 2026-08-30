@@ -99,6 +99,7 @@ describe("compact metric rail", () => {
           },
         };
       render(<MetricRail
+        providers={["claude", "codex", "github"]}
         placement="top"
         snapshot={statusSnapshot}
         selectedProvider="claude"
@@ -139,6 +140,7 @@ describe("compact metric rail", () => {
       },
     };
     render(<MetricRail
+      providers={["claude", "codex", "github"]}
       placement="right"
       snapshot={withoutToday}
       selectedProvider="github"
@@ -164,6 +166,7 @@ describe("compact metric rail", () => {
       },
     };
     render(<MetricRail
+      providers={["claude", "codex", "github"]}
       placement="right"
       snapshot={zeroToday}
       selectedProvider="github"

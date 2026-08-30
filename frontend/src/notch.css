@@ -26,7 +26,7 @@
 .placement-right:not(.is-expanded),
 .placement-left:not(.is-expanded) {
   width: 70px;
-  height: 270px;
+  height: var(--rail-extent);
 }
 
 .placement-right.is-expanded,
@@ -42,7 +42,7 @@
 }
 
 .placement-top:not(.is-expanded) {
-  width: 270px;
+  width: var(--rail-extent);
   height: 70px;
 }
 
@@ -97,7 +97,7 @@
 .placement-right .metric-rail,
 .placement-left .metric-rail {
   width: 70px;
-  height: 270px;
+  height: var(--rail-extent);
   padding: 11px 3px;
   flex-direction: column;
 }
@@ -124,7 +124,7 @@
 
 .placement-top .metric-rail {
   inset-block-start: 0;
-  width: 270px;
+  width: var(--rail-extent);
   height: 70px;
   padding: 3px 11px;
   flex-direction: row;
@@ -276,10 +276,6 @@
   pointer-events: none;
   transition: inset-block-start 160ms ease, left 160ms ease;
 }
-
-.notch-join[data-provider="claude"] { --join-track-offset: -80px; }
-.notch-join[data-provider="codex"] { --join-track-offset: 0px; }
-.notch-join[data-provider="github"] { --join-track-offset: 80px; }
 
 .placement-right .notch-join {
   right: 61px;

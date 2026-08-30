@@ -10,8 +10,6 @@ pub const REVEAL_DWELL: Duration = Duration::from_millis(100);
 pub const CLOSE_GRACE: Duration = Duration::from_millis(420);
 
 const SIDE_RAIL_WIDTH: u32 = 70;
-const SIDE_RAIL_HEIGHT: u32 = 270;
-const TOP_RAIL_WIDTH: u32 = 270;
 const TOP_RAIL_HEIGHT: u32 = 70;
 const CARD_WIDTH: u32 = 300;
 const TOP_CARD_WIDTH: u32 = 340;
@@ -227,6 +225,7 @@ pub struct EdgeInput {
     pub placement: EdgePlacement,
     pub work_area: MonitorWorkArea,
     pub scale: MonitorScale,
+    pub provider_count: u8,
     pub foreground_fullscreen: bool,
     pub always_show_over_fullscreen: bool,
     pub interaction: Option<EdgeInteraction>,
@@ -315,6 +314,7 @@ struct LayoutContext {
     placement: EdgePlacement,
     work_area: MonitorWorkArea,
     scale: MonitorScale,
+    provider_count: u8,
 }
 
 #[derive(Debug)]
@@ -362,6 +362,7 @@ impl EdgeMachine {
             placement: input.placement,
             work_area: input.work_area,
             scale: input.scale,
+            provider_count: input.provider_count,
         };
         let previous_context = self.last_context.unwrap_or(context);
         let previous_view = self.view_state(previous_context.placement);
@@ -371,6 +372,7 @@ impl EdgeMachine {
             previous_context.scale,
             self.state,
             self.selected_provider,
+            previous_context.provider_count,
         );
 
         if self.last_context.is_some_and(|last| last != context) {
@@ -397,6 +399,7 @@ impl EdgeMachine {
             input.scale,
             self.state,
             self.selected_provider,
+            input.provider_count,
         );
         let mut effects = Vec::with_capacity(2);
         if native_layout_changed(previous_layout, next_layout) {
@@ -606,15 +609,26 @@ pub fn visible_rect_scaled(
     scale: MonitorScale,
     state: EdgeUiState,
 ) -> Rect {
+    visible_rect_scaled_for_provider_count(placement, work_area, scale, state, 3)
+}
+
+fn visible_rect_scaled_for_provider_count(
+    placement: EdgePlacement,
+    work_area: MonitorWorkArea,
+    scale: MonitorScale,
+    state: EdgeUiState,
+    provider_count: u8,
+) -> Rect {
     let expanded = matches!(state, EdgeUiState::CardVisible | EdgeUiState::Pinned);
     let work_right = coordinate_end(work_area.x, work_area.width);
+    let rail_extent = rail_logical_extent(provider_count);
     let side_rail_width = scale.logical_to_physical(SIDE_RAIL_WIDTH);
-    let side_rail_height = scale.logical_to_physical(SIDE_RAIL_HEIGHT);
-    let top_rail_width = scale.logical_to_physical(TOP_RAIL_WIDTH);
+    let side_rail_height = scale.logical_to_physical(rail_extent);
+    let top_rail_width = scale.logical_to_physical(rail_extent);
     let top_rail_height = scale.logical_to_physical(TOP_RAIL_HEIGHT);
     let side_card_width = scale.logical_to_physical(SIDE_RAIL_WIDTH + CARD_WIDTH);
-    let side_card_height = scale.logical_to_physical(CARD_HEIGHT.max(SIDE_RAIL_HEIGHT));
-    let top_card_width = scale.logical_to_physical(TOP_CARD_WIDTH.max(TOP_RAIL_WIDTH));
+    let side_card_height = scale.logical_to_physical(CARD_HEIGHT.max(rail_extent));
+    let top_card_width = scale.logical_to_physical(TOP_CARD_WIDTH.max(rail_extent));
     let top_card_height = scale.logical_to_physical(TOP_RAIL_HEIGHT + CARD_HEIGHT);
     match (placement, expanded) {
         (EdgePlacement::Right, false) => {
@@ -686,7 +700,7 @@ pub fn window_layout(
     state: EdgeUiState,
     provider: Option<ProviderId>,
 ) -> WindowLayout {
-    window_layout_scaled(placement, work_area, MonitorScale::ONE, state, provider)
+    window_layout_scaled(placement, work_area, MonitorScale::ONE, state, provider, 3)
 }
 
 pub fn window_layout_scaled(
@@ -695,15 +709,16 @@ pub fn window_layout_scaled(
     scale: MonitorScale,
     state: EdgeUiState,
     provider: Option<ProviderId>,
+    provider_count: u8,
 ) -> WindowLayout {
     let visible = matches!(
         state,
         EdgeUiState::RailVisible | EdgeUiState::CardVisible | EdgeUiState::Pinned
     );
     let rect = if visible {
-        visible_rect_scaled(placement, work_area, scale, state)
+        visible_rect_scaled_for_provider_count(placement, work_area, scale, state, provider_count)
     } else {
-        hidden_rect(placement, work_area, scale)
+        hidden_rect(placement, work_area, scale, provider_count)
     };
     let provider = if matches!(state, EdgeUiState::CardVisible | EdgeUiState::Pinned) {
         provider
@@ -742,8 +757,19 @@ fn native_layout_changed(previous: WindowLayout, next: WindowLayout) -> bool {
         || previous.placement != next.placement
 }
 
-fn hidden_rect(placement: EdgePlacement, work_area: MonitorWorkArea, scale: MonitorScale) -> Rect {
-    let rail = visible_rect_scaled(placement, work_area, scale, EdgeUiState::RailVisible);
+fn hidden_rect(
+    placement: EdgePlacement,
+    work_area: MonitorWorkArea,
+    scale: MonitorScale,
+    provider_count: u8,
+) -> Rect {
+    let rail = visible_rect_scaled_for_provider_count(
+        placement,
+        work_area,
+        scale,
+        EdgeUiState::RailVisible,
+        provider_count,
+    );
     match placement {
         EdgePlacement::Right => Rect {
             x: coordinate_end(work_area.x, work_area.width),
@@ -768,6 +794,10 @@ fn hidden_rect(placement: EdgePlacement, work_area: MonitorWorkArea, scale: Moni
 
 fn coordinate_end(start: i32, length: u32) -> i32 {
     (i64::from(start) + i64::from(length)).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn rail_logical_extent(provider_count: u8) -> u32 {
+    30 + 80 * u32::from(provider_count.clamp(1, 3))
 }
 
 fn subtract_from_end(start: i32, length: u32, amount: u32) -> i32 {
@@ -795,12 +825,63 @@ mod tests {
         MonitorWorkArea::new(0, 0, 1920, 1040).unwrap()
     }
 
+    #[test]
+    fn rail_extent_tracks_enabled_provider_count() {
+        assert_eq!(rail_logical_extent(1), 110);
+        assert_eq!(rail_logical_extent(2), 190);
+        assert_eq!(rail_logical_extent(3), 270);
+    }
+
+    #[test]
+    fn provider_count_sizes_each_collapsed_placement_without_changing_expanded_bounds() {
+        for (provider_count, extent) in [(1, 110), (2, 190), (3, 270)] {
+            let side_rail = window_layout_scaled(
+                EdgePlacement::Right,
+                work(),
+                MonitorScale::ONE,
+                EdgeUiState::RailVisible,
+                None,
+                provider_count,
+            );
+            let top_rail = window_layout_scaled(
+                EdgePlacement::Top,
+                work(),
+                MonitorScale::ONE,
+                EdgeUiState::RailVisible,
+                None,
+                provider_count,
+            );
+            let side_card = window_layout_scaled(
+                EdgePlacement::Right,
+                work(),
+                MonitorScale::ONE,
+                EdgeUiState::CardVisible,
+                Some(ProviderId::Claude),
+                provider_count,
+            );
+            let top_card = window_layout_scaled(
+                EdgePlacement::Top,
+                work(),
+                MonitorScale::ONE,
+                EdgeUiState::CardVisible,
+                Some(ProviderId::Claude),
+                provider_count,
+            );
+
+            assert_eq!((side_rail.size.width, side_rail.size.height), (70, extent));
+            assert_eq!((top_rail.size.width, top_rail.size.height), (extent, 70));
+            assert_eq!((side_card.size.width, side_card.size.height), (370, 360));
+            assert_eq!((top_card.size.width, top_card.size.height), (340, 430));
+        }
+    }
+
     fn idle(cursor: Option<Point>) -> EdgeInput {
         EdgeInput {
             cursor,
             placement: EdgePlacement::Right,
             work_area: work(),
             scale: MonitorScale::ONE,
+            provider_count: 3,
             foreground_fullscreen: false,
             always_show_over_fullscreen: false,
             interaction: None,

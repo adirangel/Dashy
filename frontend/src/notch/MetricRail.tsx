@@ -7,9 +7,8 @@ import { ProgressRing } from "./ProgressRing";
 import { ProviderGlyph } from "./ProviderGlyph";
 import { statusTranslationKey, type ProviderViewStatus } from "./ProviderCard";
 
-const PROVIDERS: ProviderId[] = ["claude", "codex", "github"];
-
 type MetricRailProps = {
+  providers: ProviderId[];
   placement: EdgePlacement;
   snapshot: DashboardSnapshot | null;
   selectedProvider: ProviderId;
@@ -29,6 +28,7 @@ function statusValue(status: ProviderViewStatus, t: (key: string) => string) {
 }
 
 export function MetricRail({
+  providers,
   placement,
   snapshot,
   selectedProvider,
@@ -43,7 +43,7 @@ export function MetricRail({
   const orientation = placement === "top" ? "horizontal" : "vertical";
 
   return <nav className="metric-rail" aria-label={t("settings.providerStatus")} aria-orientation={orientation} role="toolbar">
-    {PROVIDERS.map((provider) => {
+    {providers.map((provider) => {
       const status = viewStatus(snapshot, provider);
       const entry = snapshot?.[provider];
       const isGitHub = provider === "github";

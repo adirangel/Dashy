@@ -295,6 +295,26 @@ fn incomplete_onboarding_keeps_the_native_surface_hidden() {
 }
 
 #[test]
+fn enabled_provider_changes_resize_the_collapsed_native_surface() {
+    let fixture = Fixture::new();
+    fixture.settings.set(AppSettings {
+        enabled_providers: vec![ProviderId::Claude, ProviderId::GitHub],
+        ..configured_settings()
+    });
+    fixture.controller.show_explicit();
+    assert!(fixture.controller.step(Duration::ZERO).is_empty());
+    assert_eq!(last_layout(&fixture.window.actions()).size.height, 190);
+
+    fixture.window.clear();
+    fixture.settings.set(AppSettings {
+        enabled_providers: vec![ProviderId::Claude],
+        ..configured_settings()
+    });
+    assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
+    assert_eq!(last_layout(&fixture.window.actions()).size.height, 110);
+}
+
+#[test]
 fn monitor_enumeration_failure_cannot_keep_a_disabled_surface_visible() {
     let fixture = Fixture::new();
     fixture.show(Duration::ZERO);
