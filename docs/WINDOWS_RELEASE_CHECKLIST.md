@@ -18,6 +18,8 @@ not treat a developer workstation as a clean-machine result.
       and `frontend/package-lock.json` (five reviewed files total).
 - [ ] The matching release tag was created once for the version commit; no existing
       tag was moved, deleted, or reused.
+- [ ] An active GitHub tag ruleset covers the release-tag namespace and blocks tag
+      updates and deletions without granting the release workflow a bypass.
 - [ ] `npm run test:release` passes for the release tag.
 - [ ] Frontend tests pass.
 - [ ] Frontend production build passes.
@@ -34,6 +36,9 @@ not treat a developer workstation as a clean-machine result.
       artifact digest, and the release step revalidated file names, sizes, SHA-256
       values, checksum content, and digest metadata format.
 - [ ] The tagged `release-windows.yml` run completed successfully.
+- [ ] The release job resolved the live lightweight or annotated tag through the
+      commits API and matched its peeled commit to the triggering workflow SHA both
+      immediately before mutation and after final asset/metadata verification.
 - [ ] The GitHub Release remains a draft during review and smoke testing.
 - [ ] The draft contains exactly one `.msi` asset and its one matching
       `.msi.sha256` asset, with no NSIS installer or plain executable.

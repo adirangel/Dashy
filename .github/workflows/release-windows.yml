@@ -207,6 +207,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
           RELEASE_ASSET_DIRECTORY: ${{ runner.temp }}/dashy-release-assets
           BUILD_ARTIFACT_DIGEST: ${{ needs.build-windows.outputs.artifact_digest }}
           BUILD_MSI_NAME: ${{ needs.build-windows.outputs.msi_name }}
@@ -222,13 +224,19 @@ jobs:
             Complete the Windows release checklist before publishing this draft.
         run: |
           $tag = $env:RELEASE_TAG
-          $repo = $env:GITHUB_REPOSITORY
+          $repo = $env:RELEASE_REPOSITORY
+          $expectedReleaseSha = $env:EXPECTED_RELEASE_SHA
           $releaseDirectory = $env:RELEASE_ASSET_DIRECTORY
 
           if ($tag -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
             throw "Refusing non-semantic release tag."
           }
-          if (-not $repo) { throw "GITHUB_REPOSITORY is unavailable." }
+          if ($repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+            throw "The release repository is unavailable or malformed."
+          }
+          if ($expectedReleaseSha -notmatch '^[0-9a-f]{40}$') {
+            throw "The triggering release commit is unavailable or malformed."
+          }
           if (-not (Test-Path -LiteralPath $releaseDirectory -PathType Container)) {
             throw "The downloaded release payload is unavailable."
           }
@@ -327,6 +335,32 @@ jobs:
             }
           }
 
+          function Assert-LiveReleaseTag {
+            $commitJson = & gh api `
+              --method GET `
+              -H "Accept: application/vnd.github+json" `
+              -H "X-GitHub-Api-Version: 2022-11-28" `
+              "repos/$repo/commits/$tag" 2>$null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not resolve the live release tag."
+            }
+
+            try {
+              $liveCommit = $commitJson | ConvertFrom-Json -ErrorAction Stop
+            } catch {
+              throw "The live release tag response is malformed."
+            }
+            $liveSha = ([string]$liveCommit.sha).Trim()
+            if ($liveSha -notmatch '^[0-9a-f]{40}$') {
+              throw "The live release tag commit is unavailable or malformed."
+            }
+            if ($liveSha -cne $expectedReleaseSha) {
+              throw "The release tag no longer points to the triggering commit."
+            }
+          }
+
+          Assert-LiveReleaseTag
+
           $releaseJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,name,body,assets 2>$null
           $releaseExists = $LASTEXITCODE -eq 0
           if (-not $releaseExists) {
@@ -345,10 +379,12 @@ jobs:
             if ($remoteNames -cnotcontains $requiredMsiName) { $missingPaths += $msiPath }
             if ($remoteNames -cnotcontains "$requiredMsiName.sha256") { $missingPaths += $checksumPath }
             if ($missingPaths.Count) {
+              Assert-LiveReleaseTag
               & gh release upload $tag @missingPaths --repo $repo
               if ($LASTEXITCODE -ne 0) { throw "Release asset upload failed." }
             }
           } else {
+            Assert-LiveReleaseTag
             & gh release create $tag $msiPath $checksumPath `
               --repo $repo `
               --draft `
@@ -370,3 +406,4 @@ jobs:
               throw "Draft release is missing $expectedName."
             }
           }
+          Assert-LiveReleaseTag

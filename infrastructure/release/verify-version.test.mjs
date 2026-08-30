@@ -119,13 +119,16 @@ async function runReleaseScenario(script, scenario, { initialRelease, corruptHas
   const finalRelease = releaseRecord({ assets: fullAssets });
   const mockPrelude = String.raw`
 $script:mockViewCount = 0
+$script:mockTagCheckCount = 0
 function gh {
   $call = @($args) -join '|'
   Add-Content -LiteralPath $env:MOCK_GH_LOG -Value $call
   if ($args[0] -ceq 'release' -and $args[1] -ceq 'view') {
     $script:mockViewCount += 1
     if ($script:mockViewCount -eq 1) {
-      if ($env:MOCK_GH_SCENARIO -ceq 'new' -or $env:MOCK_GH_SCENARIO -ceq 'network-error') {
+      if ($env:MOCK_GH_SCENARIO -ceq 'new' -or
+          $env:MOCK_GH_SCENARIO -ceq 'network-error' -or
+          $env:MOCK_GH_SCENARIO -ceq 'moved-before-mutation') {
         $global:LASTEXITCODE = 1
         return
       }
@@ -138,7 +141,23 @@ function gh {
     return
   }
   if ($args[0] -ceq 'api') {
-    if ($env:MOCK_GH_SCENARIO -ceq 'new') {
+    if ($args[-1] -match '/commits/') {
+      $script:mockTagCheckCount += 1
+      if ($env:MOCK_GH_SCENARIO -ceq 'missing-tag') {
+        Write-Output 'gh: Not Found (HTTP 404)'
+        $global:LASTEXITCODE = 1
+        return
+      }
+      $sha = $env:EXPECTED_RELEASE_SHA
+      if (($env:MOCK_GH_SCENARIO -ceq 'moved-before-mutation' -and $script:mockTagCheckCount -ge 2) -or
+          ($env:MOCK_GH_SCENARIO -ceq 'moved-before-final' -and $script:mockTagCheckCount -ge 2)) {
+        $sha = 'cccccccccccccccccccccccccccccccccccccccc'
+      }
+      Write-Output (@{ sha = $sha } | ConvertTo-Json -Compress)
+      $global:LASTEXITCODE = 0
+      return
+    }
+    if ($env:MOCK_GH_SCENARIO -ceq 'new' -or $env:MOCK_GH_SCENARIO -ceq 'moved-before-mutation') {
       Write-Output 'gh: Not Found (HTTP 404)'
     } else {
       Write-Output 'gh: service unavailable (HTTP 503)'
@@ -159,6 +178,8 @@ function gh {
     MOCK_INITIAL_RELEASE: initialRelease ?? finalRelease,
     MOCK_FINAL_RELEASE: finalRelease,
     RELEASE_TAG: "v0.1.0",
+    RELEASE_REPOSITORY: "owner/Dashy",
+    EXPECTED_RELEASE_SHA: "b".repeat(40),
     GITHUB_REPOSITORY: "owner/Dashy",
     RELEASE_ASSET_DIRECTORY: assetDirectory,
     BUILD_ARTIFACT_DIGEST: "a".repeat(64),
@@ -441,6 +462,8 @@ test("workflow isolates repository execution from the write-scoped release job",
   assert.match(build, /^    permissions:\n      contents: read$/m);
   assert.match(release, /^    needs: build-windows$/m);
   assert.match(release, /^    permissions:\n      contents: write$/m);
+  assert.match(release, /RELEASE_REPOSITORY: \$\{\{ github\.repository \}\}/);
+  assert.match(release, /EXPECTED_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
   assert.ok(
     build.indexOf("name: Require release commit on origin/main")
       < build.indexOf("name: Install Node.js"),
@@ -464,6 +487,7 @@ test("workflow isolates repository execution from the write-scoped release job",
   assert.doesNotMatch(build, /secrets\.|contents: write/);
   assert.doesNotMatch(release, /actions\/checkout|setup-node|rust-toolchain|tauri-action/);
   assert.doesNotMatch(release, /(?:^|\s)(?:npm|node|cargo|git)\s|Invoke-Expression|Start-Process/im);
+  assert.doesNotMatch(release, /--clobber|release\s+delete|asset\s+delete|Remove-Item/i);
   assert.equal((release.match(/^      - name:/gm) ?? []).length, 2);
   assert.equal((release.match(/^        run: \|$/gm) ?? []).length, 1);
   assert.equal((source.match(/secrets\.GITHUB_TOKEN/g) ?? []).length, 1);
@@ -623,6 +647,7 @@ test("release step mutates only a verified draft with the exact transferred payl
 
   const created = await runReleaseScenario(script, "new");
   assert.equal(created.result.status, 0, created.result.stderr || created.result.stdout);
+  assert.match(created.log, /^api\|.*repos\/owner\/Dashy\/commits\/v0\.1\.0$/m);
   assert.match(created.log, /^release\|create\|/m);
   assert.doesNotMatch(created.log, /^release\|upload\|/m);
 
@@ -666,6 +691,21 @@ test("release step mutates only a verified draft with the exact transferred payl
   assert.notEqual(networkFailure.result.status, 0);
   assert.match(networkFailure.result.stderr, /safely determine whether the release exists/);
   assert.doesNotMatch(networkFailure.log, /^release\|(create|upload)\|/m);
+
+  const missingTag = await runReleaseScenario(script, "missing-tag");
+  assert.notEqual(missingTag.result.status, 0);
+  assert.match(missingTag.result.stderr, /Could not resolve the live release tag/i);
+  assert.doesNotMatch(missingTag.log, /^release\|(create|upload)\|/m);
+
+  const movedBeforeMutation = await runReleaseScenario(script, "moved-before-mutation");
+  assert.notEqual(movedBeforeMutation.result.status, 0);
+  assert.match(movedBeforeMutation.result.stderr, /no longer points to the triggering commit/i);
+  assert.doesNotMatch(movedBeforeMutation.log, /^release\|(create|upload)\|/m);
+
+  const movedBeforeFinal = await runReleaseScenario(script, "moved-before-final");
+  assert.notEqual(movedBeforeFinal.result.status, 0);
+  assert.match(movedBeforeFinal.result.stderr, /no longer points to the triggering commit/i);
+  assert.doesNotMatch(movedBeforeFinal.log, /^release\|(create|upload)\|/m);
 
   const corruptTransfer = await runReleaseScenario(script, "complete", {
     corruptHash: true,

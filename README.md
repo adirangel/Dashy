@@ -279,6 +279,14 @@ Release tags are immutable. Start from an up-to-date `main` checkout and choose 
 new, unused semantic version such as `0.2.0`; never move, delete, or reuse an
 existing release tag.
 
+Before starting a release, require an active GitHub tag ruleset that targets the
+release-tag namespace (for example `refs/tags/v*`) and restricts both updates and
+deletions. Do not give the release workflow a bypass. The workflow resolves the
+live lightweight or annotated tag through GitHub's commits API immediately before
+any draft mutation and checks it again after final asset/metadata verification, but
+that fail-closed check cannot by itself make a movable tag atomic with a Release
+API call. The enforced tag ruleset is the external control that closes that race.
+
 1. Change the exact same `MAJOR.MINOR.PATCH` value in all three release manifests:
    - `backend/tauri.conf.json`
    - `backend/Cargo.toml`
@@ -421,7 +429,9 @@ existing release tag.
    only that MSI and its matching checksum through immutable-pinned official
    artifact actions. A separate job with only `contents: write` downloads and
    revalidates those exact files before creating or recovering the draft; it does
-   not check out or execute repository code. A draft can remain partial or blocked
+   not check out or execute repository code. Before any create/upload operation and
+   again after final draft verification, it requires the live tag's peeled commit
+   to equal the triggering workflow SHA. A draft can remain partial or blocked
    while that workflow is still running or has failed; do not publish or manually
    complete it.
 5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
