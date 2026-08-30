@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { getDashboardSnapshot, type DashboardSnapshot, type ProviderId, type ProviderStatus } from "../dashboard";
-import i18n, { SUPPORTED_LOCALES, formatDateTime, resolveLocale, setLocale, type SupportedLocale } from "../i18n";
+import { getDashboardSnapshot, type ProviderId } from "../dashboard";
+import i18n, { SUPPORTED_LOCALES, resolveLocale, setLocale, type SupportedLocale } from "../i18n";
+import { ProviderManager } from "../setup/ProviderManager";
+import { useProviderSetup } from "../setup/useProviderSetup";
 import {
   getSettings,
   emitLocaleChanged,
@@ -15,8 +17,6 @@ import {
   type SettingsPatch,
   type TrayLabels,
 } from "../window";
-
-const PROVIDERS: ProviderId[] = ["claude", "codex", "github"];
 
 export function translatedTrayLabels(locale: SupportedLocale): TrayLabels {
   const translate = i18n.getFixedT(locale);
@@ -36,32 +36,6 @@ async function applyTrayLocale(locale: SupportedLocale) {
 
 function languageName(locale: SupportedLocale): string {
   return new Intl.DisplayNames([locale], { type: "language" }).of(locale) ?? locale;
-}
-
-function providerStatus(snapshot: DashboardSnapshot, provider: ProviderId): ProviderStatus {
-  return snapshot[provider].status;
-}
-
-function ProviderState({ snapshot, provider }: { snapshot: DashboardSnapshot | null; provider: ProviderId }) {
-  const { t } = useTranslation();
-  const name = t(`providers.${provider}`);
-  if (snapshot === null) return <p><strong>{name}</strong><span>{t("status.loading")}</span></p>;
-
-  const entry = snapshot[provider];
-  const status = providerStatus(snapshot, provider);
-  const statusKey = status === "notAuthenticated" ? "signInRequired" : status;
-  const statusText = status === "connected"
-    ? entry.lastSuccessfulRefresh ? t("status.lastUpdated", { time: formatDateTime(entry.lastSuccessfulRefresh) }) : ""
-    : t(`status.${statusKey}`);
-  const guidance = status === "notInstalled"
-    ? t(`guidance.install${provider === "github" ? "GitHub" : provider[0].toUpperCase() + provider.slice(1)}`)
-    : status === "notAuthenticated"
-      ? t(`guidance.signIn${provider === "github" ? "GitHub" : provider[0].toUpperCase() + provider.slice(1)}`)
-      : status === "unavailable" || status === "stale"
-        ? t("guidance.retryLater", { provider: name })
-        : "";
-
-  return <p><strong>{name}</strong>{statusText && <span>{statusText}</span>}{guidance && <small>{guidance}</small>}</p>;
 }
 
 function StartupCheckbox({
@@ -90,10 +64,10 @@ function StartupCheckbox({
 
 export function SettingsApp() {
   const { t } = useTranslation();
+  const providerSetup = useProviderSetup();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [startup, setStartup] = useState<boolean | null>(null);
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -120,9 +94,6 @@ export function SettingsApp() {
         setStartup(startupEnabled);
       })
       .catch(showOptionalFailure);
-    void getDashboardSnapshot(false)
-      .then((loadedSnapshot) => { if (active) setSnapshot(loadedSnapshot); })
-      .catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -189,10 +160,14 @@ export function SettingsApp() {
       setBusy(false);
     }
   };
+  const saveProviders = async (enabledProviders: ProviderId[]) => {
+    const saved = await save({ enabledProviders });
+    if (saved) setSettings(saved);
+  };
   const refreshAll = async () => {
     setBusy(true);
     setMessage("");
-    try { setSnapshot(await getDashboardSnapshot(true)); }
+    try { await getDashboardSnapshot(true); }
     catch { setMessage(t("guidance.retryLater", { provider: "Dashy" })); }
     finally { setBusy(false); }
   };
@@ -224,9 +199,16 @@ export function SettingsApp() {
       <label className="settings-toggle"><input type="checkbox" checked={settings.alwaysShowOverFullscreen} disabled={busy} onChange={(event) => { void save({ alwaysShowOverFullscreen: event.target.checked }); }} />{t("settings.fullscreen")}</label>
       <label className="settings-toggle"><StartupCheckbox state={startup} disabled={busy} onChange={() => { void toggleStartup(); }} />{t("settings.startup")}</label>
     </section>
-    <section className="provider-status" aria-labelledby="provider-status-title">
-      <div><h2 id="provider-status-title">{t("settings.providerStatus")}</h2><button type="button" disabled={busy} onClick={() => { void refreshAll(); }}>{t("actions.refreshAll")}</button></div>
-      {PROVIDERS.map((provider) => <ProviderState key={provider} provider={provider} snapshot={snapshot} />)}
+    <section className="provider-settings" aria-labelledby="provider-status-title">
+      <div className="provider-settings-header">
+        <h2 id="provider-status-title">{t("settings.providerStatus")}</h2>
+        <button type="button" disabled={busy} onClick={() => { void refreshAll(); }}>{t("actions.refreshAll")}</button>
+      </div>
+      <ProviderManager
+        controller={providerSetup}
+        enabledProviders={settings.enabledProviders}
+        onEnabledChange={(enabledProviders) => { void saveProviders(enabledProviders); }}
+      />
     </section>
     <p className="settings-message" role="status" aria-live="polite">{message}</p>
   </main>;

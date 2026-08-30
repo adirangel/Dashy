@@ -2,11 +2,13 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSnapshot } from "../dashboard";
+import type { ProviderSetupState } from "../setup/api";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(), updateSettings: vi.fn(), listMonitors: vi.fn(), setTrayLabels: vi.fn(),
   getDashboardSnapshot: vi.fn(), enable: vi.fn(), disable: vi.fn(), isEnabled: vi.fn(),
   emitLocaleChanged: vi.fn(),
+  getProviderSetupStates: vi.fn(), installProvider: vi.fn(), loginProvider: vi.fn(),
 }));
 
 vi.mock("../window", () => ({
@@ -21,6 +23,15 @@ vi.mock("../dashboard", async (importOriginal) => {
 vi.mock("@tauri-apps/plugin-autostart", () => ({
   enable: mocks.enable, disable: mocks.disable, isEnabled: mocks.isEnabled,
 }));
+vi.mock("../setup/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../setup/api")>();
+  return {
+    ...original,
+    getProviderSetupStates: mocks.getProviderSetupStates,
+    installProvider: mocks.installProvider,
+    loginProvider: mocks.loginProvider,
+  };
+});
 
 import { localeResources, setLocale, SUPPORTED_LOCALES } from "../i18n";
 import { SettingsApp, translatedTrayLabels } from "./SettingsApp";
@@ -41,6 +52,32 @@ const providerSnapshot: DashboardSnapshot = {
   claude: { status: "notInstalled", remainingPercent: null, shortWindow: null, weeklyWindow: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-claude-error" },
   refreshedAt: null,
 };
+const providerSetupStates: ProviderSetupState[] = [
+  {
+    definition: {
+      provider: "claude", publisher: "Anthropic", packageId: "Anthropic.ClaudeCode",
+      installCommand: "winget install --id Anthropic.ClaudeCode", installUrl: "https://code.claude.com/docs/en/setup",
+      loginCommand: "claude auth login --claudeai",
+    },
+    status: "connected",
+  },
+  {
+    definition: {
+      provider: "codex", publisher: "OpenAI", packageId: "OpenAI.Codex",
+      installCommand: "winget install --id OpenAI.Codex", installUrl: "https://learn.chatgpt.com/docs/codex/cli",
+      loginCommand: "codex login",
+    },
+    status: "connected",
+  },
+  {
+    definition: {
+      provider: "github", publisher: "GitHub", packageId: "GitHub.cli",
+      installCommand: "winget install --id GitHub.cli", installUrl: "https://cli.github.com/",
+      loginCommand: "gh auth login --web",
+    },
+    status: "connected",
+  },
+];
 
 describe("SettingsApp", () => {
   beforeEach(async () => {
@@ -50,6 +87,9 @@ describe("SettingsApp", () => {
     mocks.listMonitors.mockResolvedValue(monitors);
     mocks.isEnabled.mockResolvedValue(false);
     mocks.getDashboardSnapshot.mockResolvedValue(providerSnapshot);
+    mocks.getProviderSetupStates.mockResolvedValue(providerSetupStates);
+    mocks.installProvider.mockResolvedValue(providerSetupStates[0]);
+    mocks.loginProvider.mockResolvedValue(providerSetupStates[0]);
     mocks.updateSettings.mockImplementation(async (patch: Record<string, unknown>) => ({ ...initialSettings, ...patch }));
     mocks.setTrayLabels.mockResolvedValue(undefined);
     mocks.emitLocaleChanged.mockResolvedValue(undefined);
@@ -91,13 +131,36 @@ describe("SettingsApp", () => {
     expect(screen.getByLabelText("Language").querySelectorAll("option")).toHaveLength(8);
   });
 
-  it("keeps settings usable when the initial provider refresh fails", async () => {
-    mocks.getDashboardSnapshot.mockRejectedValue(new Error("provider process failed"));
+  it("offers repair actions without exposing raw native errors", async () => {
+    mocks.getProviderSetupStates.mockRejectedValue(new Error("token=raw-secret"));
     render(<SettingsApp />);
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Placement")).toHaveValue("right");
-    expect(document.body.textContent).not.toContain("provider process failed");
+    expect(await screen.findByText("Provider setup needs attention.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it("persists an independently enabled provider set from Settings", async () => {
+    render(<SettingsApp />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" }));
+
+    await waitFor(() => expect(mocks.updateSettings)
+      .toHaveBeenCalledWith({ enabledProviders: ["claude", "codex"] }));
+  });
+
+  it("keeps the last confirmed provider set when persistence fails", async () => {
+    mocks.updateSettings.mockRejectedValue(new Error("token=raw-settings-secret"));
+    render(<SettingsApp />);
+
+    const github = await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" });
+    fireEvent.click(github);
+
+    await waitFor(() => expect(mocks.updateSettings)
+      .toHaveBeenCalledWith({ enabledProviders: ["claude", "codex"] }));
+    expect(github).toBeChecked();
+    expect(document.body.textContent).not.toContain("raw-settings-secret");
   });
 
   it("persists placement, monitor, language, and fullscreen choices", async () => {
@@ -209,12 +272,9 @@ describe("SettingsApp", () => {
     expect(screen.queryByText("startup registry unavailable")).not.toBeInTheDocument();
   });
 
-  it("forces a full refresh and renders provider-specific sanitized guidance", async () => {
+  it("keeps Refresh all as a separate enabled-dashboard data action", async () => {
     render(<SettingsApp />);
-    expect(await screen.findByText("Install the Claude CLI, then reopen Dashy.")).toBeInTheDocument();
-    expect(screen.getByText("Sign in to Codex, then retry.")).toBeInTheDocument();
-    expect(screen.getByText("Try GitHub again later.")).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain("raw-secret");
+    await screen.findByRole("heading", { name: "Settings" });
     fireEvent.click(screen.getByRole("button", { name: "Refresh all" }));
     await waitFor(() => expect(mocks.getDashboardSnapshot).toHaveBeenCalledWith(true));
   });
