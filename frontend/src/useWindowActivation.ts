@@ -20,6 +20,7 @@ export function useWindowActivationRevision(): number {
     };
 
     const installListenerThenQuery = async () => {
+      const startingFocusRevision = focusRevision;
       try {
         unlisten = await listenForCurrentWindowActivation(activate);
       } catch {
@@ -29,8 +30,6 @@ export function useWindowActivationRevision(): number {
         unlisten?.();
         return;
       }
-
-      const startingFocusRevision = focusRevision;
       try {
         const active = await isCurrentWindowActive();
         if (mounted && active && focusRevision === startingFocusRevision) activate();

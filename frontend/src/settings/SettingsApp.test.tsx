@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSnapshot } from "../dashboard";
 import type { ProviderSetupState } from "../setup/api";
+import type { AppSettings } from "../window";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(), updateSettings: vi.fn(), listMonitors: vi.fn(), setTrayLabels: vi.fn(),
@@ -39,11 +40,11 @@ vi.mock("../setup/api", async (importOriginal) => {
   };
 });
 
-import { localeResources, setLocale, SUPPORTED_LOCALES } from "../i18n";
+import i18n, { localeResources, setLocale, SUPPORTED_LOCALES } from "../i18n";
 import { SettingsApp, translatedTrayLabels } from "./SettingsApp";
 
-const initialSettings = {
-  placement: "right" as const, monitor: null, locale: "en" as const,
+const initialSettings: AppSettings = {
+  placement: "right", monitor: null, locale: "en",
   alwaysShowOverFullscreen: false,
   onboardingCompleted: true,
   enabledProviders: ["claude", "codex", "github"],
@@ -114,7 +115,11 @@ describe("SettingsApp", () => {
     mocks.disable.mockResolvedValue(undefined);
   });
 
-  afterEach(async () => { cleanup(); await setLocale("en"); });
+  afterEach(async () => {
+    cleanup();
+    vi.restoreAllMocks();
+    await setLocale("en");
+  });
 
   it("builds all native tray labels from existing locale keys in every locale", () => {
     for (const locale of SUPPORTED_LOCALES) {
@@ -208,6 +213,39 @@ describe("SettingsApp", () => {
       .not.toBeChecked());
     view.unmount();
     expect(mocks.unlistenSettingsChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the newest event locale when an older locale change completes last", async () => {
+    const olderLocale = deferred<void>();
+    const newerLocale = deferred<void>();
+    const languageChange = vi.spyOn(i18n, "changeLanguage")
+      .mockImplementationOnce(async () => {
+        await olderLocale.promise;
+        return i18n.t;
+      })
+      .mockImplementationOnce(async () => {
+        await newerLocale.promise;
+        return i18n.t;
+      })
+      .mockImplementation(async () => i18n.t);
+    mocks.getSettings.mockResolvedValue({ ...initialSettings, locale: "he" });
+    let settingsHandler: ((settings: typeof initialSettings) => void) | undefined;
+    mocks.listenForSettingsChanges.mockImplementation(async (handler) => {
+      settingsHandler = handler;
+      return mocks.unlistenSettingsChanges;
+    });
+    render(<SettingsApp />);
+    await waitFor(() => expect(languageChange).toHaveBeenCalledWith("he"));
+
+    act(() => settingsHandler?.({ ...initialSettings, locale: "ja", enabledProviders: ["codex"] }));
+    await waitFor(() => expect(languageChange).toHaveBeenCalledWith("ja"));
+    newerLocale.resolve();
+    await waitFor(() => expect(document.documentElement.lang).toBe("ja"));
+
+    olderLocale.resolve();
+    await waitFor(() => expect(languageChange).toHaveBeenCalledTimes(3));
+    expect(languageChange).toHaveBeenLastCalledWith("ja");
+    expect(document.documentElement.lang).toBe("ja");
   });
 
   it("uses the latest persisted provider set on first open after onboarding completes", async () => {

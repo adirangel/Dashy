@@ -171,20 +171,32 @@ describe("OnboardingApp", () => {
     expect(screen.getByRole("button", { name: "Finish setup" })).toBeEnabled();
   });
 
-  it("owns a viewport-constrained keyboard-scrollable surface containing consent and finish controls", async () => {
-    render(<OnboardingApp />);
+  it("keeps expanded consent and Finish reachable in the same 520 by 560 scroll owner", async () => {
+    const previousWidth = window.innerWidth;
+    const previousHeight = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 520 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 560 });
+    try {
+      render(<OnboardingApp />);
 
-    const surface = await screen.findByTestId("onboarding-scroll-surface");
-    const finish = await screen.findByRole("button", { name: "Finish setup" });
-    const consent = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
-    const style = getComputedStyle(surface);
+      const surface = await screen.findByTestId("onboarding-scroll-surface");
+      const finish = await screen.findByRole("button", { name: "Finish setup" });
+      const consent = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
+      fireEvent.click(screen.getByRole("button", { name: "Install GitHub" }));
+      const confirmation = screen.getByRole("group", { name: "Confirm installation" });
+      const style = getComputedStyle(surface);
 
-    expect(surface).toHaveAttribute("tabindex", "0");
-    expect(surface).toHaveAttribute("data-scroll-owner", "onboarding");
-    expect(surface).toContainElement(consent);
-    expect(surface).toContainElement(finish);
-    expect(style.height).toBe("100vh");
-    expect(style.minHeight).toBe("0px");
-    expect(style.overflowY).toBe("auto");
+      expect(surface).toHaveAttribute("tabindex", "0");
+      expect(surface).toHaveAttribute("data-scroll-owner", "onboarding");
+      expect(surface).toContainElement(consent);
+      expect(surface).toContainElement(confirmation);
+      expect(surface).toContainElement(finish);
+      expect(style.height).toBe("100vh");
+      expect(style.minHeight).toBe("0px");
+      expect(style.overflowY).toBe("auto");
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: previousHeight });
+    }
   });
 });

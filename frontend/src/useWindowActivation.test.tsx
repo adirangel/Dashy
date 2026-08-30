@@ -94,6 +94,22 @@ describe("useWindowActivationRevision", () => {
     await waitFor(() => expect(screen.getByTestId("revision")).toHaveTextContent("1"));
   });
 
+  it("does not double-activate when focus fires before listener registration resolves", async () => {
+    const listener = deferred<() => void>();
+    mocks.listenForCurrentWindowActivation.mockImplementation((handler) => {
+      handler();
+      return listener.promise;
+    });
+    mocks.isCurrentWindowActive.mockResolvedValue(true);
+    render(<Probe />);
+    expect(screen.getByTestId("revision")).toHaveTextContent("1");
+
+    listener.resolve(mocks.unlisten);
+
+    await waitFor(() => expect(mocks.isCurrentWindowActive).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("revision")).toHaveTextContent("1");
+  });
+
   it("unlistens when registration completes after unmount and skips the initial query", async () => {
     const listener = deferred<() => void>();
     mocks.listenForCurrentWindowActivation.mockReturnValue(listener.promise);

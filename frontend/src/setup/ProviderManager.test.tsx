@@ -207,6 +207,23 @@ describe("ProviderManager", () => {
     expect(mocks.login).not.toHaveBeenCalled();
   });
 
+  it("restores same-provider focus after keyboard cancel but preserves focus after pointer cancel", async () => {
+    renderManager({ codexStatus: "notInstalled" });
+    const action = screen.getByRole("button", { name: "Install Codex" });
+    fireEvent.click(action);
+    const keyboardCancel = screen.getByRole("button", { name: "Cancel" });
+    keyboardCancel.focus();
+    fireEvent.click(keyboardCancel, { detail: 0 });
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" }))
+      .toHaveFocus());
+
+    fireEvent.click(action);
+    const retained = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
+    retained.focus();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }), { detail: 1 });
+    expect(retained).toHaveFocus();
+  });
+
   it("marks only the active provider card busy and disables setup actions across every card", () => {
     renderManager({
       codexStatus: "notInstalled", githubStatus: "stale",
@@ -340,6 +357,21 @@ describe("ProviderManager", () => {
     expect(await screen.findByText("Dashy could not open the official installation guide."))
       .toHaveAttribute("role", "alert");
     expect(document.body.textContent).not.toContain("shell raw-secret");
+  });
+
+  it("clears an old guide-opener failure when a new setup confirmation begins", async () => {
+    apiMocks.openUrl.mockRejectedValue(new Error("old opener failure"));
+    renderManager({ codexStatus: "notInstalled", failureProvider: "codex" });
+    fireEvent.click(screen.getByRole("button", { name: "Open official installation guide" }));
+    expect(await screen.findByText("Dashy could not open the official installation guide."))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+
+    expect(screen.queryByText("Dashy could not open the official installation guide."))
+      .not.toBeInTheDocument();
+    expect(screen.getByText("Provider setup needs attention.")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Confirm installation" })).toBeInTheDocument();
   });
 
   it.each([

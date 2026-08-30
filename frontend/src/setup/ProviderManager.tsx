@@ -38,7 +38,7 @@ function Confirmation({
 }: {
   definition: ProviderSetupDefinition;
   action: PendingAction["action"];
-  onCancel: () => void;
+  onCancel: (restoreKeyboardFocus: boolean) => void;
   onConfirm: (restoreKeyboardFocus: boolean) => void;
   disabled: boolean;
 }) {
@@ -76,7 +76,9 @@ function Confirmation({
         className="provider-setup-confirmation-cancel"
         type="button"
         disabled={disabled}
-        onClick={onCancel}
+        onClick={(event) => onCancel(
+          event.detail === 0 && document.activeElement === event.currentTarget,
+        )}
       >{t("setup.cancel")}</button>
       <button
         className="provider-setup-confirmation-primary"
@@ -155,6 +157,14 @@ export function ProviderManager({
         setPendingAction(null);
         void controller[action](provider);
       };
+      const beginAction = (action: PendingAction["action"]) => {
+        setManualHelpFailureProvider(null);
+        setPendingAction({ provider, action });
+      };
+      const cancel = (restoreKeyboardFocus: boolean) => {
+        if (restoreKeyboardFocus) setRestoreFocusProvider(provider);
+        setPendingAction(null);
+      };
 
       return <article
         ref={(element) => { cardRefs.current[provider] = element; }}
@@ -193,18 +203,21 @@ export function ProviderManager({
           {state.repairAction === "install" && <button
             type="button"
             disabled={setupActionActive}
-            onClick={() => setPendingAction({ provider, action: "install" })}
+            onClick={() => beginAction("install")}
           >{t("setup.install", { provider: name })}</button>}
           {state.repairAction === "login" && <button
             type="button"
             disabled={setupActionActive}
-            onClick={() => setPendingAction({ provider, action: "login" })}
+            onClick={() => beginAction("login")}
           >{t("setup.connect", { provider: name })}</button>}
           {(state.status === "stale" || state.status === "unavailable")
             && state.repairAction === null && <button
             type="button"
             disabled={setupActionActive}
-            onClick={() => { void controller.reload(); }}
+            onClick={() => {
+              setManualHelpFailureProvider(null);
+              void controller.reload();
+            }}
           >{t("setup.retry")}</button>}
         </div>
 
@@ -212,7 +225,7 @@ export function ProviderManager({
           definition={state.definition}
           action={pending.action}
           disabled={setupActionActive}
-          onCancel={() => setPendingAction(null)}
+          onCancel={cancel}
           onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
         />}
 

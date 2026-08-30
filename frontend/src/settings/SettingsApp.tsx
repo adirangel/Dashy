@@ -76,6 +76,7 @@ export function SettingsApp() {
   const [message, setMessage] = useState("");
   const providerSaveInFlight = useRef(false);
   const settingsRequest = useRef(0);
+  const latestLocale = useRef<{ request: number; locale: SupportedLocale } | null>(null);
   const activationRevisionRef = useRef(activationRevision);
   const mounted = useRef(true);
   activationRevisionRef.current = activationRevision;
@@ -88,13 +89,41 @@ export function SettingsApp() {
     };
   }, []);
 
+  const restoreLatestLocale = useCallback(async () => {
+    let target = latestLocale.current;
+    while (mounted.current && target) {
+      try {
+        await setLocale(target.locale);
+      } catch {
+        return;
+      }
+      const current = latestLocale.current;
+      if (!current || current.request === target.request) return;
+      target = current;
+    }
+  }, []);
+
   const applyConfirmedSettings = useCallback(async (
     loadedSettings: AppSettings,
     request: number,
     readyRevision: number,
   ) => {
     const locale = resolveLocale(loadedSettings.locale);
-    await setLocale(locale);
+    if (!mounted.current || request !== settingsRequest.current) return;
+    latestLocale.current = { request, locale };
+    try {
+      await setLocale(locale);
+    } catch {
+      if (mounted.current && request === settingsRequest.current) {
+        setMessage(i18n.t("guidance.retryLater", { provider: "Dashy" }));
+      }
+      return;
+    }
+    if (!mounted.current) return;
+    if (request !== settingsRequest.current) {
+      await restoreLatestLocale();
+      return;
+    }
     if (!mounted.current || request !== settingsRequest.current) return;
     setSettings({ ...loadedSettings, locale });
     setSettingsReadyRevision(readyRevision);
@@ -103,7 +132,7 @@ export function SettingsApp() {
         setMessage(i18n.t("guidance.retryLater", { provider: "Dashy" }));
       }
     });
-  }, []);
+  }, [restoreLatestLocale]);
 
   useEffect(() => {
     let active = true;

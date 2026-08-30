@@ -17,21 +17,67 @@ export function OnboardingApp() {
   const [finishing, setFinishing] = useState(false);
   const [message, setMessage] = useState("");
   const finishInFlight = useRef(false);
+  const mounted = useRef(true);
+  const settingsRequest = useRef(0);
+  const latestLocale = useRef<{
+    request: number;
+    locale: ReturnType<typeof resolveLocale>;
+  } | null>(null);
 
   useEffect(() => {
-    let active = true;
-    void getSettings()
-      .then(async (loaded) => {
-        await setLocale(resolveLocale(loaded.locale));
-        if (active) setSettings(loaded);
-      })
-      .catch(() => {
-        if (active) setMessage(i18n.t("setup.finishFailure"));
-      });
+    mounted.current = true;
     return () => {
-      active = false;
+      mounted.current = false;
+      settingsRequest.current += 1;
     };
   }, []);
+
+  const restoreLatestLocale = useCallback(async () => {
+    let target = latestLocale.current;
+    while (mounted.current && target) {
+      try {
+        await setLocale(target.locale);
+      } catch {
+        return;
+      }
+      const current = latestLocale.current;
+      if (!current || current.request === target.request) return;
+      target = current;
+    }
+  }, []);
+
+  const applyLoadedSettings = useCallback(async (loaded: AppSettings, request: number) => {
+    if (!mounted.current || request !== settingsRequest.current) return;
+    const locale = resolveLocale(loaded.locale);
+    latestLocale.current = { request, locale };
+    try {
+      await setLocale(locale);
+    } catch {
+      if (mounted.current && request === settingsRequest.current) {
+        setMessage(i18n.t("setup.finishFailure"));
+      }
+      return;
+    }
+    if (!mounted.current) return;
+    if (request !== settingsRequest.current) {
+      await restoreLatestLocale();
+      return;
+    }
+    setSettings({ ...loaded, locale });
+  }, [restoreLatestLocale]);
+
+  useEffect(() => {
+    if (activationRevision <= 0) return;
+    const request = ++settingsRequest.current;
+    setMessage("");
+    void getSettings()
+      .then((loaded) => applyLoadedSettings(loaded, request))
+      .catch(() => {
+        if (mounted.current && request === settingsRequest.current) {
+          setMessage(i18n.t("setup.finishFailure"));
+        }
+      });
+  }, [activationRevision, applyLoadedSettings]);
 
   useEffect(() => {
     if (selectionReady || !settings || controller.states === null) return;
