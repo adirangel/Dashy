@@ -96,6 +96,7 @@ struct OperationPlan {
 struct ControllerCore {
     machine: EdgeMachine,
     events: VecDeque<ControllerEvent>,
+    last_surface_input: Option<EdgeInput>,
     pending_hide: Option<PendingHide>,
     acknowledged_exit: Option<ExitToken>,
     initialized: bool,
@@ -357,6 +358,9 @@ impl DesktopController {
             settings.onboarding_completed && !settings.enabled_providers.is_empty();
         let monitors = match self.probe.monitors() {
             Ok(monitors) => monitors,
+            Err(error) if !surface_enabled => {
+                return self.step_without_monitor(now, &settings, error);
+            }
             Err(error) => return vec![error],
         };
         {
@@ -373,6 +377,9 @@ impl DesktopController {
         }
         let selected = match resolve_monitor(settings.monitor.as_ref(), &monitors) {
             Some(selected) => selected.monitor,
+            None if !surface_enabled => {
+                return self.step_without_monitor(now, &settings, DesktopError::NoMonitorAvailable);
+            }
             None => return vec![DesktopError::NoMonitorAvailable],
         };
         let mut errors = Vec::new();
@@ -400,7 +407,50 @@ impl DesktopController {
             always_show_over_fullscreen: settings.always_show_over_fullscreen,
             interaction: None,
         };
+        self.core
+            .lock()
+            .expect("desktop controller lock poisoned")
+            .last_surface_input = Some(input);
 
+        self.execute_plan(now, input, surface_enabled, errors)
+    }
+
+    fn step_without_monitor(
+        &self,
+        now: Duration,
+        settings: &AppSettings,
+        monitor_error: DesktopError,
+    ) -> Vec<DesktopError> {
+        let input = {
+            let mut core = self.core.lock().expect("desktop controller lock poisoned");
+            match core.last_surface_input {
+                Some(input) => Some(EdgeInput {
+                    cursor: None,
+                    placement: settings.placement,
+                    foreground_fullscreen: false,
+                    always_show_over_fullscreen: settings.always_show_over_fullscreen,
+                    interaction: None,
+                    ..input
+                }),
+                None => {
+                    core.events.clear();
+                    None
+                }
+            }
+        };
+        let Some(input) = input else {
+            return vec![monitor_error];
+        };
+        self.execute_plan(now, input, false, vec![monitor_error])
+    }
+
+    fn execute_plan(
+        &self,
+        now: Duration,
+        input: EdgeInput,
+        surface_enabled: bool,
+        mut errors: Vec<DesktopError>,
+    ) -> Vec<DesktopError> {
         let plan = self.plan_operations(now, input, surface_enabled);
         let layout_succeeded = if let Some(layout) = plan.layout {
             match self.window.apply(&layout) {

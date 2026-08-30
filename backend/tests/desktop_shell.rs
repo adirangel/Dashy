@@ -295,6 +295,101 @@ fn incomplete_onboarding_keeps_the_native_surface_hidden() {
 }
 
 #[test]
+fn monitor_enumeration_failure_cannot_keep_a_disabled_surface_visible() {
+    let fixture = Fixture::new();
+    fixture.show(Duration::ZERO);
+    fixture.settings.set(AppSettings {
+        onboarding_completed: false,
+        ..configured_settings()
+    });
+    fixture.probe.fail_monitors_once();
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::SelectProvider(ProviderId::Codex));
+
+    assert_eq!(
+        fixture.controller.step(Duration::from_millis(1)),
+        vec![DesktopError::MonitorEnumerationFailed]
+    );
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::TogglePin(ProviderId::Codex));
+    assert_eq!(
+        fixture
+            .controller
+            .step(Duration::from_millis(1) + EXIT_FALLBACK),
+        vec![DesktopError::MonitorEnumerationFailed]
+    );
+
+    let actions = fixture.window.actions();
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if !layout.visible
+    )));
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if layout.visible
+    )));
+    assert!(!actions.contains(&WindowAction::Focus));
+}
+
+#[test]
+fn missing_monitor_cannot_keep_a_disabled_pinned_surface_visible() {
+    let fixture = Fixture::new();
+    fixture.show(Duration::ZERO);
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::TogglePin(ProviderId::Claude));
+    assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
+    assert_eq!(fixture.controller.state(), EdgeUiState::Pinned);
+    fixture.window.clear();
+
+    fixture.settings.set(AppSettings {
+        enabled_providers: Vec::new(),
+        ..configured_settings()
+    });
+    fixture.probe.set_monitors(Vec::new());
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::SelectProvider(ProviderId::GitHub));
+
+    assert_eq!(
+        fixture.controller.step(Duration::from_millis(2)),
+        vec![DesktopError::NoMonitorAvailable]
+    );
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::TogglePin(ProviderId::GitHub));
+    assert_eq!(
+        fixture
+            .controller
+            .step(Duration::from_millis(2) + EXIT_FALLBACK),
+        vec![DesktopError::NoMonitorAvailable]
+    );
+
+    let actions = fixture.window.actions();
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if !layout.visible
+    )));
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if layout.visible
+    )));
+    assert!(!actions.contains(&WindowAction::Focus));
+}
+
+#[test]
 fn proximity_reveal_never_focuses_but_explicit_show_does() {
     let fixture = Fixture::new();
     fixture.probe.set_cursor(Some(Point { x: 1919, y: 500 }));
