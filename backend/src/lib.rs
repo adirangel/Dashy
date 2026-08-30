@@ -24,13 +24,17 @@ pub fn run() {
     };
     use desktop::{
         commands::{
-            begin_notch_exit, complete_notch_exit, get_current_edge_view, get_settings,
-            list_monitors, set_notch_interaction, set_tray_labels, show_notch_menu,
+            begin_notch_exit, complete_notch_exit, complete_onboarding, get_current_edge_view,
+            get_settings, list_monitors, set_notch_interaction, set_tray_labels, show_notch_menu,
             update_settings,
         },
         controller::{start_controller_runtime, TauriWindowPort, WindowPort},
         menu::TrayState,
         settings::service_from_tauri_store,
+    };
+    use setup::{
+        commands::{get_provider_setup_states, install_provider, login_provider, SetupState},
+        service::SetupService,
     };
     use tauri::{
         tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -52,6 +56,9 @@ pub fn run() {
             None,
         ))
         .manage(AppState::new(dashboard))
+        .manage(SetupState::new(Arc::new(SetupService::new(Arc::new(
+            SystemProcessRunner,
+        )))))
         .on_menu_event(|app, event| handle_menu_action(app, event.id.as_ref()))
         .setup(|app| {
             let settings = Arc::new(service_from_tauri_store(app).map_err(std::io::Error::other)?);
@@ -150,6 +157,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_dashboard_snapshot,
             refresh_dashboard_provider,
+            get_provider_setup_states,
+            install_provider,
+            login_provider,
+            complete_onboarding,
             get_settings,
             get_current_edge_view,
             update_settings,

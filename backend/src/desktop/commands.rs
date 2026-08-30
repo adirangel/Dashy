@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::dashboard::models::ProviderId;
 
@@ -10,6 +10,13 @@ use super::{
     settings::{AppSettings, SettingsPatch},
     DesktopState,
 };
+
+const SETTINGS_CHANGED_EVENT: &str = "dashy://settings-changed";
+
+fn emit_settings_changed(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
+    app.emit_to("main", SETTINGS_CHANGED_EVENT, settings)
+        .map_err(|error| format!("failed to publish settings: {error}"))
+}
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(
@@ -78,7 +85,29 @@ pub async fn update_settings(
     state: State<'_, DesktopState>,
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
+    let previous_enabled_providers = state.settings.current()?.enabled_providers;
     let settings = state.settings.update(patch)?;
+    if settings.enabled_providers != previous_enabled_providers {
+        state.controller.queue_interaction(EdgeInteraction::Dismiss);
+    }
+    emit_settings_changed(&app, &settings)?;
+    state.refresh_tray(&app, &settings)?;
+    Ok(settings)
+}
+
+#[tauri::command]
+pub async fn complete_onboarding(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    enabled_providers: Vec<ProviderId>,
+) -> Result<AppSettings, String> {
+    let settings = state.settings.update(SettingsPatch {
+        onboarding_completed: Some(true),
+        enabled_providers: Some(enabled_providers),
+        ..Default::default()
+    })?;
+    state.controller.queue_interaction(EdgeInteraction::Dismiss);
+    emit_settings_changed(&app, &settings)?;
     state.refresh_tray(&app, &settings)?;
     Ok(settings)
 }
@@ -88,6 +117,18 @@ pub async fn set_notch_interaction(
     state: State<'_, DesktopState>,
     interaction: NotchInteraction,
 ) -> Result<(), String> {
+    let provider = match interaction {
+        NotchInteraction::SelectProvider(provider) | NotchInteraction::TogglePin(provider) => {
+            Some(provider)
+        }
+        _ => None,
+    };
+    if let Some(provider) = provider {
+        let enabled_providers = state.settings.current()?.enabled_providers;
+        if !enabled_providers.contains(&provider) {
+            return Err("provider is disabled".to_owned());
+        }
+    }
     state
         .controller
         .queue_interaction(interaction.edge_interaction());

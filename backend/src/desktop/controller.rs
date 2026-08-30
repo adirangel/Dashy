@@ -353,6 +353,8 @@ impl DesktopController {
             Ok(settings) => settings,
             Err(_) => return vec![DesktopError::SettingsUnavailable],
         };
+        let surface_enabled =
+            settings.onboarding_completed && !settings.enabled_providers.is_empty();
         let monitors = match self.probe.monitors() {
             Ok(monitors) => monitors,
             Err(error) => return vec![error],
@@ -374,16 +376,21 @@ impl DesktopController {
             None => return vec![DesktopError::NoMonitorAvailable],
         };
         let mut errors = Vec::new();
-        let cursor = match self.probe.cursor_position() {
-            Ok(cursor) => cursor,
-            Err(error) => {
-                errors.push(error);
-                None
+        let cursor = if surface_enabled {
+            match self.probe.cursor_position() {
+                Ok(cursor) => cursor,
+                Err(error) => {
+                    errors.push(error);
+                    None
+                }
             }
+        } else {
+            None
         };
-        let fullscreen = self
-            .probe
-            .foreground_is_fullscreen(&selected, &self.window.native_handles());
+        let fullscreen = surface_enabled
+            && self
+                .probe
+                .foreground_is_fullscreen(&selected, &self.window.native_handles());
         let input = EdgeInput {
             cursor,
             placement: settings.placement,
@@ -394,7 +401,7 @@ impl DesktopController {
             interaction: None,
         };
 
-        let plan = self.plan_operations(now, input);
+        let plan = self.plan_operations(now, input, surface_enabled);
         let layout_succeeded = if let Some(layout) = plan.layout {
             match self.window.apply(&layout) {
                 Ok(()) => true,
@@ -435,11 +442,22 @@ impl DesktopController {
             .push_back(event);
     }
 
-    fn plan_operations(&self, now: Duration, base_input: EdgeInput) -> OperationPlan {
+    fn plan_operations(
+        &self,
+        now: Duration,
+        base_input: EdgeInput,
+        surface_enabled: bool,
+    ) -> OperationPlan {
         let mut core = self.core.lock().expect("desktop controller lock poisoned");
         let mut plan = OperationPlan {
-            layout: core.retry_layout.take(),
-            view: core.retry_view.take(),
+            layout: core
+                .retry_layout
+                .take()
+                .filter(|layout| surface_enabled || !layout.visible),
+            view: core
+                .retry_view
+                .take()
+                .filter(|view| surface_enabled || view.visibility == EdgeUiState::Hidden),
             focus_requested: false,
         };
 
@@ -447,6 +465,19 @@ impl DesktopController {
         let mut interactions = Vec::new();
         let mut focus_after_effects = false;
         for event in events {
+            if !surface_enabled {
+                if let ControllerEvent::ExitAnimationComplete(token) = event {
+                    if core
+                        .pending_hide
+                        .as_ref()
+                        .and_then(|pending| pending.token.as_ref())
+                        == Some(&token)
+                    {
+                        core.acknowledged_exit = Some(token);
+                    }
+                }
+                continue;
+            }
             match event {
                 ControllerEvent::Interaction(interaction) => {
                     focus_after_effects |= matches!(interaction, EdgeInteraction::TogglePin(_));
@@ -472,6 +503,10 @@ impl DesktopController {
                     }
                 }
             }
+        }
+
+        if !surface_enabled && core.machine.state() != EdgeUiState::Hidden {
+            interactions.push(EdgeInteraction::Dismiss);
         }
 
         if interactions.is_empty() {
@@ -513,7 +548,8 @@ impl DesktopController {
                 core.acknowledged_exit = None;
             }
         }
-        plan.focus_requested = focus_after_effects
+        plan.focus_requested = surface_enabled
+            && focus_after_effects
             && matches!(
                 core.machine.state(),
                 EdgeUiState::RailVisible | EdgeUiState::CardVisible | EdgeUiState::Pinned

@@ -204,11 +204,19 @@ struct Fixture {
     settings: Arc<FakeSettings>,
 }
 
+fn configured_settings() -> AppSettings {
+    AppSettings {
+        onboarding_completed: true,
+        enabled_providers: ProviderId::ALL.to_vec(),
+        ..AppSettings::default()
+    }
+}
+
 impl Fixture {
     fn new() -> Self {
         let window = Arc::new(FakeWindow::default());
         let probe = Arc::new(FakeProbe::new(monitor("display-a", "Desk", 0, 1920, true)));
-        let settings = Arc::new(FakeSettings::new(AppSettings::default()));
+        let settings = Arc::new(FakeSettings::new(configured_settings()));
         let controller = DesktopController::new(probe.clone(), window.clone(), settings.clone());
         Self {
             controller,
@@ -259,7 +267,7 @@ fn current_edge_view_is_an_authoritative_typed_handshake() {
     fixture.controller.step(Duration::from_millis(1));
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
 
     assert_eq!(
@@ -270,6 +278,20 @@ fn current_edge_view_is_an_authoritative_typed_handshake() {
             provider: Some(ProviderId::Claude),
         }
     );
+}
+
+#[test]
+fn incomplete_onboarding_keeps_the_native_surface_hidden() {
+    let fixture = Fixture::new();
+    fixture.settings.set(AppSettings::default());
+    fixture.controller.show_explicit();
+    assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    assert!(fixture
+        .window
+        .actions()
+        .iter()
+        .all(|action| { !matches!(action, WindowAction::Apply(layout) if layout.visible) }));
 }
 
 #[test]
@@ -541,7 +563,7 @@ fn acknowledged_exit_a_cannot_hide_a_same_step_replacement_b() {
 
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.window.clear();
     fixture.controller.step(Duration::from_millis(2));
@@ -608,7 +630,7 @@ fn settings_and_monitor_geometry_changes_reposition_on_the_next_step() {
     fixture.show(Duration::ZERO);
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.controller.step(Duration::from_millis(1));
     assert_eq!(last_layout(&fixture.window.actions()).position.x, 0);
@@ -711,7 +733,7 @@ fn fullscreen_suppression_hides_and_override_keeps_the_notch_eligible() {
 
     fixture.settings.set(AppSettings {
         always_show_over_fullscreen: true,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.controller.show_explicit();
     fixture.controller.step(Duration::from_millis(2));
@@ -819,7 +841,7 @@ fn newer_hidden_layout_replaces_the_css_deferred_hide_destination() {
 
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.controller.step(Duration::from_millis(2));
     fixture.window.clear();
@@ -930,7 +952,7 @@ fn menu_model_has_stable_ids_checked_choices_and_preserves_unavailable_monitor()
                 height: 720,
             },
         }),
-        ..AppSettings::default()
+        ..configured_settings()
     };
 
     let labels = TrayLabels {
