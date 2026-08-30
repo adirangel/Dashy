@@ -1,0 +1,270 @@
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProviderId, ProviderStatus } from "../dashboard";
+import { setLocale } from "../i18n";
+import type { ProviderSetupDefinition, ProviderSetupState } from "./api";
+
+const apiMocks = vi.hoisted(() => ({
+  getProviderSetupStates: vi.fn(),
+  installProvider: vi.fn(),
+  loginProvider: vi.fn(),
+}));
+
+vi.mock("./api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./api")>();
+  return {
+    ...original,
+    getProviderSetupStates: apiMocks.getProviderSetupStates,
+    installProvider: apiMocks.installProvider,
+    loginProvider: apiMocks.loginProvider,
+  };
+});
+
+import { ProviderManager } from "./ProviderManager";
+import { useProviderSetup } from "./useProviderSetup";
+
+const mocks = {
+  install: vi.fn<(provider: ProviderId) => Promise<void>>().mockResolvedValue(undefined),
+  login: vi.fn<(provider: ProviderId) => Promise<void>>().mockResolvedValue(undefined),
+  reload: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  onEnabledChange: vi.fn<(providers: ProviderId[]) => void>(),
+};
+
+const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = {
+  claude: { publisher: "Anthropic", packageId: "Anthropic.ClaudeCode", installCommand: "winget install --id Anthropic.ClaudeCode --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://code.claude.com/docs/en/setup", loginCommand: "claude auth login --claudeai" },
+  codex: { publisher: "OpenAI", packageId: "OpenAI.Codex", installCommand: "winget install --id OpenAI.Codex --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://learn.chatgpt.com/docs/codex/cli", loginCommand: "codex login" },
+  github: { publisher: "GitHub", packageId: "GitHub.cli", installCommand: "winget install --id GitHub.cli --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://cli.github.com/", loginCommand: "gh auth login --web" },
+};
+
+function setupStates(status: Partial<Record<ProviderId, ProviderStatus>> = {}): ProviderSetupState[] {
+  return (["claude", "codex", "github"] as ProviderId[]).map((provider) => ({
+    definition: { provider, ...metadata[provider] },
+    status: status[provider] ?? "connected",
+  }));
+}
+
+function renderManager(options: {
+  claudeStatus?: ProviderStatus;
+  codexStatus?: ProviderStatus;
+  githubStatus?: ProviderStatus;
+  enabledProviders?: ProviderId[];
+  busyProvider?: ProviderId | null;
+  failureProvider?: ProviderId | null;
+  states?: ProviderSetupState[] | null;
+  loadFailed?: boolean;
+} = {}) {
+  const status = {
+    claude: options.claudeStatus ?? "connected",
+    codex: options.codexStatus ?? "connected",
+    github: options.githubStatus ?? "connected",
+  } satisfies Record<ProviderId, ProviderStatus>;
+  const states = options.states === undefined
+    ? setupStates(status)
+    : options.states;
+  render(<ProviderManager
+    controller={{
+      states,
+      busyProvider: options.busyProvider ?? null,
+      failureProvider: options.failureProvider ?? null,
+      loadFailed: options.loadFailed ?? false,
+      install: mocks.install,
+      login: mocks.login,
+      reload: mocks.reload,
+    }}
+    enabledProviders={options.enabledProviders ?? ["claude", "codex", "github"]}
+    onEnabledChange={mocks.onEnabledChange}
+  />);
+}
+
+function HookProbe() {
+  const controller = useProviderSetup();
+  return <>
+    <output data-testid="hook-state">{JSON.stringify({
+      states: controller.states,
+      busyProvider: controller.busyProvider,
+      failureProvider: controller.failureProvider,
+      loadFailed: controller.loadFailed,
+    })}</output>
+    <button type="button" onClick={() => { void controller.install("codex"); }}>hook install</button>
+    <button type="button" onClick={() => { void controller.login("claude"); }}>hook login</button>
+    <button type="button" onClick={() => { void controller.reload(); }}>hook reload</button>
+  </>;
+}
+
+describe("ProviderManager", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setLocale("en");
+    mocks.install.mockResolvedValue(undefined);
+    mocks.login.mockResolvedValue(undefined);
+    mocks.reload.mockResolvedValue(undefined);
+    apiMocks.getProviderSetupStates.mockResolvedValue(setupStates());
+    apiMocks.installProvider.mockResolvedValue(setupStates({ codex: "connected" })[1]);
+    apiMocks.loginProvider.mockResolvedValue(setupStates({ claude: "connected" })[0]);
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await setLocale("en");
+  });
+
+  it("shows the publisher and exact command before installation is confirmed", async () => {
+    renderManager({ codexStatus: "notInstalled" });
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+    expect(screen.getByText("OpenAI.Codex")).toBeInTheDocument();
+    expect(screen.getByText(/winget install --id OpenAI\.Codex/)).toBeInTheDocument();
+    expect(mocks.install).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm installation" }));
+    expect(mocks.install).toHaveBeenCalledExactlyOnceWith("codex");
+  });
+
+  it("requires a separate confirmation before login", async () => {
+    renderManager({ claudeStatus: "notAuthenticated" });
+    fireEvent.click(screen.getByRole("button", { name: "Connect Claude" }));
+    expect(screen.getByText("claude auth login --claudeai")).toBeInTheDocument();
+    expect(mocks.login).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open official login" }));
+    expect(mocks.login).toHaveBeenCalledExactlyOnceWith("claude");
+  });
+
+  it("lets every provider be enabled or skipped independently while preserving selection order", async () => {
+    renderManager({ enabledProviders: ["codex"] });
+    expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use GitHub in Dashy" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Use GitHub in Dashy" }));
+    expect(mocks.onEnabledChange).toHaveBeenLastCalledWith(["codex", "github"]);
+
+    cleanup();
+    renderManager({ enabledProviders: ["github", "codex"] });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Use GitHub in Dashy" }));
+    expect(mocks.onEnabledChange).toHaveBeenLastCalledWith(["codex"]);
+  });
+
+  it("keeps only one labelled inline confirmation open and lets it be cancelled", () => {
+    renderManager({ claudeStatus: "notAuthenticated", codexStatus: "notInstalled" });
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+    expect(screen.getByRole("group", { name: "Confirm installation" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect Claude" }));
+    expect(screen.queryByRole("group", { name: "Confirm installation" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("group")).toHaveLength(1);
+    expect(screen.getByRole("group", { name: "Open official login" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group")).not.toBeInTheDocument();
+    expect(mocks.install).not.toHaveBeenCalled();
+    expect(mocks.login).not.toHaveBeenCalled();
+  });
+
+  it("marks only the active provider card busy and disables its setup action", () => {
+    renderManager({ codexStatus: "notInstalled", githubStatus: "stale", busyProvider: "codex" });
+    const codexCard = screen.getByRole("article", { name: "Codex" });
+    const githubCard = screen.getByRole("article", { name: "GitHub" });
+    expect(codexCard).toHaveAttribute("aria-busy", "true");
+    expect(githubCard).not.toHaveAttribute("aria-busy");
+    expect(within(codexCard).getByRole("button", { name: "Install Codex" })).toBeDisabled();
+    expect(within(githubCard).getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  it("renders only sanitized action failure guidance and an official manual-help link", () => {
+    renderManager({ codexStatus: "notInstalled", failureProvider: "codex" });
+    const codexCard = screen.getByRole("article", { name: "Codex" });
+    expect(within(codexCard).getByRole("alert")).toHaveTextContent("Provider setup needs attention.");
+    expect(within(codexCard).getByRole("link", { name: "Open official installation guide" }))
+      .toHaveAttribute("href", "https://learn.chatgpt.com/docs/codex/cli");
+    expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it.each(["stale", "unavailable"] as const)(
+    "retries a %s provider without opening login consent",
+    (providerStatus) => {
+      renderManager({ githubStatus: providerStatus });
+      fireEvent.click(within(screen.getByRole("article", { name: "GitHub" }))
+        .getByRole("button", { name: "Retry" }));
+      expect(mocks.reload).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole("group")).not.toBeInTheDocument();
+      expect(mocks.login).not.toHaveBeenCalled();
+    },
+  );
+
+  it("renders a sanitized, retryable load failure before definitions are available", () => {
+    renderManager({ states: null, loadFailed: true });
+    expect(screen.getByRole("alert")).toHaveTextContent("Provider setup needs attention.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mocks.reload).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain("raw rejected setup details");
+  });
+
+  it("renders stable provider order and associates each card, status, selection, and confirmation", () => {
+    renderManager({ states: setupStates({ claude: "notAuthenticated" }).reverse() });
+    expect(screen.getAllByRole("article").map((card) =>
+      within(card).getByRole("heading").textContent
+    )).toEqual(["Claude", "Codex", "GitHub"]);
+    const claudeCard = screen.getByRole("article", { name: "Claude" });
+    expect(claudeCard).toHaveAttribute("data-provider", "claude");
+    expect(claudeCard).toHaveAttribute("data-status", "notAuthenticated");
+    expect(within(claudeCard).getByText("Sign in required")).toHaveClass("provider-setup-status");
+    expect(within(claudeCard).getByText("Use Claude in Dashy").closest("label"))
+      .toHaveClass("provider-setup-selection");
+
+    fireEvent.click(within(claudeCard).getByRole("button", { name: "Connect Claude" }));
+    const confirmation = within(claudeCard).getByRole("group", { name: "Open official login" });
+    expect(confirmation).toHaveClass("provider-setup-confirmation");
+    expect(within(confirmation).getByRole("button", { name: "Cancel" }))
+      .toHaveClass("provider-setup-confirmation-cancel");
+    expect(within(confirmation).getByRole("button", { name: "Open official login" }))
+      .toHaveClass("provider-setup-confirmation-primary");
+  });
+});
+
+describe("useProviderSetup", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await setLocale("en");
+    apiMocks.getProviderSetupStates.mockResolvedValue(setupStates());
+    apiMocks.installProvider.mockResolvedValue(setupStates({ codex: "connected" })[1]);
+    apiMocks.loginProvider.mockResolvedValue(setupStates({ claude: "connected" })[0]);
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await setLocale("en");
+  });
+
+  it("loads provider states on mount and replaces an action result by provider ID", async () => {
+    apiMocks.getProviderSetupStates.mockResolvedValue(setupStates({ codex: "notInstalled" }));
+    render(<HookProbe />);
+    await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent("notInstalled"));
+
+    fireEvent.click(screen.getByRole("button", { name: "hook install" }));
+    await waitFor(() => expect(apiMocks.installProvider).toHaveBeenCalledExactlyOnceWith("codex"));
+    await waitFor(() => expect(screen.getByTestId("hook-state")).not.toHaveTextContent("notInstalled"));
+    expect(screen.getByTestId("hook-state")).toHaveTextContent('"busyProvider":null');
+  });
+
+  it("tracks only the provider ID when an action rejects and clears busy state", async () => {
+    apiMocks.installProvider.mockRejectedValue(new Error("raw-secret-install-error"));
+    render(<HookProbe />);
+    await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent("connected"));
+
+    fireEvent.click(screen.getByRole("button", { name: "hook install" }));
+    await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent('"failureProvider":"codex"'));
+    expect(screen.getByTestId("hook-state")).toHaveTextContent('"busyProvider":null');
+    expect(document.body.textContent).not.toContain("raw-secret-install-error");
+  });
+
+  it("reports a sanitized load failure and clears it after a successful retry", async () => {
+    apiMocks.getProviderSetupStates
+      .mockRejectedValueOnce(new Error("raw rejected setup details"))
+      .mockResolvedValueOnce(setupStates());
+    render(<HookProbe />);
+    await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent('"loadFailed":true'));
+    expect(document.body.textContent).not.toContain("raw rejected setup details");
+
+    fireEvent.click(screen.getByRole("button", { name: "hook reload" }));
+    await waitFor(() => expect(screen.getByTestId("hook-state")).toHaveTextContent('"loadFailed":false'));
+    expect(apiMocks.getProviderSetupStates).toHaveBeenCalledTimes(2);
+  });
+});
