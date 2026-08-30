@@ -6,11 +6,25 @@ not treat a developer workstation as a clean-machine result.
 
 ## Automated gates
 
+- [ ] The release tag is `vMAJOR.MINOR.PATCH` and exactly matches the versions in
+      `backend/tauri.conf.json`, `backend/Cargo.toml`, and `frontend/package.json`.
+- [ ] The matching release tag was created once for the version commit; no existing
+      tag was moved, deleted, or reused.
+- [ ] `npm run test:release` passes for the release tag.
 - [ ] Frontend tests pass.
 - [ ] Frontend production build passes.
 - [ ] Rust formatting, tests, and Clippy pass.
 - [ ] The MSI bundle completes for `x86_64-pc-windows-msvc`.
-- [ ] The release includes an MSI and matching SHA-256 checksum.
+- [ ] Every action in `release-windows.yml` uses the reviewed immutable commit pin.
+- [ ] The tagged `release-windows.yml` run completed successfully.
+- [ ] The GitHub Release remains a draft during review and smoke testing.
+- [ ] The draft contains exactly one `.msi` asset and its one matching
+      `.msi.sha256` asset, with no NSIS installer or plain executable.
+- [ ] The downloaded MSI SHA-256 matches the first field in its downloaded
+      `.msi.sha256` file.
+- [ ] The draft title, tag, and generated notes identify the intended version.
+- [ ] The draft clearly states that the private-test MSI is unsigned and may show
+      an Unknown publisher or SmartScreen warning, when code signing is not enabled.
 
 ## Clean-machine smoke test
 
@@ -32,3 +46,11 @@ not treat a developer workstation as a clean-machine result.
 - [ ] Uninstall Dashy from Installed apps.
 - [ ] Confirm Dashy is removed.
 - [ ] Confirm Claude, Codex, GitHub CLI, and their login sessions remain untouched.
+
+## Publish decision
+
+- [ ] Every automated, clean-machine, upgrade, and uninstall gate above passes.
+- [ ] The release was kept as a draft until all checks passed.
+- [ ] Publish the draft only after the responsible maintainer has recorded the
+      evidence. If a gate fails, leave the draft unpublished, fix the source in a
+      new commit, and create a new immutable patch-version tag.

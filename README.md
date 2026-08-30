@@ -273,6 +273,56 @@ cargo tauri build
 
 Bundle output is generated under `backend/target/release/bundle` and is not tracked.
 
+### Create a Windows release
+
+Release tags are immutable. Start from an up-to-date `main` checkout and choose a
+new, unused semantic version such as `0.2.0`; never move, delete, or reuse an
+existing release tag.
+
+1. Change the exact same `MAJOR.MINOR.PATCH` value in all three release manifests:
+   - `backend/tauri.conf.json`
+   - `backend/Cargo.toml`
+   - `frontend/package.json`
+2. Run the complete local gates:
+
+   ```powershell
+   npm --prefix frontend ci
+   npm run test:release
+   npm --prefix frontend run test
+   npm --prefix frontend run build
+   cargo fmt --manifest-path backend/Cargo.toml --check
+   cargo test --manifest-path backend/Cargo.toml
+   cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+   ```
+
+3. Commit the synchronized version change, then create and push its matching tag:
+
+   ```powershell
+   git commit -am "release: v0.2.0"
+   git tag v0.2.0
+   git push origin main
+   git push origin v0.2.0
+   ```
+
+   Do not create a tag for an uncommitted tree, and do not retag a different
+   commit if the workflow fails. Fix the issue in a new commit and use a new patch
+   version instead.
+
+4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. It must
+   validate the three versions, use the reviewed immutable action commits, and
+   leave the release as a draft. A draft can remain partial or blocked while that
+   workflow is still running or has failed; do not publish or manually complete it.
+5. Inspect the resulting draft. It must contain exactly one Windows x64 `.msi` and
+   its matching `.msi.sha256` checksum. Download both assets and verify the
+   downloaded MSI hash against the checksum file.
+6. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
+   a clean Windows x64 machine. Publish the draft only when every automated and
+   clean-machine gate passes.
+
+Private-test MSI releases are unsigned. Windows may show an **Unknown publisher**
+or SmartScreen warning; do not describe an unsigned build as suitable for public
+distribution.
+
 ## Troubleshooting
 
 - **`winget` is missing:** install or update Microsoft App Installer, reopen
