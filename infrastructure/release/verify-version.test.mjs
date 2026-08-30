@@ -143,7 +143,9 @@ function gh {
   if ($args[0] -ceq 'api') {
     if ($args[-1] -match '/commits/') {
       $script:mockTagCheckCount += 1
-      if ($env:MOCK_GH_SCENARIO -ceq 'missing-tag') {
+      $isExactTagRef = $args[-1] -ceq 'repos/owner/Dashy/commits/refs/tags/v0.1.0'
+      if (($env:MOCK_GH_SCENARIO -ceq 'missing-tag' -and $isExactTagRef) -or
+          ($env:MOCK_GH_SCENARIO -ceq 'branch-only' -and $isExactTagRef)) {
         Write-Output 'gh: Not Found (HTTP 404)'
         $global:LASTEXITCODE = 1
         return
@@ -464,6 +466,8 @@ test("workflow isolates repository execution from the write-scoped release job",
   assert.match(release, /^    permissions:\n      contents: write$/m);
   assert.match(release, /RELEASE_REPOSITORY: \$\{\{ github\.repository \}\}/);
   assert.match(release, /EXPECTED_RELEASE_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(release, /"repos\/\$repo\/commits\/refs\/tags\/\$tag"/);
+  assert.doesNotMatch(release, /"repos\/\$repo\/commits\/\$tag"/);
   assert.ok(
     build.indexOf("name: Require release commit on origin/main")
       < build.indexOf("name: Install Node.js"),
@@ -647,7 +651,7 @@ test("release step mutates only a verified draft with the exact transferred payl
 
   const created = await runReleaseScenario(script, "new");
   assert.equal(created.result.status, 0, created.result.stderr || created.result.stdout);
-  assert.match(created.log, /^api\|.*repos\/owner\/Dashy\/commits\/v0\.1\.0$/m);
+  assert.match(created.log, /^api\|.*repos\/owner\/Dashy\/commits\/refs\/tags\/v0\.1\.0$/m);
   assert.match(created.log, /^release\|create\|/m);
   assert.doesNotMatch(created.log, /^release\|upload\|/m);
 
@@ -696,6 +700,11 @@ test("release step mutates only a verified draft with the exact transferred payl
   assert.notEqual(missingTag.result.status, 0);
   assert.match(missingTag.result.stderr, /Could not resolve the live release tag/i);
   assert.doesNotMatch(missingTag.log, /^release\|(create|upload)\|/m);
+
+  const branchOnly = await runReleaseScenario(script, "branch-only");
+  assert.notEqual(branchOnly.result.status, 0);
+  assert.match(branchOnly.result.stderr, /Could not resolve the live release tag/i);
+  assert.doesNotMatch(branchOnly.log, /^release\|(create|upload)\|/m);
 
   const movedBeforeMutation = await runReleaseScenario(script, "moved-before-mutation");
   assert.notEqual(movedBeforeMutation.result.status, 0);
