@@ -1,20 +1,12 @@
-const APP_COMMANDS: &[&str] = &[
-    "get_dashboard_snapshot",
-    "refresh_dashboard_provider",
-    "get_provider_setup_states",
-    "install_provider",
-    "login_provider",
-    "complete_onboarding",
-    "get_settings",
-    "get_current_edge_view",
-    "update_settings",
-    "set_notch_interaction",
-    "begin_notch_exit",
-    "complete_notch_exit",
-    "list_monitors",
-    "show_notch_menu",
-    "set_tray_labels",
-];
+include!("app_commands.rs");
+
+macro_rules! define_app_command_names {
+    ($($command:ident),* $(,)?) => {
+        const APP_COMMANDS: &[&str] = &[$(stringify!($command)),*];
+    };
+}
+
+dashy_app_commands!(define_app_command_names);
 
 fn main() {
     tauri_build::try_build(

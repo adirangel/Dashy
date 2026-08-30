@@ -57,25 +57,43 @@ where
     notify()
 }
 
-async fn complete_onboarding_lifecycle<P, E, F, FF, R, H>(
+async fn run_provider_selection_lifecycle<L, P, E, R, RF, N, A>(
+    gate: &tokio::sync::Mutex<()>,
+    load_previous: L,
     persist: P,
     publish: E,
-    refresh_newly_enabled: F,
-    refresh_tray: R,
+    refresh: R,
+    notify: N,
+    after: A,
+) -> Result<AppSettings, String>
+where
+    L: FnOnce() -> Result<Vec<ProviderId>, String>,
+    P: FnOnce() -> Result<AppSettings, String>,
+    E: FnOnce(&[ProviderId], &AppSettings) -> Result<(), String>,
+    R: FnOnce(Vec<ProviderId>) -> RF,
+    RF: Future<Output = ()>,
+    N: FnOnce() -> Result<(), String>,
+    A: FnOnce(&AppSettings) -> Result<(), String>,
+{
+    let _selection_guard = gate.lock().await;
+    let previous = load_previous()?;
+    let settings = persist()?;
+    publish(&previous, &settings)?;
+    refresh_newly_enabled_then_notify(&previous, &settings.enabled_providers, refresh, notify)
+        .await?;
+    after(&settings)?;
+    Ok(settings)
+}
+
+async fn complete_onboarding_lifecycle<S, H>(
+    selection_lifecycle: S,
     hide: H,
 ) -> Result<AppSettings, String>
 where
-    P: FnOnce() -> Result<AppSettings, String>,
-    E: FnOnce(&AppSettings) -> Result<(), String>,
-    F: FnOnce(AppSettings) -> FF,
-    FF: Future<Output = Result<(), String>>,
-    R: FnOnce(&AppSettings) -> Result<(), String>,
+    S: Future<Output = Result<AppSettings, String>>,
     H: FnOnce() -> Result<(), String>,
 {
-    let settings = persist()?;
-    publish(&settings)?;
-    refresh_newly_enabled(settings.clone()).await?;
-    refresh_tray(&settings)?;
+    let settings = selection_lifecycle.await?;
     hide()?;
     Ok(settings)
 }
@@ -150,25 +168,32 @@ pub async fn update_settings(
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
     crate::authorize_caller(&window, &["settings"])?;
-    let previous_enabled_providers = state.settings.current()?.enabled_providers;
-    let settings = state.settings.update(patch)?;
-    if settings.enabled_providers != previous_enabled_providers {
-        state.controller.queue_interaction(EdgeInteraction::Dismiss);
+    if patch.enabled_providers.is_none() {
+        let settings = state.settings.update(patch)?;
+        emit_settings_changed(&app, &settings)?;
+        state.refresh_tray(&app, &settings)?;
+        return Ok(settings);
     }
-    emit_settings_changed(&app, &settings)?;
+
     let dashboard = dashboard.dashboard.clone();
     let cache_event_app = app.clone();
-    refresh_newly_enabled_then_notify(
-        &previous_enabled_providers,
-        &settings.enabled_providers,
+    run_provider_selection_lifecycle(
+        &state.provider_selection_gate,
+        || Ok(state.settings.current()?.enabled_providers),
+        || state.settings.update(patch),
+        |previous, settings| {
+            if settings.enabled_providers != previous {
+                state.controller.queue_interaction(EdgeInteraction::Dismiss);
+            }
+            emit_settings_changed(&app, settings)
+        },
         move |providers| async move {
             dashboard.get_snapshot_for(true, &providers).await;
         },
         move || emit_dashboard_cache_changed(&cache_event_app),
+        |settings| state.refresh_tray(&app, settings),
     )
-    .await?;
-    state.refresh_tray(&app, &settings)?;
-    Ok(settings)
+    .await
 }
 
 #[tauri::command]
@@ -180,33 +205,29 @@ pub async fn complete_onboarding(
     enabled_providers: Vec<ProviderId>,
 ) -> Result<AppSettings, String> {
     crate::authorize_caller(&window, &["onboarding"])?;
-    let previous_enabled_providers = state.settings.current()?.enabled_providers;
     let dashboard = dashboard.dashboard.clone();
     let cache_event_app = app.clone();
     complete_onboarding_lifecycle(
-        || {
-            state.settings.update(SettingsPatch {
-                onboarding_completed: Some(true),
-                enabled_providers: Some(enabled_providers),
-                ..Default::default()
-            })
-        },
-        |settings| {
-            state.controller.queue_interaction(EdgeInteraction::Dismiss);
-            emit_settings_changed(&app, settings)
-        },
-        move |settings| async move {
-            refresh_newly_enabled_then_notify(
-                &previous_enabled_providers,
-                &settings.enabled_providers,
-                move |providers| async move {
-                    dashboard.get_snapshot_for(true, &providers).await;
-                },
-                move || emit_dashboard_cache_changed(&cache_event_app),
-            )
-            .await
-        },
-        |settings| state.refresh_tray(&app, settings),
+        run_provider_selection_lifecycle(
+            &state.provider_selection_gate,
+            || Ok(state.settings.current()?.enabled_providers),
+            || {
+                state.settings.update(SettingsPatch {
+                    onboarding_completed: Some(true),
+                    enabled_providers: Some(enabled_providers),
+                    ..Default::default()
+                })
+            },
+            |_, settings| {
+                state.controller.queue_interaction(EdgeInteraction::Dismiss);
+                emit_settings_changed(&app, settings)
+            },
+            move |providers| async move {
+                dashboard.get_snapshot_for(true, &providers).await;
+            },
+            move || emit_dashboard_cache_changed(&cache_event_app),
+            |settings| state.refresh_tray(&app, settings),
+        ),
         || super::hide_onboarding_window(&app),
     )
     .await
@@ -317,35 +338,43 @@ mod tests {
 
     use super::{
         complete_onboarding_lifecycle, newly_enabled_providers, refresh_newly_enabled_then_notify,
-        settings_event_targets, ExitRequest, NotchInteraction,
+        run_provider_selection_lifecycle, settings_event_targets, ExitRequest, NotchInteraction,
     };
     use crate::dashboard::models::ProviderId;
     use crate::desktop::settings::AppSettings;
 
     #[tokio::test]
-    async fn onboarding_completion_runs_persist_publish_refresh_tray_and_hide_in_order() {
+    async fn onboarding_completion_runs_persist_publish_refresh_cache_tray_and_hide_in_order() {
         let calls = Mutex::new(Vec::new());
+        let gate = tokio::sync::Mutex::new(());
         let settings = complete_onboarding_lifecycle(
-            || {
-                calls.lock().unwrap().push("persist");
-                Ok(AppSettings {
-                    onboarding_completed: true,
-                    enabled_providers: vec![ProviderId::Codex],
-                    ..Default::default()
-                })
-            },
-            |_| {
-                calls.lock().unwrap().push("publish");
-                Ok(())
-            },
-            |_| async {
-                calls.lock().unwrap().push("refresh");
-                Ok(())
-            },
-            |_| {
-                calls.lock().unwrap().push("tray");
-                Ok(())
-            },
+            run_provider_selection_lifecycle(
+                &gate,
+                || Ok(Vec::new()),
+                || {
+                    calls.lock().unwrap().push("persist");
+                    Ok(AppSettings {
+                        onboarding_completed: true,
+                        enabled_providers: vec![ProviderId::Codex],
+                        ..Default::default()
+                    })
+                },
+                |_, _| {
+                    calls.lock().unwrap().push("publish");
+                    Ok(())
+                },
+                |_| async {
+                    calls.lock().unwrap().push("refresh");
+                },
+                || {
+                    calls.lock().unwrap().push("cache");
+                    Ok(())
+                },
+                |_| {
+                    calls.lock().unwrap().push("tray");
+                    Ok(())
+                },
+            ),
             || {
                 calls.lock().unwrap().push("hide");
                 Ok(())
@@ -357,27 +386,35 @@ mod tests {
         assert_eq!(settings.enabled_providers, vec![ProviderId::Codex]);
         assert_eq!(
             *calls.lock().unwrap(),
-            ["persist", "publish", "refresh", "tray", "hide"]
+            ["persist", "publish", "refresh", "cache", "tray", "hide"]
         );
     }
 
     #[tokio::test]
     async fn onboarding_persistence_failure_keeps_the_window_open() {
         let calls = Mutex::new(Vec::new());
+        let gate = tokio::sync::Mutex::new(());
         let result = complete_onboarding_lifecycle(
-            || Err("save failed".to_owned()),
-            |_| {
-                calls.lock().unwrap().push("publish");
-                Ok(())
-            },
-            |_| async {
-                calls.lock().unwrap().push("refresh");
-                Ok(())
-            },
-            |_| {
-                calls.lock().unwrap().push("tray");
-                Ok(())
-            },
+            run_provider_selection_lifecycle(
+                &gate,
+                || Ok(Vec::new()),
+                || Err("save failed".to_owned()),
+                |_, _| {
+                    calls.lock().unwrap().push("publish");
+                    Ok(())
+                },
+                |_| async {
+                    calls.lock().unwrap().push("refresh");
+                },
+                || {
+                    calls.lock().unwrap().push("cache");
+                    Ok(())
+                },
+                |_| {
+                    calls.lock().unwrap().push("tray");
+                    Ok(())
+                },
+            ),
             || {
                 calls.lock().unwrap().push("hide");
                 Ok(())
@@ -449,6 +486,88 @@ mod tests {
         .await
         .unwrap();
         assert!(trace.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrent_provider_selection_commands_serialize_final_state_and_fetch_scope() {
+        let gate = Arc::new(tokio::sync::Mutex::new(()));
+        let selected = Arc::new(Mutex::new(Vec::<ProviderId>::new()));
+        let fetch_scopes = Arc::new(Mutex::new(Vec::<Vec<ProviderId>>::new()));
+        let first_refresh_started = Arc::new(tokio::sync::Notify::new());
+        let release_first_refresh = Arc::new(tokio::sync::Notify::new());
+
+        let first = tokio::spawn({
+            let gate = gate.clone();
+            let selected_for_load = selected.clone();
+            let selected_for_persist = selected.clone();
+            let fetch_scopes = fetch_scopes.clone();
+            let first_refresh_started = first_refresh_started.clone();
+            let release_first_refresh = release_first_refresh.clone();
+            async move {
+                run_provider_selection_lifecycle(
+                    &gate,
+                    move || Ok(selected_for_load.lock().unwrap().clone()),
+                    move || {
+                        *selected_for_persist.lock().unwrap() = vec![ProviderId::Claude];
+                        Ok(AppSettings {
+                            enabled_providers: vec![ProviderId::Claude],
+                            ..Default::default()
+                        })
+                    },
+                    |_, _| Ok(()),
+                    move |providers| async move {
+                        first_refresh_started.notify_one();
+                        release_first_refresh.notified().await;
+                        fetch_scopes.lock().unwrap().push(providers);
+                    },
+                    || Ok(()),
+                    |_| Ok(()),
+                )
+                .await
+            }
+        });
+
+        first_refresh_started.notified().await;
+        let second = tokio::spawn({
+            let gate = gate.clone();
+            let selected_for_load = selected.clone();
+            let selected_for_persist = selected.clone();
+            let fetch_scopes = fetch_scopes.clone();
+            async move {
+                run_provider_selection_lifecycle(
+                    &gate,
+                    move || Ok(selected_for_load.lock().unwrap().clone()),
+                    move || {
+                        *selected_for_persist.lock().unwrap() = vec![ProviderId::Codex];
+                        Ok(AppSettings {
+                            enabled_providers: vec![ProviderId::Codex],
+                            ..Default::default()
+                        })
+                    },
+                    |_, _| Ok(()),
+                    move |providers| async move {
+                        fetch_scopes.lock().unwrap().push(providers);
+                    },
+                    || Ok(()),
+                    |_| Ok(()),
+                )
+                .await
+            }
+        });
+
+        tokio::task::yield_now().await;
+        assert_eq!(*selected.lock().unwrap(), [ProviderId::Claude]);
+        assert!(fetch_scopes.lock().unwrap().is_empty());
+        assert!(!second.is_finished());
+
+        release_first_refresh.notify_one();
+        first.await.unwrap().unwrap();
+        second.await.unwrap().unwrap();
+        assert_eq!(*selected.lock().unwrap(), [ProviderId::Codex]);
+        assert_eq!(
+            *fetch_scopes.lock().unwrap(),
+            [vec![ProviderId::Claude], vec![ProviderId::Codex]]
+        );
     }
 
     #[test]

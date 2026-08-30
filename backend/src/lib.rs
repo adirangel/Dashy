@@ -2,6 +2,14 @@ pub mod dashboard;
 pub mod desktop;
 pub mod setup;
 
+include!("../app_commands.rs");
+
+macro_rules! generate_app_handler {
+    ($($command:ident),* $(,)?) => {
+        tauri::generate_handler![$($command),*]
+    };
+}
+
 use std::sync::Arc;
 
 use dashboard::commands::{emit_dashboard_cache_changed, AppState};
@@ -142,6 +150,7 @@ pub fn run() {
 
             app.manage(DesktopState {
                 settings,
+                provider_selection_gate: tokio::sync::Mutex::new(()),
                 controller,
                 probe,
                 runtime,
@@ -176,23 +185,7 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![
-            get_dashboard_snapshot,
-            refresh_dashboard_provider,
-            get_provider_setup_states,
-            install_provider,
-            login_provider,
-            complete_onboarding,
-            get_settings,
-            get_current_edge_view,
-            update_settings,
-            set_notch_interaction,
-            begin_notch_exit,
-            complete_notch_exit,
-            list_monitors,
-            show_notch_menu,
-            set_tray_labels
-        ])
+        .invoke_handler(dashy_app_commands!(generate_app_handler))
         .run(tauri::generate_context!())
         .expect("failed to run Dashy");
 }
@@ -399,7 +392,10 @@ mod config_tests {
         assert_eq!(
             onboarding_capability["permissions"],
             serde_json::json!([
-                "core:default",
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:window:allow-is-visible",
+                "core:window:allow-is-focused",
                 "allow-get-settings",
                 "allow-get-provider-setup-states",
                 "allow-install-provider",
@@ -437,9 +433,8 @@ mod config_tests {
         assert_eq!(
             main["permissions"],
             serde_json::json!([
-                "core:default",
-                "core:window:allow-set-position",
-                "core:window:allow-start-dragging",
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
                 "allow-get-dashboard-snapshot",
                 "allow-refresh-dashboard-provider",
                 "allow-get-settings",
@@ -455,7 +450,11 @@ mod config_tests {
         assert_eq!(
             settings["permissions"],
             serde_json::json!([
-                "core:default",
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:event:allow-emit-to",
+                "core:window:allow-is-visible",
+                "core:window:allow-is-focused",
                 "autostart:allow-enable",
                 "autostart:allow-disable",
                 "autostart:allow-is-enabled",
@@ -477,6 +476,39 @@ mod config_tests {
                 }
             ])
         );
+
+        for capability in capabilities.as_array().unwrap() {
+            let serialized = serde_json::to_string(&capability["permissions"]).unwrap();
+            for forbidden in [
+                "core:default",
+                "core:menu:default",
+                "core:tray:default",
+                "core:path:default",
+                "core:image:default",
+                "core:webview:default",
+                "core:window:allow-set-position",
+                "core:window:allow-start-dragging",
+            ] {
+                assert!(
+                    !serialized.contains(forbidden),
+                    "{} unexpectedly grants {forbidden}",
+                    capability["identifier"]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn build_and_runtime_handlers_share_one_command_registry() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let build = std::fs::read_to_string(manifest_dir.join("build.rs")).unwrap();
+        let runtime = std::fs::read_to_string(manifest_dir.join("src/lib.rs")).unwrap();
+        let registry = manifest_dir.join("app_commands.rs");
+
+        assert!(registry.is_file());
+        assert!(build.contains("include!(\"app_commands.rs\")"));
+        assert!(runtime.contains("include!(\"../app_commands.rs\")"));
+        assert!(runtime.contains(".invoke_handler(dashy_app_commands!(generate_app_handler))"));
     }
 
     #[test]
