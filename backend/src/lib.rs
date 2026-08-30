@@ -123,8 +123,9 @@ pub fn run() {
             });
 
             let dashboard = app.state::<AppState>().dashboard.clone();
+            let enabled_providers = current_settings.enabled_providers.clone();
             tauri::async_runtime::spawn(async move {
-                dashboard.get_snapshot(false).await;
+                dashboard.get_snapshot_for(false, &enabled_providers).await;
             });
             Ok(())
         })
@@ -171,8 +172,12 @@ fn handle_menu_action(app: &AppHandle, id: &str) {
         "refresh_all" => {
             let dashboard = app.state::<AppState>().dashboard.clone();
             let app_handle = app.clone();
+            let enabled_providers = match state.settings.current() {
+                Ok(settings) => settings.enabled_providers.clone(),
+                Err(_) => return,
+            };
             tauri::async_runtime::spawn(async move {
-                dashboard.get_snapshot(true).await;
+                dashboard.get_snapshot_for(true, &enabled_providers).await;
                 let _ = emit_dashboard_cache_changed(&app_handle);
             });
         }

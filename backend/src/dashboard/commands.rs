@@ -70,11 +70,13 @@ pub fn emit_dashboard_cache_changed(app: &AppHandle) -> Result<(), String> {
 pub async fn get_dashboard_snapshot(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
+    desktop: tauri::State<'_, crate::desktop::DesktopState>,
     force: Option<bool>,
 ) -> Result<DashboardSnapshot, String> {
     let dashboard = state.dashboard.clone();
     let force = force.unwrap_or(false);
-    let snapshot = dashboard.get_snapshot(force).await;
+    let enabled = desktop.settings.current()?.enabled_providers;
+    let snapshot = dashboard.get_snapshot_for(force, &enabled).await;
     if force {
         emit_dashboard_cache_changed(&app)?;
     }
@@ -84,8 +86,13 @@ pub async fn get_dashboard_snapshot(
 #[tauri::command]
 pub async fn refresh_dashboard_provider(
     state: tauri::State<'_, AppState>,
+    desktop: tauri::State<'_, crate::desktop::DesktopState>,
     provider: ProviderId,
 ) -> Result<DashboardSnapshot, String> {
+    let enabled = desktop.settings.current()?.enabled_providers;
+    if !enabled.contains(&provider) {
+        return Err("provider is disabled".to_owned());
+    }
     let dashboard = state.dashboard.clone();
     Ok(dashboard.refresh_provider(provider).await)
 }
