@@ -14,6 +14,7 @@ mod windows;
 pub struct DesktopState {
     pub settings: Arc<settings::SettingsService>,
     pub provider_selection_gate: tokio::sync::Mutex<()>,
+    pub settings_side_effect_gate: std::sync::Mutex<()>,
     pub controller: Arc<controller::DesktopController>,
     pub probe: Arc<dyn platform::DesktopProbe>,
     pub runtime: controller::ControllerRuntime,

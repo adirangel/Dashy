@@ -151,6 +151,7 @@ pub fn run() {
             app.manage(DesktopState {
                 settings,
                 provider_selection_gate: tokio::sync::Mutex::new(()),
+                settings_side_effect_gate: std::sync::Mutex::new(()),
                 controller,
                 probe,
                 runtime,
@@ -241,6 +242,9 @@ fn settings_window_label(settings: &desktop::settings::AppSettings) -> &'static 
 }
 
 fn update_placement(app: &AppHandle, state: &DesktopState, placement: EdgePlacement) {
+    let Ok(_side_effect_guard) = state.settings_side_effect_gate.lock() else {
+        return;
+    };
     if let Ok(settings) = state.settings.update(SettingsPatch {
         placement: Some(placement),
         ..Default::default()
@@ -263,6 +267,9 @@ fn select_monitor(app: &AppHandle, state: &DesktopState, id: &str) {
 }
 
 fn update_monitor(app: &AppHandle, state: &DesktopState, monitor: Option<MonitorPreference>) {
+    let Ok(_side_effect_guard) = state.settings_side_effect_gate.lock() else {
+        return;
+    };
     if let Ok(settings) = state.settings.update(SettingsPatch {
         monitor: Some(monitor),
         ..Default::default()

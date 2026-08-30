@@ -57,45 +57,38 @@ where
     notify()
 }
 
-async fn run_provider_selection_lifecycle<L, P, E, R, RF, N, A>(
-    gate: &tokio::sync::Mutex<()>,
-    load_previous: L,
-    persist: P,
-    publish: E,
+async fn run_provider_selection_lifecycle<B, R, RF, N, C, A>(
+    provider_selection_gate: &tokio::sync::Mutex<()>,
+    settings_side_effect_gate: &std::sync::Mutex<()>,
+    begin: B,
     refresh: R,
     notify: N,
+    load_current: C,
     after: A,
 ) -> Result<AppSettings, String>
 where
-    L: FnOnce() -> Result<Vec<ProviderId>, String>,
-    P: FnOnce() -> Result<AppSettings, String>,
-    E: FnOnce(&[ProviderId], &AppSettings) -> Result<(), String>,
+    B: FnOnce() -> Result<(Vec<ProviderId>, AppSettings), String>,
     R: FnOnce(Vec<ProviderId>) -> RF,
     RF: Future<Output = ()>,
     N: FnOnce() -> Result<(), String>,
+    C: FnOnce() -> Result<AppSettings, String>,
     A: FnOnce(&AppSettings) -> Result<(), String>,
 {
-    let _selection_guard = gate.lock().await;
-    let previous = load_previous()?;
-    let settings = persist()?;
-    publish(&previous, &settings)?;
-    refresh_newly_enabled_then_notify(&previous, &settings.enabled_providers, refresh, notify)
+    let _selection_guard = provider_selection_gate.lock().await;
+    let (previous, persisted) = {
+        let _side_effect_guard = settings_side_effect_gate
+            .lock()
+            .map_err(|_| "settings side-effect lock poisoned".to_owned())?;
+        begin()?
+    };
+    refresh_newly_enabled_then_notify(&previous, &persisted.enabled_providers, refresh, notify)
         .await?;
-    after(&settings)?;
-    Ok(settings)
-}
-
-async fn complete_onboarding_lifecycle<S, H>(
-    selection_lifecycle: S,
-    hide: H,
-) -> Result<AppSettings, String>
-where
-    S: Future<Output = Result<AppSettings, String>>,
-    H: FnOnce() -> Result<(), String>,
-{
-    let settings = selection_lifecycle.await?;
-    hide()?;
-    Ok(settings)
+    let _side_effect_guard = settings_side_effect_gate
+        .lock()
+        .map_err(|_| "settings side-effect lock poisoned".to_owned())?;
+    let current = load_current()?;
+    after(&current)?;
+    Ok(current)
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -169,6 +162,10 @@ pub async fn update_settings(
 ) -> Result<AppSettings, String> {
     crate::authorize_caller(&window, &["settings"])?;
     if patch.enabled_providers.is_none() {
+        let _side_effect_guard = state
+            .settings_side_effect_gate
+            .lock()
+            .map_err(|_| "settings side-effect lock poisoned".to_owned())?;
         let settings = state.settings.update(patch)?;
         emit_settings_changed(&app, &settings)?;
         state.refresh_tray(&app, &settings)?;
@@ -179,18 +176,21 @@ pub async fn update_settings(
     let cache_event_app = app.clone();
     run_provider_selection_lifecycle(
         &state.provider_selection_gate,
-        || Ok(state.settings.current()?.enabled_providers),
-        || state.settings.update(patch),
-        |previous, settings| {
+        &state.settings_side_effect_gate,
+        || {
+            let previous = state.settings.current()?.enabled_providers;
+            let settings = state.settings.update(patch)?;
             if settings.enabled_providers != previous {
                 state.controller.queue_interaction(EdgeInteraction::Dismiss);
             }
-            emit_settings_changed(&app, settings)
+            emit_settings_changed(&app, &settings)?;
+            Ok((previous, settings))
         },
         move |providers| async move {
             dashboard.get_snapshot_for(true, &providers).await;
         },
         move || emit_dashboard_cache_changed(&cache_event_app),
+        || state.settings.current(),
         |settings| state.refresh_tray(&app, settings),
     )
     .await
@@ -207,28 +207,29 @@ pub async fn complete_onboarding(
     crate::authorize_caller(&window, &["onboarding"])?;
     let dashboard = dashboard.dashboard.clone();
     let cache_event_app = app.clone();
-    complete_onboarding_lifecycle(
-        run_provider_selection_lifecycle(
-            &state.provider_selection_gate,
-            || Ok(state.settings.current()?.enabled_providers),
-            || {
-                state.settings.update(SettingsPatch {
-                    onboarding_completed: Some(true),
-                    enabled_providers: Some(enabled_providers),
-                    ..Default::default()
-                })
-            },
-            |_, settings| {
-                state.controller.queue_interaction(EdgeInteraction::Dismiss);
-                emit_settings_changed(&app, settings)
-            },
-            move |providers| async move {
-                dashboard.get_snapshot_for(true, &providers).await;
-            },
-            move || emit_dashboard_cache_changed(&cache_event_app),
-            |settings| state.refresh_tray(&app, settings),
-        ),
-        || super::hide_onboarding_window(&app),
+    run_provider_selection_lifecycle(
+        &state.provider_selection_gate,
+        &state.settings_side_effect_gate,
+        || {
+            let previous = state.settings.current()?.enabled_providers;
+            let settings = state.settings.update(SettingsPatch {
+                onboarding_completed: Some(true),
+                enabled_providers: Some(enabled_providers),
+                ..Default::default()
+            })?;
+            state.controller.queue_interaction(EdgeInteraction::Dismiss);
+            emit_settings_changed(&app, &settings)?;
+            Ok((previous, settings))
+        },
+        move |providers| async move {
+            dashboard.get_snapshot_for(true, &providers).await;
+        },
+        move || emit_dashboard_cache_changed(&cache_event_app),
+        || state.settings.current(),
+        |settings| {
+            state.refresh_tray(&app, settings)?;
+            super::hide_onboarding_window(&app)
+        },
     )
     .await
 }
@@ -327,6 +328,10 @@ pub async fn set_tray_labels(
     labels: TrayLabels,
 ) -> Result<(), String> {
     crate::authorize_caller(&window, &["settings"])?;
+    let _side_effect_guard = state
+        .settings_side_effect_gate
+        .lock()
+        .map_err(|_| "settings side-effect lock poisoned".to_owned())?;
     state.tray.replace_labels(labels)?;
     let settings = state.settings.current()?;
     state.refresh_tray(&app, &settings)
@@ -337,45 +342,56 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::{
-        complete_onboarding_lifecycle, newly_enabled_providers, refresh_newly_enabled_then_notify,
+        newly_enabled_providers, refresh_newly_enabled_then_notify,
         run_provider_selection_lifecycle, settings_event_targets, ExitRequest, NotchInteraction,
     };
     use crate::dashboard::models::ProviderId;
-    use crate::desktop::settings::AppSettings;
+    use crate::desktop::settings::{
+        AppSettings, EdgePlacement, LocaleCode, MonitorPreference, StoredMonitorRect,
+    };
 
     #[tokio::test]
     async fn onboarding_completion_runs_persist_publish_refresh_cache_tray_and_hide_in_order() {
         let calls = Mutex::new(Vec::new());
         let gate = tokio::sync::Mutex::new(());
-        let settings = complete_onboarding_lifecycle(
-            run_provider_selection_lifecycle(
-                &gate,
-                || Ok(Vec::new()),
-                || {
-                    calls.lock().unwrap().push("persist");
-                    Ok(AppSettings {
-                        onboarding_completed: true,
-                        enabled_providers: vec![ProviderId::Codex],
-                        ..Default::default()
-                    })
-                },
-                |_, _| {
-                    calls.lock().unwrap().push("publish");
-                    Ok(())
-                },
-                |_| async {
-                    calls.lock().unwrap().push("refresh");
-                },
-                || {
-                    calls.lock().unwrap().push("cache");
-                    Ok(())
-                },
-                |_| {
-                    calls.lock().unwrap().push("tray");
-                    Ok(())
-                },
-            ),
+        let side_effect_gate = std::sync::Mutex::new(());
+        let settings = run_provider_selection_lifecycle(
+            &gate,
+            &side_effect_gate,
             || {
+                calls.lock().unwrap().push("persist");
+                let settings = AppSettings {
+                    onboarding_completed: true,
+                    enabled_providers: vec![ProviderId::Codex],
+                    ..Default::default()
+                };
+                calls.lock().unwrap().push("publish");
+                Ok((Vec::new(), settings))
+            },
+            |_| async {
+                calls.lock().unwrap().push("refresh");
+            },
+            || {
+                calls.lock().unwrap().push("cache");
+                Ok(())
+            },
+            || {
+                Ok(AppSettings {
+                    onboarding_completed: true,
+                    enabled_providers: vec![ProviderId::Codex],
+                    ..Default::default()
+                })
+            },
+            |_| {
+                assert!(
+                    gate.try_lock().is_err(),
+                    "provider-selection guard must cover the final onboarding hide"
+                );
+                assert!(
+                    side_effect_gate.try_lock().is_err(),
+                    "settings side-effect guard must cover the final onboarding hide"
+                );
+                calls.lock().unwrap().push("tray");
                 calls.lock().unwrap().push("hide");
                 Ok(())
             },
@@ -394,28 +410,21 @@ mod tests {
     async fn onboarding_persistence_failure_keeps_the_window_open() {
         let calls = Mutex::new(Vec::new());
         let gate = tokio::sync::Mutex::new(());
-        let result = complete_onboarding_lifecycle(
-            run_provider_selection_lifecycle(
-                &gate,
-                || Ok(Vec::new()),
-                || Err("save failed".to_owned()),
-                |_, _| {
-                    calls.lock().unwrap().push("publish");
-                    Ok(())
-                },
-                |_| async {
-                    calls.lock().unwrap().push("refresh");
-                },
-                || {
-                    calls.lock().unwrap().push("cache");
-                    Ok(())
-                },
-                |_| {
-                    calls.lock().unwrap().push("tray");
-                    Ok(())
-                },
-            ),
+        let side_effect_gate = std::sync::Mutex::new(());
+        let result = run_provider_selection_lifecycle(
+            &gate,
+            &side_effect_gate,
+            || Err("save failed".to_owned()),
+            |_| async {
+                calls.lock().unwrap().push("refresh");
+            },
             || {
+                calls.lock().unwrap().push("cache");
+                Ok(())
+            },
+            || Ok(AppSettings::default()),
+            |_| {
+                calls.lock().unwrap().push("tray");
                 calls.lock().unwrap().push("hide");
                 Ok(())
             },
@@ -491,6 +500,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_provider_selection_commands_serialize_final_state_and_fetch_scope() {
         let gate = Arc::new(tokio::sync::Mutex::new(()));
+        let side_effect_gate = Arc::new(std::sync::Mutex::new(()));
         let selected = Arc::new(Mutex::new(Vec::<ProviderId>::new()));
         let fetch_scopes = Arc::new(Mutex::new(Vec::<Vec<ProviderId>>::new()));
         let first_refresh_started = Arc::new(tokio::sync::Notify::new());
@@ -498,29 +508,38 @@ mod tests {
 
         let first = tokio::spawn({
             let gate = gate.clone();
+            let side_effect_gate = side_effect_gate.clone();
             let selected_for_load = selected.clone();
             let selected_for_persist = selected.clone();
+            let selected_for_current = selected.clone();
             let fetch_scopes = fetch_scopes.clone();
             let first_refresh_started = first_refresh_started.clone();
             let release_first_refresh = release_first_refresh.clone();
             async move {
                 run_provider_selection_lifecycle(
                     &gate,
-                    move || Ok(selected_for_load.lock().unwrap().clone()),
+                    &side_effect_gate,
                     move || {
+                        let previous = selected_for_load.lock().unwrap().clone();
                         *selected_for_persist.lock().unwrap() = vec![ProviderId::Claude];
-                        Ok(AppSettings {
+                        let settings = AppSettings {
                             enabled_providers: vec![ProviderId::Claude],
                             ..Default::default()
-                        })
+                        };
+                        Ok((previous, settings))
                     },
-                    |_, _| Ok(()),
                     move |providers| async move {
                         first_refresh_started.notify_one();
                         release_first_refresh.notified().await;
                         fetch_scopes.lock().unwrap().push(providers);
                     },
                     || Ok(()),
+                    move || {
+                        Ok(AppSettings {
+                            enabled_providers: selected_for_current.lock().unwrap().clone(),
+                            ..Default::default()
+                        })
+                    },
                     |_| Ok(()),
                 )
                 .await
@@ -530,25 +549,34 @@ mod tests {
         first_refresh_started.notified().await;
         let second = tokio::spawn({
             let gate = gate.clone();
+            let side_effect_gate = side_effect_gate.clone();
             let selected_for_load = selected.clone();
             let selected_for_persist = selected.clone();
+            let selected_for_current = selected.clone();
             let fetch_scopes = fetch_scopes.clone();
             async move {
                 run_provider_selection_lifecycle(
                     &gate,
-                    move || Ok(selected_for_load.lock().unwrap().clone()),
+                    &side_effect_gate,
                     move || {
+                        let previous = selected_for_load.lock().unwrap().clone();
                         *selected_for_persist.lock().unwrap() = vec![ProviderId::Codex];
-                        Ok(AppSettings {
+                        let settings = AppSettings {
                             enabled_providers: vec![ProviderId::Codex],
                             ..Default::default()
-                        })
+                        };
+                        Ok((previous, settings))
                     },
-                    |_, _| Ok(()),
                     move |providers| async move {
                         fetch_scopes.lock().unwrap().push(providers);
                     },
                     || Ok(()),
+                    move || {
+                        Ok(AppSettings {
+                            enabled_providers: selected_for_current.lock().unwrap().clone(),
+                            ..Default::default()
+                        })
+                    },
                     |_| Ok(()),
                 )
                 .await
@@ -568,6 +596,89 @@ mod tests {
             *fetch_scopes.lock().unwrap(),
             [vec![ProviderId::Claude], vec![ProviderId::Codex]]
         );
+    }
+
+    #[tokio::test]
+    async fn slow_selection_returns_and_refreshes_tray_from_newer_authoritative_settings() {
+        let gate = Arc::new(tokio::sync::Mutex::new(()));
+        let side_effect_gate = Arc::new(std::sync::Mutex::new(()));
+        let authoritative = Arc::new(Mutex::new(AppSettings::default()));
+        let published = Arc::new(Mutex::new(Vec::<AppSettings>::new()));
+        let tray_refreshes = Arc::new(Mutex::new(Vec::<AppSettings>::new()));
+        let refresh_started = Arc::new(tokio::sync::Notify::new());
+        let release_refresh = Arc::new(tokio::sync::Notify::new());
+
+        let selection = tokio::spawn({
+            let gate = gate.clone();
+            let side_effect_gate = side_effect_gate.clone();
+            let authoritative_for_load = authoritative.clone();
+            let authoritative_for_persist = authoritative.clone();
+            let authoritative_for_current = authoritative.clone();
+            let published = published.clone();
+            let tray_refreshes = tray_refreshes.clone();
+            let refresh_started = refresh_started.clone();
+            let release_refresh = release_refresh.clone();
+            async move {
+                run_provider_selection_lifecycle(
+                    &gate,
+                    &side_effect_gate,
+                    move || {
+                        let previous = authoritative_for_load
+                            .lock()
+                            .unwrap()
+                            .enabled_providers
+                            .clone();
+                        let mut settings = authoritative_for_persist.lock().unwrap();
+                        settings.enabled_providers = vec![ProviderId::Claude];
+                        let settings = settings.clone();
+                        published.lock().unwrap().push(settings.clone());
+                        Ok((previous, settings))
+                    },
+                    move |_| async move {
+                        refresh_started.notify_one();
+                        release_refresh.notified().await;
+                    },
+                    || Ok(()),
+                    move || Ok(authoritative_for_current.lock().unwrap().clone()),
+                    move |settings| {
+                        tray_refreshes.lock().unwrap().push(settings.clone());
+                        Ok(())
+                    },
+                )
+                .await
+            }
+        });
+
+        refresh_started.notified().await;
+        let newer = {
+            let _side_effect_guard = side_effect_gate.lock().unwrap();
+            let mut settings = authoritative.lock().unwrap();
+            settings.placement = EdgePlacement::Left;
+            settings.locale = LocaleCode::He;
+            settings.monitor = Some(MonitorPreference {
+                id: "display-new".into(),
+                name: "New display".into(),
+                last_work_area: StoredMonitorRect {
+                    x: 1920,
+                    y: 0,
+                    width: 2560,
+                    height: 1400,
+                },
+            });
+            let newer = settings.clone();
+            drop(settings);
+            published.lock().unwrap().push(newer.clone());
+            tray_refreshes.lock().unwrap().push(newer.clone());
+            newer
+        };
+
+        release_refresh.notify_one();
+        let returned = selection.await.unwrap().unwrap();
+
+        assert_eq!(*authoritative.lock().unwrap(), newer);
+        assert_eq!(returned, newer);
+        assert_eq!(tray_refreshes.lock().unwrap().last(), Some(&newer));
+        assert_eq!(published.lock().unwrap().last(), Some(&newer));
     }
 
     #[test]
