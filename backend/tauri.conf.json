@@ -21,7 +21,7 @@
         "label": "main",
         "title": "Dashy",
         "width": 70,
-        "height": 270,
+        "height": 340,
         "visible": false,
         "resizable": false,
         "decorations": false,

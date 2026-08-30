@@ -323,6 +323,12 @@ pub async fn show_notch_menu(
 }
 
 #[tauri::command]
+pub async fn open_settings(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
+    crate::authorize_caller(&window, &["main"])?;
+    super::show_settings_window(&app)
+}
+
+#[tauri::command]
 pub async fn set_tray_labels(
     window: WebviewWindow,
     app: AppHandle,

@@ -50,8 +50,8 @@ pub fn run() {
     use desktop::{
         commands::{
             begin_notch_exit, complete_notch_exit, complete_onboarding, get_current_edge_view,
-            get_settings, list_monitors, set_notch_interaction, set_tray_labels, show_notch_menu,
-            update_settings,
+            get_settings, list_monitors, open_settings, set_notch_interaction, set_tray_labels,
+            show_notch_menu, update_settings,
         },
         controller::{start_controller_runtime, TauriWindowPort, WindowPort},
         menu::TrayState,
@@ -456,7 +456,8 @@ mod config_tests {
                 "allow-set-notch-interaction",
                 "allow-begin-notch-exit",
                 "allow-complete-notch-exit",
-                "allow-show-notch-menu"
+                "allow-show-notch-menu",
+                "allow-open-settings"
             ])
         );
 
@@ -548,6 +549,7 @@ mod config_tests {
             "install-provider",
             "list-monitors",
             "login-provider",
+            "open-settings",
             "refresh-dashboard-provider",
             "set-notch-interaction",
             "set-tray-labels",

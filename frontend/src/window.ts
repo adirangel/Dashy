@@ -118,6 +118,7 @@ export const setTrayLabels = (labels: TrayLabels) =>
 export const setNotchInteraction = (interaction: NotchInteraction) =>
   invoke<void>("set_notch_interaction", { interaction });
 export const showNotchMenu = () => invoke<void>("show_notch_menu");
+export const openSettings = () => invoke<void>("open_settings");
 export function beginNotchExit(token: ExitToken): Promise<boolean> {
   if (!isExitToken(token)) return Promise.reject(new Error("invalid exit token"));
   return invoke<boolean>("begin_notch_exit", { request: { token } });

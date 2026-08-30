@@ -17,7 +17,7 @@ vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => mocks.current
 import {
   beginNotchExit, completeNotchExit, getCurrentEdgeView, isDashboardCacheChangedEvent,
   isCurrentWindowActive, isEdgeViewState, isExitToken, listenForCurrentWindowActivation,
-  listenForSettingsChanges,
+  listenForSettingsChanges, openSettings,
 } from "./window";
 
 describe("strict edge-view validation", () => {
@@ -91,6 +91,12 @@ describe("strict edge-view validation", () => {
       { revision: Number.MAX_SAFE_INTEGER }, { revision: 1, provider: "claude" },
       { revision: "1" },
     ]) expect(isDashboardCacheChangedEvent(invalid)).toBe(false);
+  });
+
+  it("opens Settings through the dedicated native command", async () => {
+    mocks.invoke.mockResolvedValue(undefined);
+    await expect(openSettings()).resolves.toBeUndefined();
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("open_settings");
   });
 
   it("forwards the complete native settings event and returns its unlisten function", async () => {

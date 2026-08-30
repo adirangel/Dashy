@@ -53,6 +53,7 @@ describe("compact metric rail", () => {
     render(<NotchApp placement={placement} snapshot={connected} selectedProvider="claude" />);
     expect(screen.getByRole("toolbar", { name: /provider status/i }))
       .toHaveAttribute("aria-orientation", orientation);
+    expect(screen.getByRole("button", { name: /settings/i })).toHaveClass("settings-launcher");
     expect(screen.getByTestId("notch-surface")).toHaveClass(`placement-${placement}`);
   });
 

@@ -18,6 +18,7 @@ macro_rules! dashy_app_commands {
             complete_notch_exit,
             list_monitors,
             show_notch_menu,
+            open_settings,
             set_tray_labels,
         }
     };

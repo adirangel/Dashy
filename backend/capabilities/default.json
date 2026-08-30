@@ -14,7 +14,8 @@
       "allow-set-notch-interaction",
       "allow-begin-notch-exit",
       "allow-complete-notch-exit",
-      "allow-show-notch-menu"
+      "allow-show-notch-menu",
+      "allow-open-settings"
     ]
   },
   {

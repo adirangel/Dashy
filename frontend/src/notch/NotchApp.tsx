@@ -7,7 +7,8 @@ import type { DashboardSnapshot, ProviderId } from "../dashboard";
 import { useDashboardSnapshot } from "../useDashboardSnapshot";
 import {
   beginNotchExit, completeNotchExit, createExitToken, getCurrentEdgeView, getSettings,
-  isTauriRuntime, listenForEdgeView, listenForSettingsChanges, setNotchInteraction, showNotchMenu,
+  isTauriRuntime, listenForEdgeView, listenForSettingsChanges, openSettings, setNotchInteraction,
+  showNotchMenu,
   type EdgePlacement, type EdgeViewState, type ExitToken, type NotchInteraction,
 } from "../window";
 import { GitHubCard } from "./GitHubCard";
@@ -23,6 +24,7 @@ type NotchAppProps = {
 };
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "github"];
+const SETTINGS_CONTROL_EXTENT = 70;
 
 const isVisibleView = (view: EdgeViewState) =>
   view.visibility === "rail" || view.visibility === "card" || view.visibility === "pinned";
@@ -254,11 +256,12 @@ export function NotchApp({
   const visible = settingsReady && enabledProviders.length > 0 && surface.rendered !== null;
   const showCard = visible && (surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned");
   const railExtent = 30 + enabledProviders.length * 80;
+  const controlExtent = railExtent + SETTINGS_CONTROL_EXTENT;
   const selectedIndex = Math.max(0, enabledProviders.indexOf(selectedProvider));
   const joinOffset = (selectedIndex - (enabledProviders.length - 1) / 2) * 80;
   const logicalSize = showCard
     ? placement === "top" ? "340x430" : "370x360"
-    : placement === "top" ? `${railExtent}x70` : `70x${railExtent}`;
+    : placement === "top" ? `${controlExtent}x70` : `70x${controlExtent}`;
   const send = (interaction: NotchInteraction) => {
     if (native) void setNotchInteraction(interaction).catch(() => undefined);
   };
@@ -368,6 +371,8 @@ export function NotchApp({
       data-logical-size={logicalSize}
       style={{
         "--rail-extent": `${railExtent}px`,
+        "--control-extent": `${controlExtent}px`,
+        "--control-start": `${-controlExtent / 2}px`,
         "--join-track-offset": `${joinOffset}px`,
       } as CSSProperties}
       aria-hidden={surface.exit !== null || undefined}
@@ -392,6 +397,18 @@ export function NotchApp({
         refreshingProviders={dashboard.refreshingProviders}
         now={now}
       />
+      <button
+        type="button"
+        className="settings-launcher"
+        aria-label={t("settings.title")}
+        title={t("settings.title")}
+        onClick={() => { if (native) void openSettings().catch(() => undefined); }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+          <path d="m9.8 3.3.6-1.3h3.2l.6 1.3 1.7.7 1.4-.5 2.2 2.2-.5 1.4.7 1.7 1.3.6v3.2l-1.3.6-.7 1.7.5 1.4-2.2 2.2-1.4-.5-1.7.7-.6 1.3h-3.2l-.6-1.3-1.7-.7-1.4.5-2.2-2.2.5-1.4-.7-1.7-1.3-.6V9.4l1.3-.6.7-1.7-.5-1.4 2.2-2.2 1.4.5 1.7-.7Z" />
+          <circle cx="12" cy="11" r="2.8" />
+        </svg>
+      </button>
       {showCard && <div className="notch-join" data-provider={selectedProvider} aria-hidden="true" />}
       {showCard && <div className="provider-card-slot" data-testid="provider-card-region">
         {selectedProvider === "github"

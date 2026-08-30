@@ -40,6 +40,8 @@ Keyboard behavior:
 - Escape closes a pinned or expanded card to the rail; a second Escape hides the rail.
 
 Right-click the visible notch for its compact native menu.
+The detached gear at the end of the metric rail opens Settings directly and remains
+available in the right, left, and top placements.
 
 ## Placement, monitors, and fullscreen
 
@@ -228,7 +230,7 @@ hidden; move the pointer to the configured edge or use **Show Dashy** from the t
 
 ## Settings
 
-Open Settings from the tray or notch context menu to configure:
+Open Settings from the rail's gear, the tray, or the notch context menu to configure:
 
 - Placement
 - Monitor

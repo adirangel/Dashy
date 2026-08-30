@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   listenForSettingsChanges: vi.fn(),
   beginNotchExit: vi.fn(), completeNotchExit: vi.fn(),
   createExitToken: vi.fn(),
-  setNotchInteraction: vi.fn(), showNotchMenu: vi.fn(), unlisten: vi.fn(), settingsUnlisten: vi.fn(),
+  openSettings: vi.fn(), setNotchInteraction: vi.fn(), showNotchMenu: vi.fn(), unlisten: vi.fn(), settingsUnlisten: vi.fn(),
   refreshProvider: vi.fn(),
   dashboard: {
     snapshot: null as DashboardSnapshot | null,
@@ -26,6 +26,7 @@ vi.mock("../window", () => ({
   createExitToken: mocks.createExitToken,
   listenForEdgeView: mocks.listenForEdgeView,
   listenForSettingsChanges: mocks.listenForSettingsChanges,
+  openSettings: mocks.openSettings,
   setNotchInteraction: mocks.setNotchInteraction, showNotchMenu: mocks.showNotchMenu,
 }));
 vi.mock("../useDashboardSnapshot", () => ({
@@ -73,6 +74,7 @@ describe("native notch interaction bridge", () => {
     mocks.beginNotchExit.mockResolvedValue(true);
     mocks.completeNotchExit.mockResolvedValue(true);
     mocks.createExitToken.mockImplementation(() => `exit-test-${++exitTokenSequence}`);
+    mocks.openSettings.mockResolvedValue(undefined);
     mocks.showNotchMenu.mockResolvedValue(undefined);
     mocks.refreshProvider.mockResolvedValue("success");
     mocks.dashboard.snapshot = snapshot;
@@ -87,18 +89,18 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByRole("toolbar", { name: /provider status/i })).toBeInTheDocument();
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
     expect(screen.getByTestId("notch-surface"))
-      .toHaveAttribute("data-logical-size", "70x270");
+      .toHaveAttribute("data-logical-size", "70x340");
     expect(screen.getByTestId("notch-surface")).not.toHaveClass("is-expanded");
   });
 
   it.each([
-    [["claude"], "right", 1, "110", "70x110"],
-    [["claude"], "top", 1, "110", "110x70"],
-    [["claude", "github"], "right", 2, "190", "70x190"],
-    [["claude", "github"], "top", 2, "190", "190x70"],
-    [["claude", "codex", "github"], "right", 3, "270", "70x270"],
-    [["claude", "codex", "github"], "top", 3, "270", "270x70"],
-  ] as const)("renders and sizes only enabled providers %#", async (enabledProviders, placement, count, extent, logicalSize) => {
+    [["claude"], "right", 1, "110", "180", "70x180"],
+    [["claude"], "top", 1, "110", "180", "180x70"],
+    [["claude", "github"], "right", 2, "190", "260", "70x260"],
+    [["claude", "github"], "top", 2, "190", "260", "260x70"],
+    [["claude", "codex", "github"], "right", 3, "270", "340", "70x340"],
+    [["claude", "codex", "github"], "top", 3, "270", "340", "340x70"],
+  ] as const)("renders and sizes only enabled providers %#", async (enabledProviders, placement, count, railExtent, controlExtent, logicalSize) => {
     mocks.getSettings.mockResolvedValue({
       placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
       onboardingCompleted: true, enabledProviders: [...enabledProviders],
@@ -108,8 +110,22 @@ describe("native notch interaction bridge", () => {
     await emitEdgeView({ visibility: "rail", placement, provider: null });
 
     await waitFor(() => expect(screen.getAllByRole("button", { name: /Claude|Codex|GitHub/ })).toHaveLength(count));
-    expect(screen.getByTestId("notch-surface")).toHaveStyle({ "--rail-extent": `${extent}px` });
+    expect(screen.getByTestId("notch-surface")).toHaveStyle({
+      "--rail-extent": `${railExtent}px`,
+      "--control-extent": `${controlExtent}px`,
+    });
     expect(screen.getByTestId("notch-surface")).toHaveAttribute("data-logical-size", logicalSize);
+  });
+
+  it("opens Settings from the detached gear without changing provider state", async () => {
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+
+    await waitFor(() => expect(mocks.openSettings).toHaveBeenCalledTimes(1));
+    expect(mocks.setNotchInteraction).not.toHaveBeenCalled();
+    expect(mocks.refreshProvider).not.toHaveBeenCalled();
   });
 
   it("renders no native surface when every provider is disabled", async () => {
@@ -244,7 +260,7 @@ describe("native notch interaction bridge", () => {
 
   it.each([
     "connected", "loading", "unavailable", "notInstalled", "notAuthenticated", "stale",
-  ] as const)("keeps the %s top rail inside the 270x70 one-line CSS contract", async (status) => {
+  ] as const)("keeps the %s top rail inside the 340x70 one-line CSS contract", async (status) => {
     const statusSnapshot: DashboardSnapshot | null = status === "loading"
       ? null
       : {
@@ -264,7 +280,7 @@ describe("native notch interaction bridge", () => {
     const surface = screen.getByTestId("notch-surface");
     expect(surface).toHaveClass("placement-top");
     expect(surface).not.toHaveClass("is-expanded");
-    expect(surface).toHaveAttribute("data-logical-size", "270x70");
+    expect(surface).toHaveAttribute("data-logical-size", "340x70");
     const claude = screen.getByRole("button", { name: /Claude/i });
     expect(claude.querySelectorAll(":scope > .metric-value, :scope > .metric-status"))
       .toHaveLength(1);
