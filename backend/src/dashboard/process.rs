@@ -83,10 +83,8 @@ struct ProgramLaunch {
 
 fn program_launch(program: AllowedProgram) -> ProgramLaunch {
     #[cfg(windows)]
-    if program == AllowedProgram::Codex {
-        let path_entries = std::env::var_os("PATH")
-            .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
-            .unwrap_or_default();
+    {
+        let path_entries = current_windows_program_search_paths();
         if let Some(launch) = resolve_windows_program_from_paths(program, &path_entries) {
             return launch;
         }
@@ -99,23 +97,149 @@ fn program_launch(program: AllowedProgram) -> ProgramLaunch {
 }
 
 #[cfg(windows)]
+fn current_windows_program_search_paths() -> Vec<PathBuf> {
+    use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let process_path = std::env::var_os("PATH");
+    let user_path = read_windows_registry_string(HKEY_CURRENT_USER, "Environment", "Path");
+    let machine_path = read_windows_registry_string(
+        HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        "Path",
+    );
+    let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from);
+    let program_files_x86 = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from);
+
+    windows_program_search_paths(
+        process_path.as_deref(),
+        user_path.as_deref(),
+        machine_path.as_deref(),
+        local_app_data.as_deref(),
+        program_files.as_deref(),
+        program_files_x86.as_deref(),
+    )
+}
+
+#[cfg(windows)]
+fn windows_program_search_paths(
+    process_path: Option<&std::ffi::OsStr>,
+    user_path: Option<&std::ffi::OsStr>,
+    machine_path: Option<&std::ffi::OsStr>,
+    local_app_data: Option<&std::path::Path>,
+    program_files: Option<&std::path::Path>,
+    program_files_x86: Option<&std::path::Path>,
+) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for value in [process_path, user_path, machine_path]
+        .into_iter()
+        .flatten()
+    {
+        paths.extend(std::env::split_paths(value));
+    }
+    if let Some(root) = local_app_data {
+        paths.push(root.join("Microsoft/WinGet/Links"));
+    }
+    if let Some(root) = program_files {
+        paths.push(root.join("WinGet/Links"));
+    }
+    if let Some(root) = program_files_x86 {
+        paths.push(root.join("WinGet/Links"));
+    }
+    paths
+}
+
+#[cfg(windows)]
+fn read_windows_registry_string(
+    root: windows::Win32::System::Registry::HKEY,
+    subkey: &str,
+    value_name: &str,
+) -> Option<std::ffi::OsString> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::{
+        core::PCWSTR,
+        Win32::{
+            Foundation::ERROR_MORE_DATA,
+            System::Registry::{RegGetValueW, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ},
+        },
+    };
+
+    let subkey = subkey
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let value_name = value_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let flags = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ;
+    let mut byte_count = 0_u32;
+    // SAFETY: Both strings are NUL-terminated and remain alive for the call. The first query
+    // requests only the required buffer size and does not pass a data pointer.
+    let size_result = unsafe {
+        RegGetValueW(
+            root,
+            PCWSTR(subkey.as_ptr()),
+            PCWSTR(value_name.as_ptr()),
+            flags,
+            None,
+            None,
+            Some(&mut byte_count),
+        )
+    };
+    if size_result.0 != 0 || byte_count == 0 {
+        return None;
+    }
+
+    loop {
+        let mut value = vec![0_u16; (byte_count as usize).div_ceil(2)];
+        let mut available_bytes = byte_count;
+        // SAFETY: The buffer is writable for `available_bytes`, the key/value pointers are valid
+        // NUL-terminated strings, and RegGetValueW does not retain any supplied pointer.
+        let read_result = unsafe {
+            RegGetValueW(
+                root,
+                PCWSTR(subkey.as_ptr()),
+                PCWSTR(value_name.as_ptr()),
+                flags,
+                None,
+                Some(value.as_mut_ptr().cast()),
+                Some(&mut available_bytes),
+            )
+        };
+        if read_result == ERROR_MORE_DATA {
+            byte_count = available_bytes;
+            continue;
+        }
+        if read_result.0 != 0 {
+            return None;
+        }
+        value.truncate((available_bytes as usize).div_ceil(2));
+        while value.last() == Some(&0) {
+            value.pop();
+        }
+        return Some(std::ffi::OsString::from_wide(&value));
+    }
+}
+
+#[cfg(windows)]
 fn resolve_windows_program_from_paths(
     program: AllowedProgram,
     path_entries: &[PathBuf],
 ) -> Option<ProgramLaunch> {
-    if program != AllowedProgram::Codex {
-        return None;
-    }
-
     if let Some(executable) = path_entries
         .iter()
-        .map(|directory| directory.join("codex.exe"))
+        .map(|directory| directory.join(format!("{}.exe", program.executable())))
         .find(|candidate| candidate.is_file())
     {
         return Some(ProgramLaunch {
             executable,
             prefix_args: Vec::new(),
         });
+    }
+
+    if program != AllowedProgram::Codex {
+        return None;
     }
 
     if let Some(executable) = path_entries.iter().find_map(|directory| {
@@ -755,8 +879,9 @@ fn spawn_conpty_session(
     args: Vec<String>,
     cleanup_deadline: Instant,
 ) -> Result<PtySession, ProcessError> {
-    let mut command = std::process::Command::new(program.executable());
-    command.args(args);
+    let launch = program_launch(program);
+    let mut command = std::process::Command::new(&launch.executable);
+    command.args(&launch.prefix_args).args(args);
     let mut options = conpty::ProcessOptions::default();
     options.set_console_size(Some((80, 30)));
     let mut process = options
@@ -1497,6 +1622,76 @@ mod tests {
         let launch =
             resolve_windows_program_from_paths(AllowedProgram::Codex, std::slice::from_ref(&npm))
                 .unwrap();
+
+        assert_eq!(launch.executable, executable);
+        assert!(launch.prefix_args.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn provider_directory_added_after_startup_resolves_without_restarting_dashy() {
+        let unique = format!(
+            "dashy-provider-path-refresh-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let startup_path = root.join("startup-path");
+        let installed_path = root.join("installed-after-startup");
+        std::fs::create_dir_all(&startup_path).unwrap();
+        std::fs::create_dir_all(&installed_path).unwrap();
+        let startup_path_value = std::env::join_paths([&startup_path]).unwrap();
+
+        let before =
+            windows_program_search_paths(Some(&startup_path_value), None, None, None, None, None);
+        assert_eq!(
+            resolve_windows_program_from_paths(AllowedProgram::Gh, &before),
+            None
+        );
+
+        let executable = installed_path.join("gh.exe");
+        std::fs::write(&executable, "installed executable").unwrap();
+        let refreshed_user_path = std::env::join_paths([&installed_path]).unwrap();
+        let after = windows_program_search_paths(
+            Some(&startup_path_value),
+            Some(&refreshed_user_path),
+            None,
+            None,
+            None,
+            None,
+        );
+        let launch = resolve_windows_program_from_paths(AllowedProgram::Gh, &after).unwrap();
+
+        assert_eq!(launch.executable, executable);
+        assert!(launch.prefix_args.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn fixed_winget_links_are_searched_even_when_process_path_is_stale() {
+        let unique = format!(
+            "dashy-winget-links-refresh-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let local_app_data = root.join("local-app-data");
+        let links = local_app_data.join("Microsoft/WinGet/Links");
+        let executable = links.join("claude.exe");
+        std::fs::create_dir_all(&links).unwrap();
+        std::fs::write(&executable, "installed executable").unwrap();
+
+        let paths =
+            windows_program_search_paths(None, None, None, Some(&local_app_data), None, None);
+        let launch = resolve_windows_program_from_paths(AllowedProgram::Claude, &paths).unwrap();
 
         assert_eq!(launch.executable, executable);
         assert!(launch.prefix_args.is_empty());
