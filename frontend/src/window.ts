@@ -5,8 +5,8 @@ import type { SupportedLocale } from "./i18n";
 import type { ProviderId } from "./dashboard";
 
 export type EdgePlacement = "right" | "left" | "top";
-export type StoredMonitorRect = { x: number; y: number; width: number; height: number };
-export type MonitorPreference = { id: string; name: string; lastWorkArea: StoredMonitorRect };
+type StoredMonitorRect = { x: number; y: number; width: number; height: number };
+type MonitorPreference = { id: string; name: string; lastWorkArea: StoredMonitorRect };
 export type AppSettings = {
   placement: EdgePlacement;
   monitor: MonitorPreference | null;
@@ -32,14 +32,14 @@ export type TrayLabels = {
   settings: string;
   quit: string;
 };
-export type EdgeVisibility = "hidden" | "rail" | "card" | "pinned" | "suppressed";
+type EdgeVisibility = "hidden" | "rail" | "card" | "pinned" | "suppressed";
 export type EdgeViewState = {
   visibility: EdgeVisibility;
   placement: EdgePlacement;
   provider: ProviderId | null;
 };
 export type ExitToken = string;
-export type DashboardCacheChangedEvent = { revision: number };
+type DashboardCacheChangedEvent = { revision: number };
 export type NotchInteraction =
   | { kind: "enterSafeRegion" }
   | { kind: "leaveSafeRegion" }

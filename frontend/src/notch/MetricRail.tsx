@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import type { DashboardSnapshot, ProviderId, ProviderStatus } from "../dashboard";
+import type { DashboardSnapshot, ProviderId } from "../dashboard";
 import { formatNumber, resolveLocale } from "../i18n";
 import type { EdgePlacement } from "../window";
 import { localIsoDate } from "./heatmap";

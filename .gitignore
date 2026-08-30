@@ -2,6 +2,7 @@ node_modules/
 dist/
 target/
 backend/gen/
+.superpowers/
 *.log
 *.tsbuildinfo
 .DS_Store

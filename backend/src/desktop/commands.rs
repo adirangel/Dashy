@@ -147,11 +147,6 @@ pub async fn show_notch_menu(app: AppHandle, state: State<'_, DesktopState>) -> 
 }
 
 #[tauri::command]
-pub async fn show_settings(app: AppHandle) -> Result<(), String> {
-    super::show_settings_window(&app)
-}
-
-#[tauri::command]
 pub async fn set_tray_labels(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -160,13 +155,6 @@ pub async fn set_tray_labels(
     state.tray.replace_labels(labels)?;
     let settings = state.settings.current()?;
     state.refresh_tray(&app, &settings)
-}
-
-#[tauri::command]
-pub async fn quit_dashy(app: AppHandle, state: State<'_, DesktopState>) -> Result<(), String> {
-    state.runtime.cancel();
-    app.exit(0);
-    Ok(())
 }
 
 #[cfg(test)]

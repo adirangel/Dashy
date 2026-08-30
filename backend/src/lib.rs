@@ -24,8 +24,8 @@ pub fn run() {
     use desktop::{
         commands::{
             begin_notch_exit, complete_notch_exit, get_current_edge_view, get_settings,
-            list_monitors, quit_dashy, set_notch_interaction, set_tray_labels, show_notch_menu,
-            show_settings, update_settings,
+            list_monitors, set_notch_interaction, set_tray_labels, show_notch_menu,
+            update_settings,
         },
         controller::{start_controller_runtime, TauriWindowPort, WindowPort},
         menu::TrayState,
@@ -156,9 +156,7 @@ pub fn run() {
             complete_notch_exit,
             list_monitors,
             show_notch_menu,
-            show_settings,
-            set_tray_labels,
-            quit_dashy
+            set_tray_labels
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Dashy");
@@ -248,6 +246,18 @@ mod config_tests {
         assert!(
             main.get("windowEffects").is_none(),
             "a native acrylic effect paints the entire rectangular window behind the shaped CSS surface"
+        );
+    }
+
+    #[test]
+    fn windows_bundle_uses_only_the_windows_icon() {
+        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+        let config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
+
+        assert_eq!(
+            config["bundle"]["icon"],
+            serde_json::json!(["icons/icon.ico"])
         );
     }
 }

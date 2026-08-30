@@ -2,7 +2,7 @@ import type { DashboardSnapshot, ProviderId } from "../dashboard";
 import { resolveLocale, type SupportedLocale } from "../i18n";
 import type { EdgePlacement } from "../window";
 
-export type VisualFixture = {
+type VisualFixture = {
   placement: EdgePlacement;
   provider: ProviderId;
   background: "bright" | "dark";

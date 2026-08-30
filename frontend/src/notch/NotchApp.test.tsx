@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "../i18n";
 import { formatDateTime, formatNumber } from "../i18n";
-import type { DashboardSnapshot, ProviderStatus } from "../dashboard";
+import type { DashboardSnapshot } from "../dashboard";
 import { GitHubCard } from "./GitHubCard";
 import { MetricRail } from "./MetricRail";
 import { NotchApp } from "./NotchApp";
