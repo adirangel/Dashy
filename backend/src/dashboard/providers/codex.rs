@@ -13,6 +13,7 @@ use crate::dashboard::{
 const CODEX_TIMEOUT: Duration = Duration::from_secs(15);
 const AUTHENTICATION_ERROR_CODE: i64 = -32001;
 const AUTHENTICATION_ERROR_MESSAGE: &str = "Authentication required";
+const DASHY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct CodexProvider<R: JsonRpcRunner> {
     runner: R,
@@ -38,7 +39,7 @@ impl<R: JsonRpcRunner> DataProvider<UsageData> for CodexProvider<R> {
                         "id": 1,
                         "method": "initialize",
                         "params": {
-                            "clientInfo": {"name": "dashy", "version": "0.1.0"},
+                            "clientInfo": {"name": "dashy", "version": DASHY_VERSION},
                             "capabilities": {"experimentalApi": true}
                         }
                     }),
@@ -711,7 +712,7 @@ mod tests {
                     "id": 1,
                     "method": "initialize",
                     "params": {
-                        "clientInfo": {"name": "dashy", "version": "0.1.0"},
+                        "clientInfo": {"name": "dashy", "version": DASHY_VERSION},
                         "capabilities": {"experimentalApi": true}
                     }
                 }),

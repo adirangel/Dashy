@@ -253,6 +253,7 @@ export function NotchApp({
   const placement = placementProp ?? (native ? (surface.rendered?.placement ?? edgeView.placement) : persistedPlacement);
   const snapshot = snapshotProp !== undefined ? snapshotProp : dashboard.snapshot;
   const selectedIsStale = snapshot?.[selectedProvider].status === "stale";
+  const cardLayout = selectedProvider === "github" || selectedIsStale ? "tall" : "compact";
   const visible = settingsReady && enabledProviders.length > 0 && surface.rendered !== null;
   const showCard = visible && (surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned");
   const railExtent = 30 + enabledProviders.length * 80;
@@ -410,7 +411,12 @@ export function NotchApp({
         </svg>
       </button>
       {showCard && <div className="notch-join" data-provider={selectedProvider} aria-hidden="true" />}
-      {showCard && <div className="provider-card-slot" data-testid="provider-card-region">
+      {showCard && <div
+        className="provider-card-slot"
+        data-testid="provider-card-region"
+        data-provider={selectedProvider}
+        data-layout={cardLayout}
+      >
         {selectedProvider === "github"
           ? <GitHubCard snapshot={snapshot?.github ?? null} now={now} />
           : <UsageProviderCard provider={selectedProvider} snapshot={snapshot?.[selectedProvider] ?? null} />}
