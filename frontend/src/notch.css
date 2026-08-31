@@ -72,8 +72,7 @@
 @keyframes notch-exit-top { from { opacity: 1; transform: translateX(-50%) translateY(0); } to { opacity: 0; transform: translateX(-50%) translateY(-12px); } }
 
 .metric-rail,
-.provider-card,
-.settings-launcher {
+.provider-card {
   border: 1px solid var(--glass-border);
   background:
     linear-gradient(145deg, var(--glass-highlight), transparent 32%),
@@ -139,72 +138,53 @@
   z-index: 4;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 58px;
+  height: 58px;
   padding: 0;
+  border: 0;
   border-radius: 50%;
   color: var(--text-primary);
+  background: #050607;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .38);
   cursor: pointer;
-  transition: background-color 170ms ease, transform 170ms ease, border-color 170ms ease;
-}
-
-.settings-launcher::before {
-  position: absolute;
-  z-index: -1;
-  content: "";
-  background: var(--glass-deep);
-  border-radius: 999px;
-  pointer-events: none;
+  transition: background-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
 }
 
 .settings-launcher svg {
-  width: 25px;
-  height: 25px;
+  width: 30px;
+  height: 30px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.55;
+  stroke-width: 1.8;
 }
 
 .settings-launcher:hover {
-  border-color: color-mix(in srgb, var(--glass-border) 65%, white);
-  background-color: rgba(255, 255, 255, .075);
-  transform: scale(1.035);
+  background: #0b0d0e;
+  box-shadow: 0 15px 32px rgba(0, 0, 0, .44);
+  transform: scale(1.04);
 }
 .settings-launcher:active { transform: scale(.97); }
 .settings-launcher:focus-visible { outline-offset: 3px; }
 
 .placement-right .settings-launcher,
 .placement-left .settings-launcher {
-  inset-block-start: calc(var(--rail-extent) + 6px);
+  inset-block-start: calc(var(--rail-extent) + 8px);
 }
 .placement-right.is-expanded .settings-launcher,
 .placement-left.is-expanded .settings-launcher {
-  inset-block-start: calc(50% + var(--control-start) + var(--rail-extent) + 6px);
+  inset-block-start: calc(50% + var(--control-start) + var(--rail-extent) + 8px);
 }
-.placement-right .settings-launcher { right: 3px; }
-.placement-left .settings-launcher { left: 3px; }
-.placement-right .settings-launcher::before,
-.placement-left .settings-launcher::before {
-  inset-block-start: -11px;
-  left: 22px;
-  width: 18px;
-  height: 16px;
-}
+.placement-right .settings-launcher { right: 12px; }
+.placement-left .settings-launcher { left: 12px; }
 
 .placement-top .settings-launcher {
-  inset-block-start: 3px;
-  left: calc(var(--rail-extent) + 6px);
+  inset-block-start: 6px;
+  left: calc(var(--rail-extent) + 8px);
 }
 .placement-top.is-expanded .settings-launcher {
-  left: calc(50% + var(--control-start) + var(--rail-extent) + 6px);
-}
-.placement-top .settings-launcher::before {
-  inset-inline-start: -11px;
-  top: 22px;
-  width: 16px;
-  height: 18px;
+  left: calc(50% + var(--control-start) + var(--rail-extent) + 8px);
 }
 
 .metric-button {

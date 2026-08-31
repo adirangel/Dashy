@@ -37,6 +37,11 @@ At the end of installation, the installer offers a checked-by-default `Launch
 Dashy` option. When Dashy starts for the first time, it opens provider onboarding
 instead of assuming that all three providers are required.
 
+Provider installation and authentication remain in this visible post-MSI setup
+window, where they run in the signed-in user's context. MSI custom actions must not
+install or authenticate third-party CLIs because Windows Installer repair, rollback,
+and elevation would make ownership and consent ambiguous.
+
 The WiX configuration must keep a stable upgrade code across releases so Windows
 treats future MSIs as upgrades instead of installing duplicate applications.
 
@@ -61,6 +66,11 @@ states:
 The initial detection pass should recognize existing CLI installations and
 authentication. Already connected providers require no redundant setup. A user
 can skip any card and finish onboarding at any time.
+
+An incrementing provider-setup version makes the first stable installer reopen this
+chooser once for pre-release users while preserving their existing selection. Only
+providers selected in the chooser expose install or login actions. Finishing records
+the current setup version; ordinary upgrades do not prompt again.
 
 Only enabled providers appear in the compact rail. Disabled or skipped providers
 must not produce visible errors, background refreshes, or empty placeholders.

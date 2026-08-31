@@ -70,7 +70,7 @@ pub fn run() {
     let dashboard = Arc::new(DashboardService::new(
         Arc::new(GitHubProvider::new(process_runner)),
         Arc::new(CodexProvider::new(process_runner)),
-        Arc::new(ClaudeProvider::new(process_runner, process_runner)),
+        Arc::new(ClaudeProvider::new(process_runner)),
         Arc::new(SystemClock),
     ));
 
@@ -165,12 +165,17 @@ pub fn run() {
                 tray: tray_state,
             });
 
-            if !current_settings.onboarding_completed {
+            let provider_setup_required = current_settings.requires_provider_setup();
+            if provider_setup_required {
                 desktop::show_onboarding_window(app.handle()).map_err(std::io::Error::other)?;
             }
 
             let dashboard = app.state::<AppState>().dashboard.clone();
-            let enabled_providers = current_settings.enabled_providers.clone();
+            let enabled_providers = if provider_setup_required {
+                Vec::new()
+            } else {
+                current_settings.enabled_providers.clone()
+            };
             tauri::async_runtime::spawn(async move {
                 dashboard.get_snapshot_for(false, &enabled_providers).await;
             });
@@ -241,10 +246,10 @@ fn handle_menu_action(app: &AppHandle, id: &str) {
 }
 
 fn settings_window_label(settings: &desktop::settings::AppSettings) -> &'static str {
-    if settings.onboarding_completed {
-        "settings"
-    } else {
+    if settings.requires_provider_setup() {
         "onboarding"
+    } else {
+        "settings"
     }
 }
 
@@ -577,10 +582,15 @@ mod config_tests {
 
     #[test]
     fn settings_action_targets_onboarding_until_setup_is_completed() {
+        use crate::desktop::settings::CURRENT_PROVIDER_SETUP_VERSION;
+
         let mut settings = AppSettings::default();
         assert_eq!(settings_window_label(&settings), "onboarding");
 
         settings.onboarding_completed = true;
+        assert_eq!(settings_window_label(&settings), "onboarding");
+
+        settings.provider_setup_version = CURRENT_PROVIDER_SETUP_VERSION;
         assert_eq!(settings_window_label(&settings), "settings");
     }
 }

@@ -362,7 +362,7 @@ impl DesktopController {
             Err(_) => return vec![DesktopError::SettingsUnavailable],
         };
         let surface_enabled =
-            settings.onboarding_completed && !settings.enabled_providers.is_empty();
+            !settings.requires_provider_setup() && !settings.enabled_providers.is_empty();
         let provider_count = u8::try_from(settings.enabled_providers.len()).unwrap_or(u8::MAX);
         let monitors = match self.probe.monitors() {
             Ok(monitors) => monitors,

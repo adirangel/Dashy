@@ -14,8 +14,9 @@ export type AppSettings = {
   alwaysShowOverFullscreen: boolean;
   onboardingCompleted: boolean;
   enabledProviders: ProviderId[];
+  providerSetupVersion?: number;
 };
-export type SettingsPatch = Partial<AppSettings>;
+export type SettingsPatch = Partial<Omit<AppSettings, "providerSetupVersion">>;
 export type MonitorInfo = StoredMonitorRect & {
   id: string;
   name: string;

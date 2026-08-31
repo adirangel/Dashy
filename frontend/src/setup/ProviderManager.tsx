@@ -10,6 +10,7 @@ type ProviderManagerProps = {
   enabledProviders: ProviderId[];
   onEnabledChange: (providers: ProviderId[]) => void;
   selectionDisabled?: boolean;
+  actionsRequireSelection?: boolean;
 };
 
 type PendingAction = {
@@ -97,6 +98,7 @@ export function ProviderManager({
   enabledProviders,
   onEnabledChange,
   selectionDisabled = false,
+  actionsRequireSelection = false,
 }: ProviderManagerProps) {
   const { t } = useTranslation();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -114,6 +116,13 @@ export function ProviderManager({
     target?.focus();
     setRestoreFocusProvider(null);
   }, [pendingAction, restoreFocusProvider]);
+
+  useEffect(() => {
+    if (actionsRequireSelection && pendingAction
+      && !enabledProviders.includes(pendingAction.provider)) {
+      setPendingAction(null);
+    }
+  }, [actionsRequireSelection, enabledProviders, pendingAction]);
 
   if (controller.states === null) {
     return <div className="provider-setup-grid">
@@ -151,6 +160,7 @@ export function ProviderManager({
         : null;
       const pending = pendingAction?.provider === provider ? pendingAction : null;
       const isEnabled = enabledProviders.includes(provider);
+      const actionsAvailable = !actionsRequireSelection || isEnabled;
 
       const confirm = (action: PendingAction["action"], restoreKeyboardFocus: boolean) => {
         if (restoreKeyboardFocus) setRestoreFocusProvider(provider);
@@ -200,17 +210,17 @@ export function ProviderManager({
         </label>
 
         <div className="provider-setup-actions">
-          {state.repairAction === "install" && <button
+          {actionsAvailable && state.repairAction === "install" && <button
             type="button"
             disabled={setupActionActive}
             onClick={() => beginAction("install")}
           >{t("setup.install", { provider: name })}</button>}
-          {state.repairAction === "login" && <button
+          {actionsAvailable && state.repairAction === "login" && <button
             type="button"
             disabled={setupActionActive}
             onClick={() => beginAction("login")}
           >{t("setup.connect", { provider: name })}</button>}
-          {(state.status === "stale" || state.status === "unavailable")
+          {actionsAvailable && (state.status === "stale" || state.status === "unavailable")
             && state.repairAction === null && <button
             type="button"
             disabled={setupActionActive}
@@ -221,7 +231,7 @@ export function ProviderManager({
           >{t("setup.retry")}</button>}
         </div>
 
-        {pending && <Confirmation
+        {actionsAvailable && pending && <Confirmation
           definition={state.definition}
           action={pending.action}
           disabled={setupActionActive}

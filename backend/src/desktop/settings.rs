@@ -13,6 +13,7 @@ use super::platform::MonitorDescriptor;
 const SETTINGS_STORE_FILE: &str = "settings.json";
 const SETTINGS_STORE_KEY: &str = "settings";
 const MAX_MONITOR_TEXT_LENGTH: usize = 256;
+pub const CURRENT_PROVIDER_SETUP_VERSION: u16 = 1;
 
 fn legacy_onboarding_completed() -> bool {
     true
@@ -20,6 +21,10 @@ fn legacy_onboarding_completed() -> bool {
 
 fn legacy_enabled_providers() -> Vec<ProviderId> {
     ProviderId::ALL.to_vec()
+}
+
+fn legacy_provider_setup_version() -> u16 {
+    0
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -87,6 +92,14 @@ pub struct AppSettings {
     pub onboarding_completed: bool,
     #[serde(default = "legacy_enabled_providers")]
     pub enabled_providers: Vec<ProviderId>,
+    #[serde(default = "legacy_provider_setup_version")]
+    pub provider_setup_version: u16,
+}
+
+impl AppSettings {
+    pub fn requires_provider_setup(&self) -> bool {
+        !self.onboarding_completed || self.provider_setup_version < CURRENT_PROVIDER_SETUP_VERSION
+    }
 }
 
 impl Default for AppSettings {
@@ -98,6 +111,7 @@ impl Default for AppSettings {
             always_show_over_fullscreen: false,
             onboarding_completed: false,
             enabled_providers: Vec::new(),
+            provider_setup_version: 0,
         }
     }
 }
@@ -121,6 +135,8 @@ pub struct SettingsPatch {
     pub onboarding_completed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled_providers: Option<Vec<ProviderId>>,
+    #[serde(skip)]
+    pub(crate) provider_setup_version: Option<u16>,
 }
 
 fn deserialize_nullable_monitor<'de, D>(
@@ -219,6 +235,9 @@ impl SettingsService {
         }
         if let Some(enabled_providers) = patch.enabled_providers {
             next.enabled_providers = enabled_providers;
+        }
+        if let Some(provider_setup_version) = patch.provider_setup_version {
+            next.provider_setup_version = provider_setup_version;
         }
 
         validate_settings(&next)?;
@@ -483,6 +502,7 @@ mod tests {
                 always_show_over_fullscreen: false,
                 onboarding_completed: false,
                 enabled_providers: Vec::new(),
+                provider_setup_version: 0,
             }
         );
     }
@@ -492,10 +512,11 @@ mod tests {
         let settings = AppSettings::default();
         assert!(!settings.onboarding_completed);
         assert!(settings.enabled_providers.is_empty());
+        assert!(settings.requires_provider_setup());
     }
 
     #[test]
-    fn legacy_settings_migrate_to_all_providers_without_reonboarding() {
+    fn legacy_settings_keep_provider_choices_but_require_one_current_setup_review() {
         let legacy = serde_json::json!({
             "placement": "right",
             "monitor": null,
@@ -505,6 +526,42 @@ mod tests {
         let migrated: AppSettings = serde_json::from_value(legacy).unwrap();
         assert!(migrated.onboarding_completed);
         assert_eq!(migrated.enabled_providers, ProviderId::ALL.to_vec());
+        assert_eq!(migrated.provider_setup_version, 0);
+        assert!(migrated.requires_provider_setup());
+    }
+
+    #[test]
+    fn current_provider_setup_version_does_not_reprompt() {
+        let settings = AppSettings {
+            onboarding_completed: true,
+            provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION,
+            enabled_providers: vec![ProviderId::Claude],
+            ..Default::default()
+        };
+
+        assert!(!settings.requires_provider_setup());
+    }
+
+    #[test]
+    fn completing_provider_setup_persists_the_current_version_and_exact_selection() {
+        let persistence = Arc::new(MemorySettingsPersistence::default());
+        let service = SettingsService::load(persistence);
+
+        let completed = service
+            .update(SettingsPatch {
+                onboarding_completed: Some(true),
+                enabled_providers: Some(vec![ProviderId::Codex]),
+                provider_setup_version: Some(CURRENT_PROVIDER_SETUP_VERSION),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert_eq!(completed.enabled_providers, vec![ProviderId::Codex]);
+        assert_eq!(
+            completed.provider_setup_version,
+            CURRENT_PROVIDER_SETUP_VERSION
+        );
+        assert!(!completed.requires_provider_setup());
     }
 
     #[test]
