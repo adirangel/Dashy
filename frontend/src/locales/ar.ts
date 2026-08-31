@@ -8,6 +8,7 @@ const ar = {
   guidance: { installClaude: "ثبّت أداة Claude لسطر الأوامر ثم أعد فتح Dashy.", installCodex: "ثبّت أداة Codex لسطر الأوامر ثم أعد فتح Dashy.", installGitHub: "ثبّت أداة GitHub لسطر الأوامر ثم أعد فتح Dashy.", signInClaude: "سجّل الدخول إلى Claude ثم أعد المحاولة.", signInCodex: "سجّل الدخول إلى Codex ثم أعد المحاولة.", signInGitHub: "سجّل الدخول إلى GitHub ثم أعد المحاولة.", retryLater: "جرّب {{provider}} مرة أخرى لاحقًا." },
   setup: {
     eyebrow: "DASHY / الإعداد", title: "اختر ما يراقبه Dashy", description: "صِل الأدوات التي تستخدمها فقط. يمكنك تغيير ذلك لاحقًا من الإعدادات.",
+    languageTitle: "اختر لغتك", languageDescription: "سيتبدّل Dashy فورًا. يمكنك تغيير ذلك لاحقًا من الإعدادات.", continue: "متابعة", back: "رجوع", stepLabel: "الخطوة {{current}} من {{total}}",
     useProvider: "استخدام {{provider}} في Dashy", connected: "متصل", notInstalled: "غير مثبت", signInRequired: "يلزم تسجيل الدخول", needsAttention: "يحتاج إلى إجراء",
     installing: "جارٍ التثبيت", connecting: "جارٍ الاتصال",
     install: "تثبيت {{provider}}", connect: "ربط {{provider}}", retry: "إعادة المحاولة", cancel: "إلغاء", confirmInstall: "تأكيد التثبيت", confirmLogin: "فتح تسجيل الدخول الرسمي",

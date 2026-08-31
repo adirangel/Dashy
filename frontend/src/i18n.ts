@@ -33,6 +33,10 @@ export function directionForLocale(locale: SupportedLocale): "ltr" | "rtl" {
   return locale === "he" || locale === "ar" ? "rtl" : "ltr";
 }
 
+export function languageName(locale: SupportedLocale): string {
+  return new Intl.DisplayNames([locale], { type: "language" }).of(locale) ?? locale;
+}
+
 function updateRootLocale(locale: SupportedLocale) {
   if (typeof document === "undefined") return;
   document.documentElement.lang = locale;

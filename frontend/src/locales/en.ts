@@ -6,6 +6,7 @@ export type Messages = {
   guidance: { installClaude: string; installCodex: string; installGitHub: string; signInClaude: string; signInCodex: string; signInGitHub: string; retryLater: string };
   setup: {
     eyebrow: string; title: string; description: string; useProvider: string;
+    languageTitle: string; languageDescription: string; continue: string; back: string; stepLabel: string;
     connected: string; notInstalled: string; signInRequired: string; needsAttention: string;
     installing: string; connecting: string;
     install: string; connect: string; retry: string; cancel: string;
@@ -26,6 +27,7 @@ const en = {
   guidance: { installClaude: "Install the Claude CLI, then reopen Dashy.", installCodex: "Install the Codex CLI, then reopen Dashy.", installGitHub: "Install the GitHub CLI, then reopen Dashy.", signInClaude: "Sign in to Claude, then retry.", signInCodex: "Sign in to Codex, then retry.", signInGitHub: "Sign in to GitHub, then retry.", retryLater: "Try {{provider}} again later." },
   setup: {
     eyebrow: "DASHY / SETUP", title: "Choose what Dashy watches", description: "Connect only the tools you use. You can change this later in Settings.",
+    languageTitle: "Choose your language", languageDescription: "Dashy switches immediately. You can change this later in Settings.", continue: "Continue", back: "Back", stepLabel: "Step {{current}} of {{total}}",
     useProvider: "Use {{provider}} in Dashy", connected: "Connected", notInstalled: "Not installed", signInRequired: "Sign in required", needsAttention: "Needs attention",
     installing: "Installing", connecting: "Connecting",
     install: "Install {{provider}}", connect: "Connect {{provider}}", retry: "Retry", cancel: "Cancel", confirmInstall: "Confirm installation", confirmLogin: "Open official login",

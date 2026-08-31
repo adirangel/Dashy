@@ -70,7 +70,7 @@ describe("window routing", () => {
 
   it("renders the localized onboarding surface only for the native onboarding label", async () => {
     render(<App windowLabel="onboarding" />);
-    expect(await screen.findByRole("heading", { name: "Choose what Dashy watches" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Choose your language" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Settings" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("notch-app")).not.toBeInTheDocument();
   });
