@@ -241,6 +241,62 @@ describe("ProviderManager", () => {
     expect(mocks.install).not.toHaveBeenCalled();
   });
 
+  it("hides stale setup failures for deselected providers without changing settings mode", async () => {
+    apiMocks.openUrl.mockRejectedValue(new Error("old opener failure"));
+    const controller = {
+      states: setupStates({ codex: "notInstalled" }),
+      busyProvider: null,
+      busyAction: null,
+      failureProvider: "codex" as ProviderId,
+      loadFailed: false,
+      install: mocks.install,
+      login: mocks.login,
+      reload: mocks.reload,
+    };
+    const view = render(<ProviderManager
+      controller={controller}
+      enabledProviders={["codex"]}
+      onEnabledChange={mocks.onEnabledChange}
+      actionsRequireSelection
+    />);
+    const codexCard = screen.getByRole("article", { name: "Codex" });
+
+    fireEvent.click(within(codexCard).getByRole("button", {
+      name: "Open official installation guide",
+    }));
+    expect(await within(codexCard).findByText(
+      "Dashy could not open the official installation guide.",
+    )).toHaveAttribute("role", "alert");
+
+    view.rerender(<ProviderManager
+      controller={controller}
+      enabledProviders={[]}
+      onEnabledChange={mocks.onEnabledChange}
+      actionsRequireSelection
+    />);
+
+    await waitFor(() => expect(within(codexCard).queryByRole("alert")).not.toBeInTheDocument());
+    expect(within(codexCard).queryByRole("button", { name: "Install Codex" }))
+      .not.toBeInTheDocument();
+    expect(within(codexCard).queryByRole("button", {
+      name: "Open official installation guide",
+    })).not.toBeInTheDocument();
+
+    view.rerender(<ProviderManager
+      controller={controller}
+      enabledProviders={[]}
+      onEnabledChange={mocks.onEnabledChange}
+    />);
+
+    expect(within(codexCard).getByRole("alert"))
+      .toHaveTextContent("Provider setup needs attention.");
+    expect(within(codexCard).getByRole("button", { name: "Install Codex" }))
+      .toBeEnabled();
+    expect(within(codexCard).getByRole("button", {
+      name: "Open official installation guide",
+    })).toBeEnabled();
+  });
+
   it("restores same-provider focus after keyboard cancel but preserves focus after pointer cancel", async () => {
     renderManager({ codexStatus: "notInstalled" });
     const action = screen.getByRole("button", { name: "Install Codex" });
