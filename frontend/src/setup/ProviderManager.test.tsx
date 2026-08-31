@@ -477,6 +477,23 @@ describe("ProviderManager", () => {
     expect(within(githubCard).queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
+  it("reports a stale provider as connected while keeping its retry affordance", () => {
+    renderManager({ githubStatus: "stale" });
+
+    const githubCard = screen.getByRole("article", { name: "GitHub" });
+    expect(githubCard).toHaveAttribute("data-status", "stale");
+    expect(within(githubCard).getByRole("status")).toHaveTextContent("Connected");
+    expect(within(githubCard).getByRole("button", { name: "Retry" })).toBeEnabled();
+  });
+
+  it("reports a stale provider with an authentication repair as connected with a login action", () => {
+    renderManager({ states: setupStates({ github: "stale" }, { github: "login" }) });
+
+    const githubCard = screen.getByRole("article", { name: "GitHub" });
+    expect(within(githubCard).getByRole("status")).toHaveTextContent("Connected");
+    expect(within(githubCard).getByRole("button", { name: "Connect GitHub" })).toBeEnabled();
+  });
+
   it.each(["stale", "unavailable"] as const)(
     "retries a %s provider without opening login consent",
     (providerStatus) => {

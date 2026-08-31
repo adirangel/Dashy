@@ -25,7 +25,9 @@ function statusKey(status: ProviderStatus) {
     case "connected": return "setup.connected" as const;
     case "notInstalled": return "setup.notInstalled" as const;
     case "notAuthenticated": return "setup.signInRequired" as const;
-    case "stale":
+    // Stale means the last successful refresh produced real data; the connection is
+    // fine even though the newest refresh attempt failed, so keep reporting Connected.
+    case "stale": return "setup.connected" as const;
     case "unavailable": return "setup.needsAttention" as const;
   }
 }
