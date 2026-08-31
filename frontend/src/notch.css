@@ -31,8 +31,8 @@
 
 .placement-right.is-expanded,
 .placement-left.is-expanded {
-  width: min(370px, 100vw);
-  height: min(400px, 100vh);
+  width: min(var(--side-expanded-width, 370px), 100vw);
+  height: min(var(--side-expanded-height, 400px), 100vh);
 }
 
 .placement-top {
@@ -47,8 +47,8 @@
 }
 
 .placement-top.is-expanded {
-  width: min(400px, 100vw);
-  height: min(430px, 100vh);
+  width: min(var(--top-expanded-width, 400px), 100vw);
+  height: min(var(--top-expanded-height, 430px), 100vh);
 }
 
 .notch-surface.is-entering.placement-right { animation: notch-enter-right 220ms cubic-bezier(.2, .8, .2, 1) both; }
@@ -309,6 +309,11 @@
 }
 
 .placement-top .metric-button { width: var(--tile-extent, 88px); height: 64px; }
+/* The 70px horizontal rail leaves a 58px content box; a smaller ring keeps the
+   ring + value stack inside the tile's hover pill. */
+.placement-top .progress-ring { width: 42px; height: 42px; }
+.placement-top .progress-ring__center { width: 30px; height: 30px; }
+.placement-top .metric-value { margin-block-start: 2px; }
 .metric-button:hover,
 .metric-button.is-selected { background: rgba(255, 255, 255, .07); }
 .metric-button:focus-visible { outline-offset: -2px; }

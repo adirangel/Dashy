@@ -385,8 +385,11 @@ export function NotchApp({
         "--tab-end-padding": `${geometry.tabEndPadding}px`,
         "--edge-fillet": `${geometry.edgeFillet}px`,
         "--gear-diameter": `${geometry.gearDiameter}px`,
-        "--gear-gap": `${geometry.gearGap}px`,
         "--tab-radius": `${geometry.tabOuterRadius}px`,
+        "--side-expanded-width": `${geometry.sideExpanded.width}px`,
+        "--side-expanded-height": `${geometry.sideExpanded.height}px`,
+        "--top-expanded-width": `${geometry.topExpanded.width}px`,
+        "--top-expanded-height": `${geometry.topExpanded.height}px`,
       } as CSSProperties}
       aria-hidden={surface.exit !== null || undefined}
       onAnimationEnd={onSurfaceAnimationEnd}

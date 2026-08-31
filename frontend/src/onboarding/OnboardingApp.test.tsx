@@ -175,11 +175,11 @@ describe("OnboardingApp", () => {
     expect(screen.getByText("", { selector: ".onboarding-footer-status" })).toBeInTheDocument();
   });
 
-  it("preselects discovered connected providers but keeps every choice editable", async () => {
+  it("preselects discovered connected and stale providers but keeps every choice editable", async () => {
     mocks.controller.mockReturnValue(controller(states({
       claude: "connected",
       codex: "notInstalled",
-      github: "connected",
+      github: "stale",
     })));
 
     render(<OnboardingApp />);

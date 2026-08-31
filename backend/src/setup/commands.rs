@@ -35,11 +35,43 @@ pub async fn get_provider_setup_states(
     // Read through the cache instead of forcing a refresh: opening the settings or
     // onboarding surface must not spawn a CLI process storm. Providers past the cache
     // TTL (including the empty first-run cache) still refresh for real.
-    let snapshot = dashboard.dashboard.get_snapshot(false).await;
+    let mut snapshot = dashboard.dashboard.get_snapshot(false).await;
+    // A provider whose last probe failed may have been repaired outside the app
+    // (e.g. `claude login` in a terminal), so re-probe only the failed ones; healthy
+    // providers keep their cached state.
+    let failed = providers_needing_reprobe(&snapshot);
+    if !failed.is_empty() {
+        snapshot = dashboard.dashboard.get_snapshot_for(true, &failed).await;
+    }
     Ok(ProviderId::ALL
         .into_iter()
         .map(|provider| provider_setup_state(provider, &snapshot))
         .collect())
+}
+
+fn providers_needing_reprobe(snapshot: &DashboardSnapshot) -> Vec<ProviderId> {
+    ProviderId::ALL
+        .into_iter()
+        .filter(|provider| {
+            matches!(
+                provider_snapshot_status(*provider, snapshot),
+                crate::dashboard::models::ProviderStatus::NotInstalled
+                    | crate::dashboard::models::ProviderStatus::NotAuthenticated
+                    | crate::dashboard::models::ProviderStatus::Unavailable
+            )
+        })
+        .collect()
+}
+
+fn provider_snapshot_status(
+    provider: ProviderId,
+    snapshot: &DashboardSnapshot,
+) -> crate::dashboard::models::ProviderStatus {
+    match provider {
+        ProviderId::Claude => snapshot.claude.status,
+        ProviderId::Codex => snapshot.codex.status,
+        ProviderId::GitHub => snapshot.github.status,
+    }
 }
 
 #[tauri::command]
@@ -203,6 +235,28 @@ mod tests {
             }
         }
         snapshot
+    }
+
+    #[test]
+    fn only_failed_providers_are_selected_for_a_setup_reprobe() {
+        let snapshot = DashboardSnapshot {
+            github: GitHubSnapshot::failed(
+                ProviderStatus::NotInstalled,
+                ProviderErrorKind::MissingExecutable,
+            ),
+            codex: UsageSnapshot::failed(ProviderStatus::Stale, ProviderErrorKind::Timeout),
+            claude: UsageSnapshot::failed(
+                ProviderStatus::NotAuthenticated,
+                ProviderErrorKind::Authentication,
+            ),
+            refreshed_at: chrono::Utc::now(),
+        };
+
+        assert_eq!(
+            super::providers_needing_reprobe(&snapshot),
+            vec![ProviderId::Claude, ProviderId::GitHub],
+            "stale keeps its cached last-good state; failed probes re-run"
+        );
     }
 
     #[test]

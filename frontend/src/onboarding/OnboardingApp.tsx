@@ -100,7 +100,7 @@ export function OnboardingApp() {
       : settings.enabledProviders.length > 0
         ? settings.enabledProviders
         : controller.states
-            .filter((state) => state.status === "connected")
+            .filter((state) => state.status === "connected" || state.status === "stale")
             .map((state) => state.definition.provider);
     setEnabledProviders(selected);
     setSelectionReady(true);

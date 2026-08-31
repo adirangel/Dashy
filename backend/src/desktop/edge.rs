@@ -16,6 +16,9 @@ const TOP_RAIL_HEIGHT: u32 = 70;
 const TILE_EXTENT: u32 = 88;
 const TAB_END_PADDING: u32 = 16;
 const EDGE_FILLET: u32 = 16;
+// GEAR_GAP and GEAR_TAIL_MARGIN budget the native window space reserved past the
+// rail; the CSS may place the gear anywhere inside that budget (it currently tucks
+// the bubble 8px into the rail's tail fillet).
 const GEAR_DIAMETER: u32 = 52;
 const GEAR_GAP: u32 = 12;
 const GEAR_TAIL_MARGIN: u32 = 8;

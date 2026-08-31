@@ -63,6 +63,12 @@
   outline: none;
 }
 
+/* Letter-spacing breaks cursive joining and uppercase is meaningless in RTL scripts. */
+[dir="rtl"] .onboarding-step-label {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .provider-setup-grid,
 .onboarding-language-grid {
   display: grid;
