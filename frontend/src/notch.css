@@ -144,8 +144,8 @@
   border: 0;
   border-radius: 50%;
   color: var(--text-primary);
-  background: #050607;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, .38);
+  background: transparent;
+  box-shadow: none;
   cursor: pointer;
   transition: background-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
 }
@@ -158,12 +158,41 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
+  opacity: 0;
+  transform: scale(.72);
+  transition: opacity 150ms ease, transform 170ms ease;
 }
 
-.settings-launcher:hover {
-  background: #0b0d0e;
+.settings-launcher::before {
+  content: "";
+  position: absolute;
+  width: 38px;
+  height: 46px;
+  border: 6px solid transparent;
+  border-right-color: #050607;
+  border-bottom-color: #050607;
+  border-radius: 50%;
+  opacity: .96;
+  transform: rotate(-18deg);
+  transition: opacity 120ms ease, transform 170ms ease;
+  pointer-events: none;
+}
+
+.placement-left .settings-launcher::before { transform: scaleX(-1) rotate(-18deg); }
+.placement-top .settings-launcher::before { transform: rotate(72deg); }
+
+.settings-launcher:is(:hover, :focus-visible) {
+  background: #050607;
   box-shadow: 0 15px 32px rgba(0, 0, 0, .44);
   transform: scale(1.04);
+}
+.settings-launcher:is(:hover, :focus-visible)::before {
+  opacity: 0;
+  transform: scale(.72);
+}
+.settings-launcher:is(:hover, :focus-visible) svg {
+  opacity: 1;
+  transform: scale(1);
 }
 .settings-launcher:active { transform: scale(.97); }
 .settings-launcher:focus-visible { outline-offset: 3px; }
@@ -287,6 +316,11 @@
 
 .placement-right .provider-card-slot,
 .placement-left .provider-card-slot {
+  inset-block-start: clamp(16px, calc(50% - 58px + var(--join-track-offset)), 128px);
+  transform: none;
+}
+.placement-right .provider-card-slot[data-layout="tall"],
+.placement-left .provider-card-slot[data-layout="tall"] {
   inset-block-start: 50%;
   transform: translateY(-50%);
 }

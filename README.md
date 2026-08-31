@@ -319,19 +319,12 @@ falling back to a same-named branch when the tag is missing, but that fail-close
 check cannot by itself make a movable tag atomic with a Release API call. The
 enforced tag ruleset is the external control that closes that race.
 
-#### Initial `v0.1.0` exception
+#### First release version
 
-The repository was intentionally initialized at `0.1.0` before its first GitHub
-Release. For that one initial release, do not create a no-op version commit and do
-not edit the five release files when all five already validate as `0.1.0`. Instead,
-merge every release fix to `main`, require a clean worktree whose `HEAD` exactly
-matches `origin/main`, run the complete locked validation suite below, verify that
-`v0.1.0` exists neither locally nor remotely, and create the immutable `v0.1.0` tag
-directly on that reviewed `main` commit. The tag-triggered workflow still performs
-the same version, ancestry, MSI, checksum, and draft-Release checks.
-
-This exception applies only to the first unused `v0.1.0` tag. Every later release
-must use the normal five-file version-bump commit described below.
+`0.1.0` was used only for local, unsigned installer candidates and was never a
+GitHub Release. Do not create or reuse a `v0.1.0` tag. The first releasable build is
+`v0.1.1`, and it follows the same normal five-file version-bump process as every
+later release.
 
 1. Change the exact same `MAJOR.MINOR.PATCH` value in all three release manifests:
    - `backend/tauri.conf.json`

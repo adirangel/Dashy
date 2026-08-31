@@ -13,7 +13,8 @@ use super::platform::MonitorDescriptor;
 const SETTINGS_STORE_FILE: &str = "settings.json";
 const SETTINGS_STORE_KEY: &str = "settings";
 const MAX_MONITOR_TEXT_LENGTH: usize = 256;
-pub const CURRENT_PROVIDER_SETUP_VERSION: u16 = 1;
+/// Increment this when existing installations must review provider selection again.
+pub const CURRENT_PROVIDER_SETUP_VERSION: u16 = 2;
 
 fn legacy_onboarding_completed() -> bool {
     true
@@ -528,6 +529,18 @@ mod tests {
         assert_eq!(migrated.enabled_providers, ProviderId::ALL.to_vec());
         assert_eq!(migrated.provider_setup_version, 0);
         assert!(migrated.requires_provider_setup());
+    }
+
+    #[test]
+    fn immediately_previous_provider_setup_version_requires_one_current_review() {
+        let settings = AppSettings {
+            onboarding_completed: true,
+            provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION - 1,
+            enabled_providers: ProviderId::ALL.to_vec(),
+            ..Default::default()
+        };
+
+        assert!(settings.requires_provider_setup());
     }
 
     #[test]

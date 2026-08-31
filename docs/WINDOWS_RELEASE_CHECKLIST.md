@@ -10,14 +10,12 @@ not treat a developer workstation as a clean-machine result.
       `backend/tauri.conf.json`, `backend/Cargo.toml`, `frontend/package.json`, and
       both `version` fields at the root of `frontend/package-lock.json` and its
       `packages[""]` entry.
-- [ ] For releases after the initial `v0.1.0`, maintainers edited only the three
-      version manifests, then ran `npm --prefix frontend install --package-lock-only`
-      immediately after the frontend edit and one unlocked Cargo gate to regenerate
-      the tracked lockfiles. The release commit contains exactly the three manifests,
-      `backend/Cargo.lock`, and `frontend/package-lock.json` (five reviewed files
-      total). For the one initial already-versioned `v0.1.0`, no no-op version commit
-      was created: the clean, fully validated `main` commit was tagged directly after
-      proving that the tag existed neither locally nor remotely.
+- [ ] Maintainers edited only the three version manifests, then ran
+      `npm --prefix frontend install --package-lock-only` immediately after the
+      frontend edit and one unlocked Cargo gate to regenerate the tracked lockfiles.
+      The release commit contains exactly the three manifests, `backend/Cargo.lock`,
+      and `frontend/package-lock.json` (five reviewed files total). `v0.1.0` was a
+      local-only candidate and must never be created or reused as a release tag.
 - [ ] Every final Cargo test, Clippy, and Tauri build gate enforced `--locked`.
 - [ ] The matching release tag was created once for the version commit; no existing
       tag was moved, deleted, or reused.

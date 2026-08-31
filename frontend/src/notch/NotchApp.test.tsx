@@ -63,8 +63,27 @@ describe("compact metric rail", () => {
       render(<NotchApp placement="top" snapshot={connected} selectedProvider={provider} />);
 
       expect(document.querySelector(".notch-join")).toHaveAttribute("data-provider", provider);
+      expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-provider", provider);
     },
   );
+
+  it("uses provider-aligned compact cards while keeping the taller GitHub card centered", () => {
+    const view = render(<NotchApp placement="right" snapshot={connected} selectedProvider="claude" />);
+    expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-layout", "compact");
+
+    view.rerender(<NotchApp placement="right" snapshot={connected} selectedProvider="github" />);
+    expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-layout", "tall");
+  });
+
+  it("keeps stale usage cards in the bounded tall-card layout", () => {
+    render(<NotchApp
+      placement="left"
+      snapshot={{ ...connected, claude: { ...connected.claude, status: "stale" } }}
+      selectedProvider="claude"
+    />);
+
+    expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-layout", "tall");
+  });
 
   it("uses real provider summaries, a localized streak, and accessible hit targets", () => {
     render(<NotchApp placement="right" snapshot={connected} selectedProvider="claude" />);
