@@ -10,6 +10,15 @@ use crate::dashboard::{
     models::{DashboardSnapshot, ProviderId},
     service::DashboardService,
 };
+use crate::desktop::settings::AppSettings;
+
+pub(crate) fn refreshable_providers(settings: &AppSettings) -> &[ProviderId] {
+    if settings.requires_provider_setup() {
+        &[]
+    } else {
+        &settings.enabled_providers
+    }
+}
 
 pub struct AppState {
     pub dashboard: Arc<DashboardService>,
@@ -83,8 +92,10 @@ pub async fn get_dashboard_snapshot(
 ) -> Result<DashboardSnapshot, String> {
     let dashboard = state.dashboard.clone();
     let force = force.unwrap_or(false);
-    let enabled = desktop.settings.current()?.enabled_providers;
-    let snapshot = dashboard.get_snapshot_for(force, &enabled).await;
+    let settings = desktop.settings.current()?;
+    let snapshot = dashboard
+        .get_snapshot_for(force, refreshable_providers(&settings))
+        .await;
     if force {
         emit_dashboard_cache_changed(&app)?;
     }
@@ -99,8 +110,8 @@ pub async fn refresh_dashboard_provider(
     provider: ProviderId,
 ) -> Result<DashboardSnapshot, String> {
     crate::authorize_caller(&window, &["main"])?;
-    let enabled = desktop.settings.current()?.enabled_providers;
-    if !enabled.contains(&provider) {
+    let settings = desktop.settings.current()?;
+    if !refreshable_providers(&settings).contains(&provider) {
         return Err("provider is disabled".to_owned());
     }
     let dashboard = state.dashboard.clone();
@@ -109,7 +120,12 @@ pub async fn refresh_dashboard_provider(
 
 #[cfg(test)]
 mod tests {
-    use super::{dashboard_cache_event_targets, DashboardCacheRevision};
+    use crate::{
+        dashboard::models::ProviderId,
+        desktop::settings::{AppSettings, CURRENT_PROVIDER_SETUP_VERSION},
+    };
+
+    use super::{dashboard_cache_event_targets, refreshable_providers, DashboardCacheRevision};
 
     #[test]
     fn cache_change_revision_is_bounded_nonzero_and_wraps_safely() {
@@ -124,6 +140,46 @@ mod tests {
         assert_eq!(
             dashboard_cache_event_targets(),
             ["main", "settings", "onboarding"]
+        );
+    }
+
+    #[test]
+    fn setup_gate_hides_legacy_provider_selection_from_dashboard_refreshes() {
+        let settings = AppSettings {
+            onboarding_completed: true,
+            enabled_providers: ProviderId::ALL.to_vec(),
+            provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION - 1,
+            ..AppSettings::default()
+        };
+
+        assert!(settings.requires_provider_setup());
+        assert!(refreshable_providers(&settings).is_empty());
+    }
+
+    #[test]
+    fn setup_gate_hides_incomplete_new_user_selection_from_selected_refreshes() {
+        let settings = AppSettings {
+            enabled_providers: vec![ProviderId::Claude],
+            provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION,
+            ..AppSettings::default()
+        };
+
+        assert!(settings.requires_provider_setup());
+        assert!(!refreshable_providers(&settings).contains(&ProviderId::Claude));
+    }
+
+    #[test]
+    fn completed_setup_preserves_the_exact_provider_selection() {
+        let settings = AppSettings {
+            onboarding_completed: true,
+            enabled_providers: vec![ProviderId::Codex, ProviderId::GitHub],
+            provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION,
+            ..AppSettings::default()
+        };
+
+        assert_eq!(
+            refreshable_providers(&settings),
+            [ProviderId::Codex, ProviderId::GitHub]
         );
     }
 }

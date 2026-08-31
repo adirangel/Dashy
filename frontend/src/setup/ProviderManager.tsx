@@ -124,6 +124,13 @@ export function ProviderManager({
     }
   }, [actionsRequireSelection, enabledProviders, pendingAction]);
 
+  useEffect(() => {
+    if (actionsRequireSelection && manualHelpFailureProvider
+      && !enabledProviders.includes(manualHelpFailureProvider)) {
+      setManualHelpFailureProvider(null);
+    }
+  }, [actionsRequireSelection, enabledProviders, manualHelpFailureProvider]);
+
   if (controller.states === null) {
     return <div className="provider-setup-grid">
       <div className="provider-setup-card" data-status={controller.loadFailed ? "unavailable" : "loading"}>
@@ -239,7 +246,7 @@ export function ProviderManager({
           onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
         />}
 
-        {controller.failureProvider === provider && <>
+        {actionsAvailable && controller.failureProvider === provider && <>
           <p className="provider-setup-error" role="alert">
             {t(manualHelpFailureProvider === provider
               ? "setup.manualHelpFailure"

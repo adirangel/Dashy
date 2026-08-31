@@ -12,7 +12,7 @@ macro_rules! generate_app_handler {
 
 use std::sync::Arc;
 
-use dashboard::commands::{emit_dashboard_cache_changed, AppState};
+use dashboard::commands::{emit_dashboard_cache_changed, refreshable_providers, AppState};
 use desktop::{
     controller::DesktopController,
     edge::EdgeInteraction,
@@ -171,11 +171,7 @@ pub fn run() {
             }
 
             let dashboard = app.state::<AppState>().dashboard.clone();
-            let enabled_providers = if provider_setup_required {
-                Vec::new()
-            } else {
-                current_settings.enabled_providers.clone()
-            };
+            let enabled_providers = refreshable_providers(&current_settings).to_vec();
             tauri::async_runtime::spawn(async move {
                 dashboard.get_snapshot_for(false, &enabled_providers).await;
             });
@@ -213,7 +209,7 @@ fn handle_menu_action(app: &AppHandle, id: &str) {
             let dashboard = app.state::<AppState>().dashboard.clone();
             let app_handle = app.clone();
             let enabled_providers = match state.settings.current() {
-                Ok(settings) => settings.enabled_providers.clone(),
+                Ok(settings) => refreshable_providers(&settings).to_vec(),
                 Err(_) => return,
             };
             tauri::async_runtime::spawn(async move {
