@@ -2,43 +2,26 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useTranslation } from "react-i18next";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { getDashboardSnapshot, type ProviderId } from "../dashboard";
-import i18n, { SUPPORTED_LOCALES, resolveLocale, setLocale, type SupportedLocale } from "../i18n";
+import i18n, {
+  SUPPORTED_LOCALES, languageName, resolveLocale, setLocale, type SupportedLocale,
+} from "../i18n";
 import { ProviderManager } from "../setup/ProviderManager";
 import { useProviderSetup } from "../setup/useProviderSetup";
+import { applyTrayLocale, translatedTrayLabels } from "../trayLabels";
 import { useWindowActivationRevision } from "../useWindowActivation";
 import {
   getSettings,
   emitLocaleChanged,
   listMonitors,
   listenForSettingsChanges,
-  setTrayLabels,
   updateSettings,
   type AppSettings,
   type EdgePlacement,
   type MonitorInfo,
   type SettingsPatch,
-  type TrayLabels,
 } from "../window";
 
-export function translatedTrayLabels(locale: SupportedLocale): TrayLabels {
-  const translate = i18n.getFixedT(locale);
-  return {
-    show: translate("menu.show"), refreshAll: translate("menu.refreshAll"),
-    placement: translate("menu.placement"), right: translate("settings.right"),
-    left: translate("settings.left"), top: translate("settings.top"),
-    monitor: translate("menu.monitor"), primaryMonitor: translate("menu.primaryMonitor"),
-    unavailable: translate("status.unavailable"), settings: translate("menu.settings"),
-    quit: translate("menu.quit"),
-  };
-}
-
-async function applyTrayLocale(locale: SupportedLocale) {
-  await setTrayLabels(translatedTrayLabels(locale));
-}
-
-function languageName(locale: SupportedLocale): string {
-  return new Intl.DisplayNames([locale], { type: "language" }).of(locale) ?? locale;
-}
+export { translatedTrayLabels };
 
 function StartupCheckbox({
   state,

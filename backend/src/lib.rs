@@ -409,6 +409,7 @@ mod config_tests {
             serde_json::json!([
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
+                "core:event:allow-emit-to",
                 "core:window:allow-is-visible",
                 "core:window:allow-is-focused",
                 "allow-get-settings",
@@ -416,6 +417,7 @@ mod config_tests {
                 "allow-install-provider",
                 "allow-login-provider",
                 "allow-complete-onboarding",
+                "allow-set-tray-labels",
                 {
                     "identifier": "opener:allow-open-url",
                     "allow": [

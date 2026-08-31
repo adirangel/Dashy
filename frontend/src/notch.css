@@ -25,14 +25,14 @@
 
 .placement-right:not(.is-expanded),
 .placement-left:not(.is-expanded) {
-  width: 70px;
+  width: var(--rail-thickness, 70px);
   height: var(--control-extent);
 }
 
 .placement-right.is-expanded,
 .placement-left.is-expanded {
-  width: min(370px, 100vw);
-  height: min(360px, 100vh);
+  width: min(var(--side-expanded-width, 370px), 100vw);
+  height: min(var(--side-expanded-height, 400px), 100vh);
 }
 
 .placement-top {
@@ -43,12 +43,12 @@
 
 .placement-top:not(.is-expanded) {
   width: var(--control-extent);
-  height: 70px;
+  height: var(--rail-thickness, 70px);
 }
 
 .placement-top.is-expanded {
-  width: min(340px, 100vw);
-  height: min(430px, 100vh);
+  width: min(var(--top-expanded-width, 400px), 100vw);
+  height: min(var(--top-expanded-height, 430px), 100vh);
 }
 
 .notch-surface.is-entering.placement-right { animation: notch-enter-right 220ms cubic-bezier(.2, .8, .2, 1) both; }
@@ -71,20 +71,10 @@
 @keyframes notch-exit-left { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-12px); } }
 @keyframes notch-exit-top { from { opacity: 1; transform: translateX(-50%) translateY(0); } to { opacity: 0; transform: translateX(-50%) translateY(-12px); } }
 
-.metric-rail,
-.provider-card {
-  border: 1px solid var(--glass-border);
-  background:
-    linear-gradient(145deg, var(--glass-highlight), transparent 32%),
-    var(--glass-deep);
-  -webkit-backdrop-filter: blur(28px) saturate(148%);
-  backdrop-filter: blur(28px) saturate(148%);
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, .32),
-    inset 0 1px rgba(255, 255, 255, .1),
-    inset 0 -1px rgba(0, 0, 0, .24);
-}
-
+/* The rail is a solid tab grown out of the screen edge. The element itself is inset
+   by --edge-fillet at each end; the ::before/::after pseudo-elements paint the
+   concave fillets that blend the tab into the edge, so --rail-extent (the native
+   window contract shared with Rust) stays the fillet-inclusive footprint. */
 .metric-rail {
   position: absolute;
   z-index: 3;
@@ -92,58 +82,139 @@
   align-items: center;
   justify-content: center;
   margin: 0;
+  border: 0;
+  background: var(--notch-bg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .45);
 }
 
 .placement-right .metric-rail,
 .placement-left .metric-rail {
-  width: 70px;
-  height: var(--rail-extent);
-  padding: 11px 3px;
+  width: var(--rail-thickness, 70px);
+  height: calc(var(--rail-extent) - 2 * var(--edge-fillet, 16px));
+  padding: var(--tab-end-padding, 16px) 3px;
   flex-direction: column;
 }
 
 .placement-right:not(.is-expanded) .metric-rail,
-.placement-left:not(.is-expanded) .metric-rail { inset-block-start: 0; }
+.placement-left:not(.is-expanded) .metric-rail {
+  inset-block-start: var(--edge-fillet, 16px);
+}
 .placement-right.is-expanded .metric-rail,
 .placement-left.is-expanded .metric-rail {
-  inset-block-start: calc(50% + var(--control-start));
+  inset-block-start: calc(50% + var(--control-start) + var(--edge-fillet, 16px));
 }
 
 .placement-right .metric-rail {
   right: 0;
-  border-right: 0;
-  border-radius: 34px 0 0 34px;
+  border-radius: var(--tab-radius, 32px) 0 0 var(--tab-radius, 32px);
 }
 
 .placement-left .metric-rail {
   left: 0;
-  border-left: 0;
-  border-radius: 0 34px 34px 0;
+  border-radius: 0 var(--tab-radius, 32px) var(--tab-radius, 32px) 0;
 }
 
 .placement-top .metric-rail {
   inset-block-start: 0;
-  width: var(--rail-extent);
-  height: 70px;
-  padding: 3px 11px;
+  width: calc(var(--rail-extent) - 2 * var(--edge-fillet, 16px));
+  height: var(--rail-thickness, 70px);
+  padding: 3px var(--tab-end-padding, 16px);
   flex-direction: row;
-  border-block-start: 0;
-  border-radius: 0 0 34px 34px;
+  border-radius: 0 0 var(--tab-radius, 32px) var(--tab-radius, 32px);
 }
-.placement-top:not(.is-expanded) .metric-rail { left: 0; }
-.placement-top.is-expanded .metric-rail { left: calc(50% + var(--control-start)); }
+.placement-top:not(.is-expanded) .metric-rail { left: var(--edge-fillet, 16px); }
+.placement-top.is-expanded .metric-rail {
+  left: calc(50% + var(--control-start) + var(--edge-fillet, 16px));
+}
 
+.metric-rail::before,
+.metric-rail::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Each fillet is a solid box with a transparent quarter-disc carved out of the
+   corner that faces away from the screen edge and away from the tab. The 1px
+   overlap into the tab prevents sub-pixel seams at fractional DPI. */
+.placement-right .metric-rail::before,
+.placement-right .metric-rail::after,
+.placement-left .metric-rail::before,
+.placement-left .metric-rail::after {
+  width: var(--edge-fillet, 16px);
+  height: calc(var(--edge-fillet, 16px) + 1px);
+}
+.placement-right .metric-rail::before,
+.placement-right .metric-rail::after { right: 0; }
+.placement-left .metric-rail::before,
+.placement-left .metric-rail::after { left: 0; }
+.placement-right .metric-rail::before,
+.placement-left .metric-rail::before {
+  bottom: 100%;
+  margin-bottom: -1px;
+}
+.placement-right .metric-rail::after,
+.placement-left .metric-rail::after {
+  top: 100%;
+  margin-top: -1px;
+}
+.placement-right .metric-rail::before {
+  background: radial-gradient(circle var(--edge-fillet, 16px) at 0 0,
+    transparent calc(var(--edge-fillet, 16px) - .5px),
+    var(--notch-bg) var(--edge-fillet, 16px));
+}
+.placement-right .metric-rail::after {
+  background: radial-gradient(circle var(--edge-fillet, 16px) at 0 100%,
+    transparent calc(var(--edge-fillet, 16px) - .5px),
+    var(--notch-bg) var(--edge-fillet, 16px));
+}
+.placement-left .metric-rail::before {
+  background: radial-gradient(circle var(--edge-fillet, 16px) at 100% 0,
+    transparent calc(var(--edge-fillet, 16px) - .5px),
+    var(--notch-bg) var(--edge-fillet, 16px));
+}
+.placement-left .metric-rail::after {
+  background: radial-gradient(circle var(--edge-fillet, 16px) at 100% 100%,
+    transparent calc(var(--edge-fillet, 16px) - .5px),
+    var(--notch-bg) var(--edge-fillet, 16px));
+}
+
+.placement-top .metric-rail::before,
+.placement-top .metric-rail::after {
+  top: 0;
+  width: calc(var(--edge-fillet, 16px) + 1px);
+  height: var(--edge-fillet, 16px);
+}
+.placement-top .metric-rail::before {
+  right: 100%;
+  margin-right: -1px;
+  background: radial-gradient(circle var(--edge-fillet, 16px) at 0 100%,
+    transparent calc(var(--edge-fillet, 16px) - .5px),
+    var(--notch-bg) var(--edge-fillet, 16px));
+}
+.placement-top .metric-rail::after {
+  left: 100%;
+  margin-left: -1px;
+  background: radial-gradient(circle var(--edge-fillet, 16px) at 100% 100%,
+    transparent calc(var(--edge-fillet, 16px) - .5px),
+    var(--notch-bg) var(--edge-fillet, 16px));
+}
+
+/* At rest only a small curled tail hints at the gear; hovering or keyboard-focusing
+   the area grows the solid bubble with the gear icon, matching the tab's look. The
+   button keeps its full hit target either way — it is part of the native window rect
+   and the pointer-safe region. */
 .settings-launcher {
   position: absolute;
   z-index: 4;
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
+  width: var(--gear-diameter, 52px);
+  height: var(--gear-diameter, 52px);
   padding: 0;
   border: 0;
   border-radius: 50%;
-  color: var(--text-primary);
+  color: #d6d6d6;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
@@ -151,8 +222,8 @@
 }
 
 .settings-launcher svg {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -163,32 +234,34 @@
   transition: opacity 150ms ease, transform 170ms ease;
 }
 
+/* The resting tail is a lower arc of a circle that curls from under the tab toward
+   the screen edge, hinting at the gear bubble that grows here on hover. */
 .settings-launcher::before {
   content: "";
   position: absolute;
-  width: 38px;
-  height: 46px;
+  width: 34px;
+  height: 34px;
   border: 6px solid transparent;
-  border-right-color: #050607;
-  border-bottom-color: #050607;
+  border-top-color: var(--notch-bg);
+  border-right-color: var(--notch-bg);
   border-radius: 50%;
   opacity: .96;
-  transform: rotate(-18deg);
+  transform: rotate(-8deg);
   transition: opacity 120ms ease, transform 170ms ease;
   pointer-events: none;
 }
 
-.placement-left .settings-launcher::before { transform: scaleX(-1) rotate(-18deg); }
-.placement-top .settings-launcher::before { transform: rotate(72deg); }
+.placement-left .settings-launcher::before { transform: scaleX(-1) rotate(-8deg); }
+.placement-top .settings-launcher::before { transform: rotate(-98deg); }
 
 .settings-launcher:is(:hover, :focus-visible) {
-  background: #050607;
-  box-shadow: 0 15px 32px rgba(0, 0, 0, .44);
+  background: var(--notch-bg);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .5);
   transform: scale(1.04);
 }
 .settings-launcher:is(:hover, :focus-visible)::before {
   opacity: 0;
-  transform: scale(.72);
+  transform: scale(.7);
 }
 .settings-launcher:is(:hover, :focus-visible) svg {
   opacity: 1;
@@ -199,21 +272,21 @@
 
 .placement-right .settings-launcher,
 .placement-left .settings-launcher {
-  inset-block-start: calc(var(--rail-extent) + 8px);
+  inset-block-start: calc(var(--rail-extent) - 8px);
 }
 .placement-right.is-expanded .settings-launcher,
 .placement-left.is-expanded .settings-launcher {
-  inset-block-start: calc(50% + var(--control-start) + var(--rail-extent) + 8px);
+  inset-block-start: calc(50% + var(--control-start) + var(--rail-extent) - 8px);
 }
-.placement-right .settings-launcher { right: 12px; }
-.placement-left .settings-launcher { left: 12px; }
+.placement-right .settings-launcher { right: 9px; }
+.placement-left .settings-launcher { left: 9px; }
 
 .placement-top .settings-launcher {
-  inset-block-start: 6px;
-  left: calc(var(--rail-extent) + 8px);
+  inset-block-start: 9px;
+  left: calc(var(--rail-extent) - 8px);
 }
 .placement-top.is-expanded .settings-launcher {
-  left: calc(50% + var(--control-start) + var(--rail-extent) + 8px);
+  left: calc(50% + var(--control-start) + var(--rail-extent) - 8px);
 }
 
 .metric-button {
@@ -225,7 +298,7 @@
   min-width: 44px;
   min-height: 44px;
   width: 64px;
-  height: 80px;
+  height: var(--tile-extent, 88px);
   padding: 3px 2px;
   border: 0;
   border-radius: 20px;
@@ -235,23 +308,28 @@
   transition: background-color 170ms ease, opacity 170ms ease;
 }
 
-.placement-top .metric-button { width: 80px; height: 64px; }
+.placement-top .metric-button { width: var(--tile-extent, 88px); height: 64px; }
+/* The 70px horizontal rail leaves a 58px content box; a smaller ring keeps the
+   ring + value stack inside the tile's hover pill. */
+.placement-top .progress-ring { width: 42px; height: 42px; }
+.placement-top .progress-ring__center { width: 30px; height: 30px; }
+.placement-top .metric-value { margin-block-start: 2px; }
 .metric-button:hover,
-.metric-button.is-selected { background: rgba(255, 255, 255, .055); }
+.metric-button.is-selected { background: rgba(255, 255, 255, .07); }
 .metric-button:focus-visible { outline-offset: -2px; }
 
 .progress-ring {
   position: relative;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   color: var(--provider-accent);
 }
 
 .progress-ring > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-.progress-ring circle { fill: none; stroke-width: 3.5; }
-.progress-ring__track { stroke: var(--track); }
+.progress-ring circle { fill: none; stroke-width: 4; }
+.progress-ring__track { stroke: var(--notch-ring-track); }
 .progress-ring__value {
   stroke: currentColor;
   stroke-linecap: round;
@@ -259,15 +337,24 @@
   filter: drop-shadow(0 0 4px color-mix(in srgb, currentColor 48%, transparent));
 }
 .progress-ring.is-neutral .progress-ring__value { stroke: var(--text-secondary); stroke-dasharray: 2 8; }
-.progress-ring__center { position: relative; z-index: 1; display: grid; place-items: center; }
-.provider-glyph { width: 17px; height: 17px; color: var(--text-primary); }
+.progress-ring__center {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--notch-inner-circle);
+}
+.provider-glyph { width: 18px; height: 18px; color: #fff; }
 
 .metric-value {
   min-width: 4ch;
-  margin-block-start: -1px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 650;
+  margin-block-start: 5px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
   direction: ltr;
@@ -276,7 +363,7 @@
 .metric-status {
   display: block;
   max-width: 62px;
-  margin-block-start: 0;
+  margin-block-start: 4px;
   overflow: hidden;
   color: var(--text-secondary);
   font-size: 10px;
@@ -316,7 +403,7 @@
 
 .placement-right .provider-card-slot,
 .placement-left .provider-card-slot {
-  inset-block-start: clamp(16px, calc(50% - 58px + var(--join-track-offset)), 128px);
+  inset-block-start: clamp(16px, calc(50% - 59px + var(--join-track-offset)), 150px);
   transform: none;
 }
 .placement-right .provider-card-slot[data-layout="tall"],
@@ -335,15 +422,14 @@
   max-height: 356px;
   padding: 20px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .07);
   border-radius: 24px;
   background:
     radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--provider-accent) 12%, transparent), transparent 37%),
-    linear-gradient(145deg, var(--glass-highlight), transparent 31%),
-    var(--glass-raised);
+    var(--notch-bg-raised);
   box-shadow:
-    0 20px 50px rgba(0, 0, 0, .32),
-    inset 0 1px rgba(255, 255, 255, .1),
-    inset 0 -1px rgba(0, 0, 0, .24);
+    0 20px 50px rgba(0, 0, 0, .38),
+    inset 0 1px rgba(255, 255, 255, .05);
   animation: card-in 180ms ease-out both;
 }
 
@@ -356,25 +442,25 @@
   z-index: 1;
   width: 18px;
   height: 18px;
-  background: var(--glass-deep);
-  border: 1px solid var(--glass-border);
+  background: var(--notch-bg);
+  border: 0;
   transform: rotate(45deg);
-  box-shadow: inset 1px 1px var(--glass-highlight);
+  box-shadow: none;
   pointer-events: none;
   transition: inset-block-start 160ms ease, left 160ms ease;
 }
 
 .placement-right .notch-join {
   right: 61px;
-  inset-block-start: calc(50% - 35px + var(--join-track-offset) - 9px);
+  inset-block-start: calc(50% - 36px + var(--join-track-offset) - 9px);
 }
 .placement-left .notch-join {
   left: 61px;
-  inset-block-start: calc(50% - 35px + var(--join-track-offset) - 9px);
+  inset-block-start: calc(50% - 36px + var(--join-track-offset) - 9px);
 }
 .placement-top .notch-join {
   inset-block-start: 61px;
-  left: calc(50% - 35px + var(--join-track-offset) - 9px);
+  left: calc(50% - 36px + var(--join-track-offset) - 9px);
 }
 
 .provider-card__header { margin-block-end: 18px; }
@@ -399,7 +485,7 @@
 
 .github-summary { display: grid; grid-template-columns: .8fr 1.2fr; gap: 8px; margin-block-end: 17px; }
 .placement-top .github-summary { grid-template-columns: .75fr 1.25fr; }
-.github-summary > div { min-width: 0; padding: 10px; border: 1px solid var(--glass-highlight); border-radius: 13px; background: rgba(255, 255, 255, .035); }
+.github-summary > div { min-width: 0; padding: 10px; border: 1px solid rgba(255, 255, 255, .07); border-radius: 13px; background: rgba(255, 255, 255, .035); }
 .github-summary span { display: block; color: var(--text-secondary); font-size: 9px; line-height: 1.25; }
 .github-summary strong { display: block; margin-block-start: 4px; overflow: hidden; color: var(--text-primary); font-size: 15px; font-weight: 620; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .github-summary strong b { font: inherit; }
@@ -415,7 +501,7 @@
 .heatmap-grid i[data-level="3"] { background: #68bd69; }
 .heatmap-grid i[data-level="4"] { background: var(--github); box-shadow: 0 0 5px rgba(141, 235, 120, .35); }
 
-.provider-state { display: grid; gap: 7px; padding: 14px; border: 1px solid var(--glass-highlight); border-radius: 14px; background: rgba(255, 255, 255, .035); }
+.provider-state { display: grid; gap: 7px; padding: 14px; border: 1px solid rgba(255, 255, 255, .07); border-radius: 14px; background: rgba(255, 255, 255, .035); }
 .provider-state strong { color: var(--text-primary); font-size: 13px; }
 .provider-state span, .provider-state p { margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
 .status-stale .provider-state { margin-block-start: 17px; border-color: color-mix(in srgb, var(--warning) 30%, transparent); }

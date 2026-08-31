@@ -9,12 +9,26 @@ pub const ACTIVATION_ZONE_PX: u32 = 28;
 pub const REVEAL_DWELL: Duration = Duration::from_millis(100);
 pub const CLOSE_GRACE: Duration = Duration::from_millis(420);
 
+// These constants mirror frontend/src/notch/geometry.json; the
+// geometry_constants_match_the_shared_contract_file test pins the two copies together.
 const SIDE_RAIL_WIDTH: u32 = 70;
 const TOP_RAIL_HEIGHT: u32 = 70;
-const SETTINGS_CONTROL_EXTENT: u32 = 70;
+const TILE_EXTENT: u32 = 88;
+const TAB_END_PADDING: u32 = 16;
+const EDGE_FILLET: u32 = 16;
+// GEAR_GAP and GEAR_TAIL_MARGIN budget the native window space reserved past the
+// rail; the CSS may place the gear anywhere inside that budget (it currently tucks
+// the bubble 8px into the rail's tail fillet).
+const GEAR_DIAMETER: u32 = 52;
+const GEAR_GAP: u32 = 12;
+const GEAR_TAIL_MARGIN: u32 = 8;
+const SETTINGS_CONTROL_EXTENT: u32 = GEAR_GAP + GEAR_DIAMETER + GEAR_TAIL_MARGIN;
 const CARD_WIDTH: u32 = 300;
-const TOP_CARD_WIDTH: u32 = 340;
+const TOP_CARD_MIN_WIDTH: u32 = 340;
 const CARD_HEIGHT: u32 = 360;
+// A 4th provider raises control_logical_extent past the fixed expanded sizes below;
+// grow sideExpanded.height / topExpanded.width in geometry.json alongside this.
+const MAX_PROVIDER_COUNT: u8 = 3;
 const BASE_DPI: u32 = 96;
 const MIN_EFFECTIVE_DPI: u32 = 48;
 const MAX_EFFECTIVE_DPI: u32 = 768;
@@ -628,8 +642,8 @@ fn visible_rect_scaled_for_provider_count(
     let top_rail_width = scale.logical_to_physical(control_extent);
     let top_rail_height = scale.logical_to_physical(TOP_RAIL_HEIGHT);
     let side_card_width = scale.logical_to_physical(SIDE_RAIL_WIDTH + CARD_WIDTH);
-    let side_card_height = scale.logical_to_physical(CARD_HEIGHT.max(control_extent));
-    let top_card_width = scale.logical_to_physical(TOP_CARD_WIDTH.max(control_extent));
+    let side_card_height = scale.logical_to_physical(side_expanded_extent());
+    let top_card_width = scale.logical_to_physical(top_expanded_width());
     let top_card_height = scale.logical_to_physical(TOP_RAIL_HEIGHT + CARD_HEIGHT);
     match (placement, expanded) {
         (EdgePlacement::Right, false) => {
@@ -798,11 +812,22 @@ fn coordinate_end(start: i32, length: u32) -> i32 {
 }
 
 fn rail_logical_extent(provider_count: u8) -> u32 {
-    30 + 80 * u32::from(provider_count.clamp(1, 3))
+    2 * (EDGE_FILLET + TAB_END_PADDING)
+        + TILE_EXTENT * u32::from(provider_count.clamp(1, MAX_PROVIDER_COUNT))
 }
 
 fn control_logical_extent(provider_count: u8) -> u32 {
     rail_logical_extent(provider_count) + SETTINGS_CONTROL_EXTENT
+}
+
+// The expanded surface keeps one fixed size for every provider count so pinned cards
+// never resize when providers are enabled or disabled.
+fn side_expanded_extent() -> u32 {
+    CARD_HEIGHT.max(control_logical_extent(MAX_PROVIDER_COUNT))
+}
+
+fn top_expanded_width() -> u32 {
+    TOP_CARD_MIN_WIDTH.max(control_logical_extent(MAX_PROVIDER_COUNT))
 }
 
 fn subtract_from_end(start: i32, length: u32, amount: u32) -> i32 {
@@ -831,18 +856,64 @@ mod tests {
     }
 
     #[test]
+    fn geometry_constants_match_the_shared_contract_file() {
+        let contract: serde_json::Value =
+            serde_json::from_str(include_str!("../../../frontend/src/notch/geometry.json"))
+                .unwrap();
+
+        assert_eq!(contract["railThickness"], SIDE_RAIL_WIDTH);
+        assert_eq!(contract["railThickness"], TOP_RAIL_HEIGHT);
+        assert_eq!(contract["tileExtent"], TILE_EXTENT);
+        assert_eq!(contract["tabEndPadding"], TAB_END_PADDING);
+        assert_eq!(contract["edgeFillet"], EDGE_FILLET);
+        assert_eq!(contract["gearDiameter"], GEAR_DIAMETER);
+        assert_eq!(contract["gearGap"], GEAR_GAP);
+        assert_eq!(contract["gearTailMargin"], GEAR_TAIL_MARGIN);
+        assert_eq!(contract["settingsControlExtent"], SETTINGS_CONTROL_EXTENT);
+        assert_eq!(contract["cardWidth"], CARD_WIDTH);
+        assert_eq!(contract["cardHeight"], CARD_HEIGHT);
+        assert_eq!(
+            contract["sideExpanded"]["width"],
+            SIDE_RAIL_WIDTH + CARD_WIDTH
+        );
+        assert_eq!(contract["sideExpanded"]["height"], side_expanded_extent());
+        assert_eq!(contract["topExpanded"]["width"], top_expanded_width());
+        assert_eq!(
+            contract["topExpanded"]["height"],
+            TOP_RAIL_HEIGHT + CARD_HEIGHT
+        );
+        assert_eq!(contract["maxProviders"], MAX_PROVIDER_COUNT);
+        assert_eq!(contract["activationZonePx"], ACTIVATION_ZONE_PX);
+
+        // tauri.conf.json is the fourth copy of this geometry: the main window must be
+        // created at the collapsed three-provider rail size.
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let main = config["app"]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|window| window["label"] == "main")
+            .unwrap();
+        assert_eq!(main["width"], SIDE_RAIL_WIDTH);
+        assert_eq!(main["height"], control_logical_extent(MAX_PROVIDER_COUNT));
+    }
+
+    #[test]
     fn rail_extent_tracks_enabled_provider_count() {
-        assert_eq!(rail_logical_extent(1), 110);
-        assert_eq!(rail_logical_extent(2), 190);
-        assert_eq!(rail_logical_extent(3), 270);
-        assert_eq!(control_logical_extent(1), 180);
-        assert_eq!(control_logical_extent(2), 260);
-        assert_eq!(control_logical_extent(3), 340);
+        assert_eq!(rail_logical_extent(1), 152);
+        assert_eq!(rail_logical_extent(2), 240);
+        assert_eq!(rail_logical_extent(3), 328);
+        assert_eq!(control_logical_extent(1), 224);
+        assert_eq!(control_logical_extent(2), 312);
+        assert_eq!(control_logical_extent(3), 400);
+        assert_eq!(side_expanded_extent(), 400);
+        assert_eq!(top_expanded_width(), 400);
     }
 
     #[test]
     fn provider_count_sizes_each_collapsed_placement_without_changing_expanded_bounds() {
-        for (provider_count, extent) in [(1, 180), (2, 260), (3, 340)] {
+        for (provider_count, extent) in [(1, 224), (2, 312), (3, 400)] {
             let side_rail = window_layout_scaled(
                 EdgePlacement::Right,
                 work(),
@@ -878,8 +949,8 @@ mod tests {
 
             assert_eq!((side_rail.size.width, side_rail.size.height), (70, extent));
             assert_eq!((top_rail.size.width, top_rail.size.height), (extent, 70));
-            assert_eq!((side_card.size.width, side_card.size.height), (370, 360));
-            assert_eq!((top_card.size.width, top_card.size.height), (340, 430));
+            assert_eq!((side_card.size.width, side_card.size.height), (370, 400));
+            assert_eq!((top_card.size.width, top_card.size.height), (400, 430));
         }
     }
 
@@ -990,26 +1061,26 @@ mod tests {
             visible_rect(EdgePlacement::Right, work(), EdgeUiState::RailVisible),
             Rect {
                 x: 1850,
-                y: 350,
+                y: 320,
                 width: 70,
-                height: 340,
+                height: 400,
             }
         );
         assert_eq!(
             visible_rect(EdgePlacement::Left, work(), EdgeUiState::RailVisible),
             Rect {
                 x: 0,
-                y: 350,
+                y: 320,
                 width: 70,
-                height: 340,
+                height: 400,
             }
         );
         assert_eq!(
             visible_rect(EdgePlacement::Top, work(), EdgeUiState::RailVisible),
             Rect {
-                x: 790,
+                x: 760,
                 y: 0,
-                width: 340,
+                width: 400,
                 height: 70,
             }
         );
@@ -1017,26 +1088,26 @@ mod tests {
             visible_rect(EdgePlacement::Right, work(), EdgeUiState::CardVisible),
             Rect {
                 x: 1550,
-                y: 340,
+                y: 320,
                 width: 370,
-                height: 360,
+                height: 400,
             }
         );
         assert_eq!(
             visible_rect(EdgePlacement::Left, work(), EdgeUiState::CardVisible),
             Rect {
                 x: 0,
-                y: 340,
+                y: 320,
                 width: 370,
-                height: 360,
+                height: 400,
             }
         );
         assert_eq!(
             visible_rect(EdgePlacement::Top, work(), EdgeUiState::CardVisible),
             Rect {
-                x: 790,
+                x: 760,
                 y: 0,
-                width: 340,
+                width: 400,
                 height: 430,
             }
         );
@@ -1045,10 +1116,10 @@ mod tests {
     #[test]
     fn logical_geometry_scales_once_at_common_windows_dpi_values() {
         let cases = [
-            (1.0, 96, 70, 340, 370, 360, 28),
-            (1.25, 120, 88, 425, 463, 450, 35),
-            (1.5, 144, 105, 510, 555, 540, 42),
-            (2.0, 192, 140, 680, 740, 720, 56),
+            (1.0, 96, 70, 400, 370, 400, 28),
+            (1.25, 120, 88, 500, 463, 500, 35),
+            (1.5, 144, 105, 600, 555, 600, 42),
+            (2.0, 192, 140, 800, 740, 800, 56),
         ];
 
         for (factor, dpi, rail_width, rail_height, card_width, card_height, activation) in cases {
@@ -1105,16 +1176,16 @@ mod tests {
                 visible_rect_scaled(EdgePlacement::Top, work(), scale, EdgeUiState::CardVisible);
 
             assert_eq!(side_rail.width, scale.logical_to_physical(70));
-            assert_eq!(side_rail.height, scale.logical_to_physical(340));
+            assert_eq!(side_rail.height, scale.logical_to_physical(400));
             assert_eq!(left_rail.width, side_rail.width);
             assert_eq!(left_rail.height, side_rail.height);
-            assert_eq!(top_rail.width, scale.logical_to_physical(340));
+            assert_eq!(top_rail.width, scale.logical_to_physical(400));
             assert_eq!(top_rail.height, scale.logical_to_physical(70));
             assert_eq!(right_card.width, scale.logical_to_physical(370));
-            assert_eq!(right_card.height, scale.logical_to_physical(360));
+            assert_eq!(right_card.height, scale.logical_to_physical(400));
             assert_eq!(left_card.width, right_card.width);
             assert_eq!(left_card.height, right_card.height);
-            assert_eq!(top_card.width, scale.logical_to_physical(340));
+            assert_eq!(top_card.width, scale.logical_to_physical(400));
             assert_eq!(top_card.height, scale.logical_to_physical(430));
             assert_eq!(
                 right_card.x + i32::try_from(right_card.width).unwrap(),

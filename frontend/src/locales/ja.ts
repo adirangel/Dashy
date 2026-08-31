@@ -8,6 +8,7 @@ const ja = {
   guidance: { installClaude: "Claude CLI をインストールして Dashy を再度開いてください。", installCodex: "Codex CLI をインストールして Dashy を再度開いてください。", installGitHub: "GitHub CLI をインストールして Dashy を再度開いてください。", signInClaude: "Claude にサインインして再試行してください。", signInCodex: "Codex にサインインして再試行してください。", signInGitHub: "GitHub にサインインして再試行してください。", retryLater: "後でもう一度 {{provider}} をお試しください。" },
   setup: {
     eyebrow: "DASHY / セットアップ", title: "Dashy で確認するサービスを選択", description: "使用するツールだけを接続してください。後で設定から変更できます。",
+    languageTitle: "言語を選択してください", languageDescription: "Dashy はすぐに切り替わります。後で設定から変更できます。", continue: "続行", back: "戻る", stepLabel: "ステップ {{current}} / {{total}}",
     useProvider: "Dashy で {{provider}} を使用", connected: "接続済み", notInstalled: "未インストール", signInRequired: "サインインが必要", needsAttention: "確認が必要",
     installing: "インストール中", connecting: "接続中",
     install: "{{provider}} をインストール", connect: "{{provider}} に接続", retry: "再試行", cancel: "キャンセル", confirmInstall: "インストールを確認", confirmLogin: "公式ログインを開く",

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "../i18n";
@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   activationRevision: vi.fn(),
   getSettings: vi.fn(),
   completeOnboarding: vi.fn(),
+  setTrayLabels: vi.fn(),
+  emitLocaleChanged: vi.fn(),
   getProviderSetupStates: vi.fn(),
   installProvider: vi.fn(),
   loginProvider: vi.fn(),
@@ -21,6 +23,8 @@ vi.mock("../useWindowActivation", () => ({
 vi.mock("../window", () => ({
   getSettings: mocks.getSettings,
   completeOnboarding: mocks.completeOnboarding,
+  setTrayLabels: mocks.setTrayLabels,
+  emitLocaleChanged: mocks.emitLocaleChanged,
 }));
 vi.mock("../setup/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("../setup/api")>(),
@@ -73,6 +77,8 @@ describe("Onboarding activation", () => {
     mocks.installProvider.mockResolvedValue(providerStates[0]);
     mocks.loginProvider.mockResolvedValue(providerStates[0]);
     mocks.completeOnboarding.mockResolvedValue({ ...baseSettings, onboardingCompleted: true });
+    mocks.setTrayLabels.mockResolvedValue(undefined);
+    mocks.emitLocaleChanged.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -99,6 +105,8 @@ describe("Onboarding activation", () => {
 
     mocks.activationRevision.mockReturnValue(2);
     view.rerender(<OnboardingApp />);
+    await waitFor(() => expect(document.documentElement.lang).toBe("ja"));
+    fireEvent.click(screen.getByRole("button", { name: "続行" }));
     const codexCard = await screen.findByRole("article", { name: "Codex" });
     expect(within(codexCard).getByRole("checkbox")).toBeChecked();
     expect(document.documentElement.lang).toBe("ja");
@@ -110,5 +118,24 @@ describe("Onboarding activation", () => {
     expect(within(claudeCard).getByRole("checkbox")).not.toBeChecked();
     expect(mocks.getSettings).toHaveBeenCalledTimes(2);
     expect(mocks.getProviderSetupStates).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a locale the user picked over a persisted one arriving on a later activation", async () => {
+    mocks.activationRevision.mockReturnValue(1);
+    const view = render(<OnboardingApp />);
+    await waitFor(() => expect(mocks.getSettings).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await screen.findByRole("radio", { name: "עברית" }));
+    await waitFor(() => expect(document.documentElement.lang).toBe("he"));
+
+    mocks.getSettings.mockResolvedValueOnce({ ...baseSettings, locale: "en" });
+    mocks.activationRevision.mockReturnValue(2);
+    view.rerender(<OnboardingApp />);
+    await waitFor(() => expect(mocks.getSettings).toHaveBeenCalledTimes(2));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(document.documentElement.lang).toBe("he");
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(screen.getByRole("radio", { name: "עברית" })).toBeChecked();
   });
 });

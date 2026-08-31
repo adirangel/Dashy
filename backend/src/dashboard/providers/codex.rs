@@ -10,7 +10,7 @@ use crate::dashboard::{
     providers::DataProvider,
 };
 
-const CODEX_TIMEOUT: Duration = Duration::from_secs(15);
+const CODEX_TIMEOUT: Duration = Duration::from_secs(30);
 const AUTHENTICATION_ERROR_CODE: i64 = -32001;
 const AUTHENTICATION_ERROR_MESSAGE: &str = "Authentication required";
 const DASHY_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -724,7 +724,7 @@ mod tests {
             ]
         );
         assert_eq!(calls[0].3, 2);
-        assert_eq!(calls[0].4, Duration::from_secs(15));
+        assert_eq!(calls[0].4, Duration::from_secs(30));
     }
 
     #[tokio::test]

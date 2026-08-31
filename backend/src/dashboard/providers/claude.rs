@@ -14,8 +14,8 @@ use crate::dashboard::{
     providers::{remaining_timeout, DataProvider},
 };
 
-const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
-const CLAUDE_TIMEOUT: Duration = Duration::from_secs(30);
+const AUTH_TIMEOUT: Duration = Duration::from_secs(20);
+const CLAUDE_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_RESET_TEXT_SCALARS: usize = 80;
 const MAX_RELATIVE_RESET_MINUTES: i64 = 366 * 24 * 60;
 const SESSION_SUMMARY_PREFIX: &str = "Current session: ";
@@ -991,7 +991,7 @@ mod tests {
             &[(
                 AllowedProgram::Claude,
                 vec!["auth".to_owned(), "status".to_owned(), "--json".to_owned()],
-                Duration::from_secs(10),
+                Duration::from_secs(20),
             )]
         );
     }
@@ -1042,14 +1042,14 @@ mod tests {
 
         let calls = capture.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1].2, Duration::from_secs(24));
+        assert_eq!(calls[1].2, Duration::from_secs(54));
     }
 
     #[tokio::test(start_paused = true)]
     async fn exhausted_provider_deadline_stops_before_usage_capture() {
         let capture = RecordingCaptureRunner::with_delayed_results(
             vec![Ok(auth_status(true))],
-            vec![Duration::from_secs(30)],
+            vec![Duration::from_secs(60)],
         );
         let provider = ClaudeProvider::new(capture.clone());
 

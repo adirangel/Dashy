@@ -8,6 +8,7 @@ const he = {
   guidance: { installClaude: "התקינו את כלי שורת הפקודה של Claude ופתחו שוב את Dashy.", installCodex: "התקינו את כלי שורת הפקודה של Codex ופתחו שוב את Dashy.", installGitHub: "התקינו את כלי שורת הפקודה של GitHub ופתחו שוב את Dashy.", signInClaude: "התחברו ל־Claude ונסו שוב.", signInCodex: "התחברו ל־Codex ונסו שוב.", signInGitHub: "התחברו ל־GitHub ונסו שוב.", retryLater: "נסו את {{provider}} שוב מאוחר יותר." },
   setup: {
     eyebrow: "DASHY / הגדרה", title: "בחרו במה Dashy יצפה", description: "חברו רק את הכלים שבהם אתם משתמשים. אפשר לשנות זאת מאוחר יותר בהגדרות.",
+    languageTitle: "בחרו את השפה שלכם", languageDescription: "Dashy יעבור לשפה מיד. אפשר לשנות זאת מאוחר יותר בהגדרות.", continue: "המשך", back: "חזרה", stepLabel: "שלב {{current}} מתוך {{total}}",
     useProvider: "השתמשו ב־{{provider}} ב־Dashy", connected: "מחובר", notInstalled: "לא מותקן", signInRequired: "נדרשת התחברות", needsAttention: "דורש טיפול",
     installing: "מתבצעת התקנה", connecting: "מתבצע חיבור",
     install: "התקנת {{provider}}", connect: "חיבור {{provider}}", retry: "ניסיון חוזר", cancel: "ביטול", confirmInstall: "אישור ההתקנה", confirmLogin: "פתיחת ההתחברות הרשמית",

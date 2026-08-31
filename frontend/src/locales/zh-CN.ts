@@ -8,6 +8,7 @@ const zhCN = {
   guidance: { installClaude: "请安装 Claude CLI，然后重新打开 Dashy。", installCodex: "请安装 Codex CLI，然后重新打开 Dashy。", installGitHub: "请安装 GitHub CLI，然后重新打开 Dashy。", signInClaude: "请登录 Claude 后重试。", signInCodex: "请登录 Codex 后重试。", signInGitHub: "请登录 GitHub 后重试。", retryLater: "请稍后重试 {{provider}}。" },
   setup: {
     eyebrow: "DASHY / 设置", title: "选择 Dashy 要监控的内容", description: "只连接你使用的工具。之后可随时在设置中更改。",
+    languageTitle: "选择你的语言", languageDescription: "Dashy 会立即切换。之后可随时在设置中更改。", continue: "继续", back: "返回", stepLabel: "第 {{current}} 步，共 {{total}} 步",
     useProvider: "在 Dashy 中使用 {{provider}}", connected: "已连接", notInstalled: "未安装", signInRequired: "需要登录", needsAttention: "需要处理",
     installing: "正在安装", connecting: "正在连接",
     install: "安装 {{provider}}", connect: "连接 {{provider}}", retry: "重试", cancel: "取消", confirmInstall: "确认安装", confirmLogin: "打开官方登录",

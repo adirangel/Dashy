@@ -8,6 +8,7 @@ const es = {
   guidance: { installClaude: "Instala la CLI de Claude y vuelve a abrir Dashy.", installCodex: "Instala la CLI de Codex y vuelve a abrir Dashy.", installGitHub: "Instala la CLI de GitHub y vuelve a abrir Dashy.", signInClaude: "Inicia sesión en Claude y vuelve a intentarlo.", signInCodex: "Inicia sesión en Codex y vuelve a intentarlo.", signInGitHub: "Inicia sesión en GitHub y vuelve a intentarlo.", retryLater: "Vuelve a probar {{provider}} más tarde." },
   setup: {
     eyebrow: "DASHY / CONFIGURACIÓN", title: "Elige qué supervisa Dashy", description: "Conecta solo las herramientas que utilizas. Puedes cambiarlo más adelante en Ajustes.",
+    languageTitle: "Elige tu idioma", languageDescription: "Dashy cambia de inmediato. Puedes cambiarlo más adelante en Ajustes.", continue: "Continuar", back: "Atrás", stepLabel: "Paso {{current}} de {{total}}",
     useProvider: "Usar {{provider}} en Dashy", connected: "Conectado", notInstalled: "No instalado", signInRequired: "Debes iniciar sesión", needsAttention: "Requiere atención",
     installing: "Instalando", connecting: "Conectando",
     install: "Instalar {{provider}}", connect: "Conectar {{provider}}", retry: "Reintentar", cancel: "Cancelar", confirmInstall: "Confirmar instalación", confirmLogin: "Abrir inicio de sesión oficial",

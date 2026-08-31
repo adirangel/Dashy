@@ -30,14 +30,18 @@ describe("localization contract", () => {
 
   it("exposes the complete provider setup leaf-key contract", () => {
     expect(leafKeys(localeResources.en.translation.setup, "setup").sort()).toEqual([
-      "setup.actionFailure", "setup.cancel", "setup.command", "setup.confirmInstall",
+      "setup.actionFailure", "setup.back", "setup.cancel", "setup.command",
+      "setup.confirmInstall",
       "setup.confirmLogin", "setup.connect", "setup.connected", "setup.connecting",
-      "setup.description",
+      "setup.continue", "setup.description",
       "setup.eyebrow", "setup.finish", "setup.finishFailure", "setup.install",
-      "setup.installDisclosure", "setup.installing", "setup.loading", "setup.loginDisclosure",
+      "setup.installDisclosure", "setup.installing",
+      "setup.languageDescription", "setup.languageTitle",
+      "setup.loading", "setup.loginDisclosure",
       "setup.manualHelp", "setup.manualHelpFailure",
       "setup.needsAttention", "setup.notInstalled", "setup.packageId", "setup.publisher",
-      "setup.retry", "setup.signInRequired", "setup.title", "setup.useProvider",
+      "setup.retry", "setup.signInRequired", "setup.stepLabel", "setup.title",
+      "setup.useProvider",
     ]);
   });
 

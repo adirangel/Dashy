@@ -10,12 +10,16 @@ import "../onboarding.css";
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   completeOnboarding: vi.fn(),
+  setTrayLabels: vi.fn(),
+  emitLocaleChanged: vi.fn(),
   controller: vi.fn(),
 }));
 
 vi.mock("../window", () => ({
   getSettings: mocks.getSettings,
   completeOnboarding: mocks.completeOnboarding,
+  setTrayLabels: mocks.setTrayLabels,
+  emitLocaleChanged: mocks.emitLocaleChanged,
 }));
 
 vi.mock("../setup/useProviderSetup", () => ({
@@ -85,6 +89,10 @@ function controller(providerStates = states({
   };
 }
 
+async function goToProviders() {
+  fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+}
+
 describe("OnboardingApp", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -94,12 +102,29 @@ describe("OnboardingApp", () => {
       ...cleanSettings,
       onboardingCompleted: true,
     });
+    mocks.setTrayLabels.mockResolvedValue(undefined);
+    mocks.emitLocaleChanged.mockResolvedValue(undefined);
     mocks.controller.mockReturnValue(controller());
   });
 
   afterEach(cleanup);
 
-  it("preselects discovered connected providers but keeps every choice editable", async () => {
+  it("opens on the language step, preselects the persisted locale, and switches live", async () => {
+    mocks.getSettings.mockResolvedValue({ ...cleanSettings, locale: "fr" });
+
+    render(<OnboardingApp />);
+
+    const french = await screen.findByRole("radio", { name: "français" });
+    await waitFor(() => expect(french).toBeChecked());
+    expect(screen.queryByRole("checkbox", { name: /Dashy/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "עברית" }));
+    await waitFor(() => expect(document.documentElement.lang).toBe("he"));
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(screen.getByRole("radio", { name: "עברית" })).toBeChecked();
+  });
+
+  it("round-trips between steps preserving locale and provider selections", async () => {
     mocks.controller.mockReturnValue(controller(states({
       claude: "connected",
       codex: "notInstalled",
@@ -107,6 +132,58 @@ describe("OnboardingApp", () => {
     })));
 
     render(<OnboardingApp />);
+    fireEvent.click(await screen.findByRole("radio", { name: "español" }));
+    await waitFor(() => expect(document.documentElement.lang).toBe("es"));
+    fireEvent.click(await screen.findByRole("button", { name: "Continuar" }));
+
+    const claude = await screen.findByRole("checkbox", { name: "Usar Claude en Dashy" });
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveFocus();
+    expect(claude).toBeChecked();
+    fireEvent.click(claude);
+    expect(claude).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Atrás" }));
+    expect(await screen.findByRole("radio", { name: "español" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    expect(await screen.findByRole("checkbox", { name: "Usar Claude en Dashy" })).not.toBeChecked();
+  });
+
+  it("pushes localized tray labels before completing and reports the chosen locale", async () => {
+    render(<OnboardingApp />);
+    fireEvent.click(await screen.findByRole("radio", { name: "עברית" }));
+    fireEvent.click(await screen.findByRole("button", { name: "המשך" }));
+    fireEvent.click(await screen.findByRole("button", { name: "סיום ההגדרה" }));
+
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "he"));
+    expect(mocks.setTrayLabels).toHaveBeenCalledTimes(1);
+    expect(mocks.setTrayLabels.mock.calls[0][0].quit).toBe("צא מ־Dashy");
+    expect(mocks.setTrayLabels.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.completeOnboarding.mock.invocationCallOrder[0]);
+    await waitFor(() => expect(mocks.emitLocaleChanged).toHaveBeenCalledExactlyOnceWith("he"));
+  });
+
+  it("finishes even when the tray label push fails", async () => {
+    mocks.setTrayLabels.mockRejectedValue(new Error("tray offline"));
+
+    render(<OnboardingApp />);
+    await goToProviders();
+    fireEvent.click(await screen.findByRole("button", { name: "Finish setup" }));
+
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en"));
+    expect(screen.queryByText(/tray offline/i)).not.toBeInTheDocument();
+    expect(screen.getByText("", { selector: ".onboarding-footer-status" })).toBeInTheDocument();
+  });
+
+  it("preselects discovered connected and stale providers but keeps every choice editable", async () => {
+    mocks.controller.mockReturnValue(controller(states({
+      claude: "connected",
+      codex: "notInstalled",
+      github: "stale",
+    })));
+
+    render(<OnboardingApp />);
+    await goToProviders();
 
     const claude = await screen.findByRole("checkbox", { name: "Use Claude in Dashy" });
     const codex = screen.getByRole("checkbox", { name: "Use Codex in Dashy" });
@@ -133,6 +210,7 @@ describe("OnboardingApp", () => {
     })));
 
     render(<OnboardingApp />);
+    await goToProviders();
 
     expect(await screen.findByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
@@ -152,6 +230,7 @@ describe("OnboardingApp", () => {
     })));
 
     render(<OnboardingApp />);
+    await goToProviders();
 
     expect(await screen.findByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).not.toBeChecked();
@@ -160,6 +239,7 @@ describe("OnboardingApp", () => {
 
   it("offers installation only for providers selected during setup", async () => {
     render(<OnboardingApp />);
+    await goToProviders();
 
     const claude = await screen.findByRole("checkbox", { name: "Use Claude in Dashy" });
     expect(screen.queryByRole("button", { name: "Install Claude" })).not.toBeInTheDocument();
@@ -180,12 +260,13 @@ describe("OnboardingApp", () => {
     }));
 
     render(<OnboardingApp />);
+    await goToProviders();
     const finish = await screen.findByRole("button", { name: "Finish setup" });
     fireEvent.click(finish);
     fireEvent.click(finish);
 
     expect(finish).toBeDisabled();
-    expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([]);
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en"));
 
     resolveCompletion({ ...cleanSettings, onboardingCompleted: true });
     await waitFor(() => expect(finish).not.toBeDisabled());
@@ -195,6 +276,7 @@ describe("OnboardingApp", () => {
     mocks.completeOnboarding.mockRejectedValue(new Error("secret filesystem path"));
 
     render(<OnboardingApp />);
+    await goToProviders();
     fireEvent.click(await screen.findByRole("button", { name: "Finish setup" }));
 
     expect(await screen.findByText(
@@ -212,6 +294,7 @@ describe("OnboardingApp", () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 560 });
     try {
       render(<OnboardingApp />);
+      await goToProviders();
 
       const surface = await screen.findByTestId("onboarding-scroll-surface");
       const finish = await screen.findByRole("button", { name: "Finish setup" });

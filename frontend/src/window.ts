@@ -111,8 +111,8 @@ export function currentWindowLabel(): string {
 export const getSettings = () => invoke<AppSettings>("get_settings");
 export const updateSettings = (patch: SettingsPatch) =>
   invoke<AppSettings>("update_settings", { patch });
-export const completeOnboarding = (enabledProviders: ProviderId[]) =>
-  invoke<AppSettings>("complete_onboarding", { enabledProviders });
+export const completeOnboarding = (enabledProviders: ProviderId[], locale: SupportedLocale) =>
+  invoke<AppSettings>("complete_onboarding", { enabledProviders, locale });
 export const listMonitors = () => invoke<MonitorInfo[]>("list_monitors");
 export const setTrayLabels = (labels: TrayLabels) =>
   invoke<void>("set_tray_labels", { labels });
