@@ -10,6 +10,27 @@ Dashy does not use demo metrics. It reads the authenticated command-line tools a
 installed on the computer and renders only the bounded status and usage fields needed
 by the interface.
 
+## The experience
+
+Dashy is designed to keep useful account activity one deliberate pointer movement
+away without becoming another dashboard that occupies the desktop. The compact rail
+rests just outside the selected screen edge, reveals on hover, and expands only the
+provider the user asks to inspect. Its translucent surfaces preserve visual context
+instead of covering the application underneath.
+
+Every provider is optional. A user can connect Claude, Codex, GitHub, any combination
+of them, or none during first-run setup. Dashy relies on each provider's existing,
+authenticated CLI session and never asks the user to paste subscription credentials
+or access tokens into the application.
+
+| Right-edge placement | Top-edge placement |
+| --- | --- |
+| ![Dashy revealing Claude usage from the right edge](docs/images/dashy-right-edge.png) | ![Dashy revealing GitHub activity from the top edge](docs/images/dashy-top-edge.png) |
+
+The screenshots above are deterministic UI fixtures rendered from the same React
+components used by the desktop application. Values are illustrative; the installed
+application displays only locally retrieved provider data.
+
 ## How the side notch works
 
 Dashy normally sits completely outside the selected monitor's usable work area. It
