@@ -252,7 +252,7 @@
 }
 
 .placement-left .settings-launcher::before { transform: scaleX(-1) rotate(-8deg); }
-.placement-top .settings-launcher::before { transform: rotate(82deg); }
+.placement-top .settings-launcher::before { transform: rotate(-98deg); }
 
 .settings-launcher:is(:hover, :focus-visible) {
   background: var(--notch-bg);
