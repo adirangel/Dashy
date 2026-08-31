@@ -14,6 +14,7 @@ strip-ansi-escapes = "0.2"
 thiserror = "2"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,6 +29,7 @@ vt100 = "0.16.2"
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_System_Registry",
   "Win32_UI_HiDpi",
   "Win32_UI_WindowsAndMessaging"
 ] }

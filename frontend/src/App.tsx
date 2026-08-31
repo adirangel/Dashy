@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect } from "react";
 import { resolveLocale, setLocale } from "./i18n";
 import { SettingsApp } from "./settings/SettingsApp";
+import { OnboardingApp } from "./onboarding/OnboardingApp";
 import { NotchApp } from "./notch/NotchApp";
 import "./settings.css";
+import "./onboarding.css";
 import { currentWindowLabel, getSettings, isTauriRuntime, listenForLocaleChanges } from "./window";
 
 type AppProps = { windowLabel?: string };
@@ -56,6 +58,7 @@ function App({ windowLabel = currentWindowLabel() }: AppProps) {
   }, [windowLabel]);
 
   if (windowLabel === "settings") return <SettingsApp />;
+  if (windowLabel === "onboarding") return <OnboardingApp />;
   if (import.meta.env.DEV && DevelopmentNotchApp && !isTauriRuntime()) {
     return <Suspense fallback={null}><DevelopmentNotchApp /></Suspense>;
   }

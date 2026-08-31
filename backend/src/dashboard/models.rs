@@ -2,13 +2,17 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProviderId {
     #[serde(rename = "github")]
     GitHub,
     Codex,
     Claude,
+}
+
+impl ProviderId {
+    pub const ALL: [Self; 3] = [Self::Claude, Self::Codex, Self::GitHub];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

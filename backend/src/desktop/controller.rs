@@ -96,6 +96,7 @@ struct OperationPlan {
 struct ControllerCore {
     machine: EdgeMachine,
     events: VecDeque<ControllerEvent>,
+    last_surface_input: Option<EdgeInput>,
     pending_hide: Option<PendingHide>,
     acknowledged_exit: Option<ExitToken>,
     initialized: bool,
@@ -130,6 +131,7 @@ impl ControllerRuntime {
 pub struct TauriWindowPort<R: Runtime> {
     main: WebviewWindow<R>,
     settings: Option<WebviewWindow<R>>,
+    onboarding: Option<WebviewWindow<R>>,
 }
 
 impl<R: Runtime> TauriWindowPort<R> {
@@ -140,6 +142,7 @@ impl<R: Runtime> TauriWindowPort<R> {
         Ok(Self {
             main,
             settings: manager.get_webview_window("settings"),
+            onboarding: manager.get_webview_window("onboarding"),
         })
     }
 }
@@ -193,12 +196,17 @@ impl<R: Runtime> WindowPort for TauriWindowPort<R> {
     fn native_handles(&self) -> Vec<NativeWindowHandle> {
         #[cfg(windows)]
         {
-            let mut handles = Vec::with_capacity(2);
+            let mut handles = Vec::with_capacity(3);
             if let Ok(handle) = self.main.hwnd() {
                 handles.push(handle.0 as NativeWindowHandle);
             }
             if let Some(settings) = &self.settings {
                 if let Ok(handle) = settings.hwnd() {
+                    handles.push(handle.0 as NativeWindowHandle);
+                }
+            }
+            if let Some(onboarding) = &self.onboarding {
+                if let Ok(handle) = onboarding.hwnd() {
                     handles.push(handle.0 as NativeWindowHandle);
                 }
             }
@@ -353,8 +361,14 @@ impl DesktopController {
             Ok(settings) => settings,
             Err(_) => return vec![DesktopError::SettingsUnavailable],
         };
+        let surface_enabled =
+            settings.onboarding_completed && !settings.enabled_providers.is_empty();
+        let provider_count = u8::try_from(settings.enabled_providers.len()).unwrap_or(u8::MAX);
         let monitors = match self.probe.monitors() {
             Ok(monitors) => monitors,
+            Err(error) if !surface_enabled => {
+                return self.step_without_monitor(now, &settings, error);
+            }
             Err(error) => return vec![error],
         };
         {
@@ -371,30 +385,84 @@ impl DesktopController {
         }
         let selected = match resolve_monitor(settings.monitor.as_ref(), &monitors) {
             Some(selected) => selected.monitor,
+            None if !surface_enabled => {
+                return self.step_without_monitor(now, &settings, DesktopError::NoMonitorAvailable);
+            }
             None => return vec![DesktopError::NoMonitorAvailable],
         };
         let mut errors = Vec::new();
-        let cursor = match self.probe.cursor_position() {
-            Ok(cursor) => cursor,
-            Err(error) => {
-                errors.push(error);
-                None
+        let cursor = if surface_enabled {
+            match self.probe.cursor_position() {
+                Ok(cursor) => cursor,
+                Err(error) => {
+                    errors.push(error);
+                    None
+                }
             }
+        } else {
+            None
         };
-        let fullscreen = self
-            .probe
-            .foreground_is_fullscreen(&selected, &self.window.native_handles());
+        let fullscreen = surface_enabled
+            && self
+                .probe
+                .foreground_is_fullscreen(&selected, &self.window.native_handles());
         let input = EdgeInput {
             cursor,
             placement: settings.placement,
             work_area: selected.work_rect,
             scale: selected.scale,
+            provider_count,
             foreground_fullscreen: fullscreen,
             always_show_over_fullscreen: settings.always_show_over_fullscreen,
             interaction: None,
         };
+        self.core
+            .lock()
+            .expect("desktop controller lock poisoned")
+            .last_surface_input = Some(input);
 
-        let plan = self.plan_operations(now, input);
+        self.execute_plan(now, input, surface_enabled, errors)
+    }
+
+    fn step_without_monitor(
+        &self,
+        now: Duration,
+        settings: &AppSettings,
+        monitor_error: DesktopError,
+    ) -> Vec<DesktopError> {
+        let input = {
+            let mut core = self.core.lock().expect("desktop controller lock poisoned");
+            match core.last_surface_input {
+                Some(input) => Some(EdgeInput {
+                    cursor: None,
+                    placement: settings.placement,
+                    provider_count: u8::try_from(settings.enabled_providers.len())
+                        .unwrap_or(u8::MAX),
+                    foreground_fullscreen: false,
+                    always_show_over_fullscreen: settings.always_show_over_fullscreen,
+                    interaction: None,
+                    ..input
+                }),
+                None => {
+                    core.events.clear();
+                    None
+                }
+            }
+        };
+        let Some(input) = input else {
+            return vec![monitor_error];
+        };
+        self.execute_plan(now, input, false, vec![monitor_error])
+    }
+
+    fn execute_plan(
+        &self,
+        now: Duration,
+        input: EdgeInput,
+        surface_enabled: bool,
+        mut errors: Vec<DesktopError>,
+    ) -> Vec<DesktopError> {
+        let plan = self.plan_operations(now, input, surface_enabled);
         let layout_succeeded = if let Some(layout) = plan.layout {
             match self.window.apply(&layout) {
                 Ok(()) => true,
@@ -435,11 +503,22 @@ impl DesktopController {
             .push_back(event);
     }
 
-    fn plan_operations(&self, now: Duration, base_input: EdgeInput) -> OperationPlan {
+    fn plan_operations(
+        &self,
+        now: Duration,
+        base_input: EdgeInput,
+        surface_enabled: bool,
+    ) -> OperationPlan {
         let mut core = self.core.lock().expect("desktop controller lock poisoned");
         let mut plan = OperationPlan {
-            layout: core.retry_layout.take(),
-            view: core.retry_view.take(),
+            layout: core
+                .retry_layout
+                .take()
+                .filter(|layout| surface_enabled || !layout.visible),
+            view: core
+                .retry_view
+                .take()
+                .filter(|view| surface_enabled || view.visibility == EdgeUiState::Hidden),
             focus_requested: false,
         };
 
@@ -447,6 +526,19 @@ impl DesktopController {
         let mut interactions = Vec::new();
         let mut focus_after_effects = false;
         for event in events {
+            if !surface_enabled {
+                if let ControllerEvent::ExitAnimationComplete(token) = event {
+                    if core
+                        .pending_hide
+                        .as_ref()
+                        .and_then(|pending| pending.token.as_ref())
+                        == Some(&token)
+                    {
+                        core.acknowledged_exit = Some(token);
+                    }
+                }
+                continue;
+            }
             match event {
                 ControllerEvent::Interaction(interaction) => {
                     focus_after_effects |= matches!(interaction, EdgeInteraction::TogglePin(_));
@@ -474,6 +566,10 @@ impl DesktopController {
             }
         }
 
+        if !surface_enabled && core.machine.state() != EdgeUiState::Hidden {
+            interactions.push(EdgeInteraction::Dismiss);
+        }
+
         if interactions.is_empty() {
             collect_machine_effects(&mut core, now, base_input, &mut plan);
         } else {
@@ -499,6 +595,7 @@ impl DesktopController {
                     base_input.scale,
                     core.machine.state(),
                     core.machine.selected_provider(),
+                    base_input.provider_count,
                 ));
             }
         }
@@ -513,7 +610,8 @@ impl DesktopController {
                 core.acknowledged_exit = None;
             }
         }
-        plan.focus_requested = focus_after_effects
+        plan.focus_requested = surface_enabled
+            && focus_after_effects
             && matches!(
                 core.machine.state(),
                 EdgeUiState::RailVisible | EdgeUiState::CardVisible | EdgeUiState::Pinned

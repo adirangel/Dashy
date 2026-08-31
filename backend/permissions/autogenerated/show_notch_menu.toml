@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-show-notch-menu"
+description = "Enables the show_notch_menu command without any pre-configured scope."
+commands.allow = ["show_notch_menu"]
+
+[[permission]]
+identifier = "deny-show-notch-menu"
+description = "Denies the show_notch_menu command without any pre-configured scope."
+commands.deny = ["show_notch_menu"]

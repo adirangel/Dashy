@@ -1,15 +1,35 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  listen: vi.fn(),
+  currentWindow: {
+    label: "main",
+    isVisible: vi.fn(),
+    isFocused: vi.fn(),
+    onFocusChanged: vi.fn(),
+  },
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen, emitTo: vi.fn() }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => mocks.currentWindow }));
 
 import {
   beginNotchExit, completeNotchExit, getCurrentEdgeView, isDashboardCacheChangedEvent,
-  isEdgeViewState, isExitToken,
+  isCurrentWindowActive, isEdgeViewState, isExitToken, listenForCurrentWindowActivation,
+  listenForSettingsChanges, openSettings,
 } from "./window";
 
 describe("strict edge-view validation", () => {
-  beforeEach(() => mocks.invoke.mockReset());
+  beforeEach(() => {
+    mocks.invoke.mockReset();
+    mocks.listen.mockReset();
+    mocks.currentWindow.isVisible.mockReset();
+    mocks.currentWindow.isFocused.mockReset();
+    mocks.currentWindow.onFocusChanged.mockReset();
+  });
+
+  afterEach(() => delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 
   it("queries the typed current-view native command with the exact wire name", async () => {
     const view = { visibility: "card" as const, placement: "right" as const, provider: "claude" as const };
@@ -71,5 +91,79 @@ describe("strict edge-view validation", () => {
       { revision: Number.MAX_SAFE_INTEGER }, { revision: 1, provider: "claude" },
       { revision: "1" },
     ]) expect(isDashboardCacheChangedEvent(invalid)).toBe(false);
+  });
+
+  it("opens Settings through the dedicated native command", async () => {
+    mocks.invoke.mockResolvedValue(undefined);
+    await expect(openSettings()).resolves.toBeUndefined();
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("open_settings");
+  });
+
+  it("forwards the complete native settings event and returns its unlisten function", async () => {
+    const unlisten = vi.fn();
+    let nativeHandler: ((event: { payload: unknown }) => void) | undefined;
+    mocks.listen.mockImplementation(async (_event, handler) => {
+      nativeHandler = handler;
+      return unlisten;
+    });
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    const handler = vi.fn();
+    const settings = {
+      placement: "right" as const,
+      monitor: null,
+      locale: "en" as const,
+      alwaysShowOverFullscreen: false,
+      onboardingCompleted: true,
+      enabledProviders: ["codex" as const],
+    };
+
+    await expect(listenForSettingsChanges(handler)).resolves.toBe(unlisten);
+    nativeHandler?.({ payload: settings });
+    expect(handler).toHaveBeenCalledExactlyOnceWith(settings);
+  });
+
+  it("treats the browser fallback as active without touching native window APIs", async () => {
+    await expect(isCurrentWindowActive()).resolves.toBe(true);
+    await expect(listenForCurrentWindowActivation(vi.fn())).resolves.toBeTypeOf("function");
+    expect(mocks.currentWindow.isVisible).not.toHaveBeenCalled();
+    expect(mocks.currentWindow.onFocusChanged).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [true, false, true],
+    [false, true, true],
+    [false, false, false],
+  ])("reports current native visibility=%s focus=%s as active=%s", async (
+    visible, focused, expected,
+  ) => {
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    mocks.currentWindow.isVisible.mockResolvedValue(visible);
+    mocks.currentWindow.isFocused.mockResolvedValue(focused);
+
+    await expect(isCurrentWindowActive()).resolves.toBe(expected);
+  });
+
+  it("uses a successful visibility signal when the focus query is unavailable", async () => {
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    mocks.currentWindow.isVisible.mockResolvedValue(true);
+    mocks.currentWindow.isFocused.mockRejectedValue(new Error("focus permission unavailable"));
+
+    await expect(isCurrentWindowActive()).resolves.toBe(true);
+  });
+
+  it("forwards only focus gains as activation and preserves listener cleanup", async () => {
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    const unlisten = vi.fn();
+    let focusHandler: ((event: { payload: boolean }) => void) | undefined;
+    mocks.currentWindow.onFocusChanged.mockImplementation(async (handler) => {
+      focusHandler = handler;
+      return unlisten;
+    });
+    const handler = vi.fn();
+
+    await expect(listenForCurrentWindowActivation(handler)).resolves.toBe(unlisten);
+    focusHandler?.({ payload: false });
+    focusHandler?.({ payload: true });
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });

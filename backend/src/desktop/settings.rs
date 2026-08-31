@@ -6,11 +6,21 @@ use tauri::{Manager, Runtime};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::watch;
 
+use crate::dashboard::models::ProviderId;
+
 use super::platform::MonitorDescriptor;
 
 const SETTINGS_STORE_FILE: &str = "settings.json";
 const SETTINGS_STORE_KEY: &str = "settings";
 const MAX_MONITOR_TEXT_LENGTH: usize = 256;
+
+fn legacy_onboarding_completed() -> bool {
+    true
+}
+
+fn legacy_enabled_providers() -> Vec<ProviderId> {
+    ProviderId::ALL.to_vec()
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +83,10 @@ pub struct AppSettings {
     pub monitor: Option<MonitorPreference>,
     pub locale: LocaleCode,
     pub always_show_over_fullscreen: bool,
+    #[serde(default = "legacy_onboarding_completed")]
+    pub onboarding_completed: bool,
+    #[serde(default = "legacy_enabled_providers")]
+    pub enabled_providers: Vec<ProviderId>,
 }
 
 impl Default for AppSettings {
@@ -82,6 +96,8 @@ impl Default for AppSettings {
             monitor: None,
             locale: LocaleCode::En,
             always_show_over_fullscreen: false,
+            onboarding_completed: false,
+            enabled_providers: Vec::new(),
         }
     }
 }
@@ -101,6 +117,10 @@ pub struct SettingsPatch {
     pub locale: Option<LocaleCode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub always_show_over_fullscreen: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub onboarding_completed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled_providers: Option<Vec<ProviderId>>,
 }
 
 fn deserialize_nullable_monitor<'de, D>(
@@ -194,6 +214,12 @@ impl SettingsService {
         if let Some(always_show_over_fullscreen) = patch.always_show_over_fullscreen {
             next.always_show_over_fullscreen = always_show_over_fullscreen;
         }
+        if let Some(onboarding_completed) = patch.onboarding_completed {
+            next.onboarding_completed = onboarding_completed;
+        }
+        if let Some(enabled_providers) = patch.enabled_providers {
+            next.enabled_providers = enabled_providers;
+        }
 
         validate_settings(&next)?;
         self.persistence.save(&next)?;
@@ -257,6 +283,14 @@ impl<R: Runtime> SettingsStoreCache for TauriStoreSettingsPersistence<R> {
 fn validate_settings(settings: &AppSettings) -> Result<(), String> {
     if let Some(monitor) = &settings.monitor {
         validate_monitor_preference(monitor)?;
+    }
+    let unique = settings
+        .enabled_providers
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    if unique.len() != settings.enabled_providers.len() {
+        return Err("enabled providers must be unique".into());
     }
     Ok(())
 }
@@ -346,6 +380,7 @@ impl SettingsPersistence for MemorySettingsPersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dashboard::models::ProviderId;
     use std::sync::{Arc, Mutex};
 
     struct SaveFailingStore {
@@ -446,8 +481,41 @@ mod tests {
                 monitor: None,
                 locale: LocaleCode::En,
                 always_show_over_fullscreen: false,
+                onboarding_completed: false,
+                enabled_providers: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn clean_install_requires_onboarding_and_enables_nothing() {
+        let settings = AppSettings::default();
+        assert!(!settings.onboarding_completed);
+        assert!(settings.enabled_providers.is_empty());
+    }
+
+    #[test]
+    fn legacy_settings_migrate_to_all_providers_without_reonboarding() {
+        let legacy = serde_json::json!({
+            "placement": "right",
+            "monitor": null,
+            "locale": "en",
+            "alwaysShowOverFullscreen": false
+        });
+        let migrated: AppSettings = serde_json::from_value(legacy).unwrap();
+        assert!(migrated.onboarding_completed);
+        assert_eq!(migrated.enabled_providers, ProviderId::ALL.to_vec());
+    }
+
+    #[test]
+    fn rejects_duplicate_enabled_providers() {
+        let persistence = Arc::new(MemorySettingsPersistence::default());
+        let service = SettingsService::load(persistence);
+        let error = service.update(SettingsPatch {
+            enabled_providers: Some(vec![ProviderId::Claude, ProviderId::Claude]),
+            ..Default::default()
+        });
+        assert_eq!(error.unwrap_err(), "enabled providers must be unique");
     }
 
     #[test]

@@ -204,11 +204,19 @@ struct Fixture {
     settings: Arc<FakeSettings>,
 }
 
+fn configured_settings() -> AppSettings {
+    AppSettings {
+        onboarding_completed: true,
+        enabled_providers: ProviderId::ALL.to_vec(),
+        ..AppSettings::default()
+    }
+}
+
 impl Fixture {
     fn new() -> Self {
         let window = Arc::new(FakeWindow::default());
         let probe = Arc::new(FakeProbe::new(monitor("display-a", "Desk", 0, 1920, true)));
-        let settings = Arc::new(FakeSettings::new(AppSettings::default()));
+        let settings = Arc::new(FakeSettings::new(configured_settings()));
         let controller = DesktopController::new(probe.clone(), window.clone(), settings.clone());
         Self {
             controller,
@@ -259,7 +267,7 @@ fn current_edge_view_is_an_authoritative_typed_handshake() {
     fixture.controller.step(Duration::from_millis(1));
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
 
     assert_eq!(
@@ -270,6 +278,135 @@ fn current_edge_view_is_an_authoritative_typed_handshake() {
             provider: Some(ProviderId::Claude),
         }
     );
+}
+
+#[test]
+fn incomplete_onboarding_keeps_the_native_surface_hidden() {
+    let fixture = Fixture::new();
+    fixture.settings.set(AppSettings::default());
+    fixture.controller.show_explicit();
+    assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    assert!(fixture
+        .window
+        .actions()
+        .iter()
+        .all(|action| { !matches!(action, WindowAction::Apply(layout) if layout.visible) }));
+}
+
+#[test]
+fn enabled_provider_changes_resize_the_collapsed_native_surface() {
+    let fixture = Fixture::new();
+    fixture.settings.set(AppSettings {
+        enabled_providers: vec![ProviderId::Claude, ProviderId::GitHub],
+        ..configured_settings()
+    });
+    fixture.controller.show_explicit();
+    assert!(fixture.controller.step(Duration::ZERO).is_empty());
+    assert_eq!(last_layout(&fixture.window.actions()).size.height, 260);
+
+    fixture.window.clear();
+    fixture.settings.set(AppSettings {
+        enabled_providers: vec![ProviderId::Claude],
+        ..configured_settings()
+    });
+    assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
+    assert_eq!(last_layout(&fixture.window.actions()).size.height, 180);
+}
+
+#[test]
+fn monitor_enumeration_failure_cannot_keep_a_disabled_surface_visible() {
+    let fixture = Fixture::new();
+    fixture.show(Duration::ZERO);
+    fixture.settings.set(AppSettings {
+        onboarding_completed: false,
+        ..configured_settings()
+    });
+    fixture.probe.fail_monitors_once();
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::SelectProvider(ProviderId::Codex));
+
+    assert_eq!(
+        fixture.controller.step(Duration::from_millis(1)),
+        vec![DesktopError::MonitorEnumerationFailed]
+    );
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::TogglePin(ProviderId::Codex));
+    assert_eq!(
+        fixture
+            .controller
+            .step(Duration::from_millis(1) + EXIT_FALLBACK),
+        vec![DesktopError::MonitorEnumerationFailed]
+    );
+
+    let actions = fixture.window.actions();
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if !layout.visible
+    )));
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if layout.visible
+    )));
+    assert!(!actions.contains(&WindowAction::Focus));
+}
+
+#[test]
+fn missing_monitor_cannot_keep_a_disabled_pinned_surface_visible() {
+    let fixture = Fixture::new();
+    fixture.show(Duration::ZERO);
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::TogglePin(ProviderId::Claude));
+    assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
+    assert_eq!(fixture.controller.state(), EdgeUiState::Pinned);
+    fixture.window.clear();
+
+    fixture.settings.set(AppSettings {
+        enabled_providers: Vec::new(),
+        ..configured_settings()
+    });
+    fixture.probe.set_monitors(Vec::new());
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::SelectProvider(ProviderId::GitHub));
+
+    assert_eq!(
+        fixture.controller.step(Duration::from_millis(2)),
+        vec![DesktopError::NoMonitorAvailable]
+    );
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+
+    fixture.controller.show_explicit();
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::TogglePin(ProviderId::GitHub));
+    assert_eq!(
+        fixture
+            .controller
+            .step(Duration::from_millis(2) + EXIT_FALLBACK),
+        vec![DesktopError::NoMonitorAvailable]
+    );
+
+    let actions = fixture.window.actions();
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    assert!(actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if !layout.visible
+    )));
+    assert!(!actions.iter().any(|action| matches!(
+        action,
+        WindowAction::Apply(layout) if layout.visible
+    )));
+    assert!(!actions.contains(&WindowAction::Focus));
 }
 
 #[test]
@@ -541,7 +678,7 @@ fn acknowledged_exit_a_cannot_hide_a_same_step_replacement_b() {
 
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.window.clear();
     fixture.controller.step(Duration::from_millis(2));
@@ -608,7 +745,7 @@ fn settings_and_monitor_geometry_changes_reposition_on_the_next_step() {
     fixture.show(Duration::ZERO);
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.controller.step(Duration::from_millis(1));
     assert_eq!(last_layout(&fixture.window.actions()).position.x, 0);
@@ -640,7 +777,7 @@ fn dpi_only_monitor_change_repositions_with_scaled_logical_bounds() {
     fixture.controller.step(Duration::from_millis(1));
 
     let scaled = last_layout(&fixture.window.actions());
-    assert_eq!((scaled.size.width, scaled.size.height), (105, 405));
+    assert_eq!((scaled.size.width, scaled.size.height), (105, 510));
     assert_eq!(
         scaled.position.x + i32::try_from(scaled.size.width).unwrap(),
         1920
@@ -711,7 +848,7 @@ fn fullscreen_suppression_hides_and_override_keeps_the_notch_eligible() {
 
     fixture.settings.set(AppSettings {
         always_show_over_fullscreen: true,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.controller.show_explicit();
     fixture.controller.step(Duration::from_millis(2));
@@ -819,7 +956,7 @@ fn newer_hidden_layout_replaces_the_css_deferred_hide_destination() {
 
     fixture.settings.set(AppSettings {
         placement: EdgePlacement::Left,
-        ..AppSettings::default()
+        ..configured_settings()
     });
     fixture.controller.step(Duration::from_millis(2));
     fixture.window.clear();
@@ -930,7 +1067,7 @@ fn menu_model_has_stable_ids_checked_choices_and_preserves_unavailable_monitor()
                 height: 720,
             },
         }),
-        ..AppSettings::default()
+        ..configured_settings()
     };
 
     let labels = TrayLabels {

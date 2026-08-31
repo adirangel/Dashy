@@ -1,18 +1,27 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSnapshot } from "../dashboard";
+import type { ProviderSetupState } from "../setup/api";
+import type { AppSettings } from "../window";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(), updateSettings: vi.fn(), listMonitors: vi.fn(), setTrayLabels: vi.fn(),
   getDashboardSnapshot: vi.fn(), enable: vi.fn(), disable: vi.fn(), isEnabled: vi.fn(),
   emitLocaleChanged: vi.fn(),
+  listenForSettingsChanges: vi.fn(), unlistenSettingsChanges: vi.fn(),
+  activationRevision: vi.fn(),
+  getProviderSetupStates: vi.fn(), installProvider: vi.fn(), loginProvider: vi.fn(),
 }));
 
 vi.mock("../window", () => ({
   getSettings: mocks.getSettings, updateSettings: mocks.updateSettings,
   listMonitors: mocks.listMonitors, setTrayLabels: mocks.setTrayLabels,
   emitLocaleChanged: mocks.emitLocaleChanged,
+  listenForSettingsChanges: mocks.listenForSettingsChanges,
+}));
+vi.mock("../useWindowActivation", () => ({
+  useWindowActivationRevision: () => mocks.activationRevision(),
 }));
 vi.mock("../dashboard", async (importOriginal) => {
   const original = await importOriginal<typeof import("../dashboard")>();
@@ -21,13 +30,24 @@ vi.mock("../dashboard", async (importOriginal) => {
 vi.mock("@tauri-apps/plugin-autostart", () => ({
   enable: mocks.enable, disable: mocks.disable, isEnabled: mocks.isEnabled,
 }));
+vi.mock("../setup/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../setup/api")>();
+  return {
+    ...original,
+    getProviderSetupStates: mocks.getProviderSetupStates,
+    installProvider: mocks.installProvider,
+    loginProvider: mocks.loginProvider,
+  };
+});
 
-import { localeResources, setLocale, SUPPORTED_LOCALES } from "../i18n";
+import i18n, { localeResources, setLocale, SUPPORTED_LOCALES } from "../i18n";
 import { SettingsApp, translatedTrayLabels } from "./SettingsApp";
 
-const initialSettings = {
-  placement: "right" as const, monitor: null, locale: "en" as const,
+const initialSettings: AppSettings = {
+  placement: "right", monitor: null, locale: "en",
   alwaysShowOverFullscreen: false,
+  onboardingCompleted: true,
+  enabledProviders: ["claude", "codex", "github"],
 };
 const monitors = [
   { id: "display-1", name: "Studio display", x: 0, y: 0, width: 1920, height: 1040, primary: true },
@@ -39,6 +59,41 @@ const providerSnapshot: DashboardSnapshot = {
   claude: { status: "notInstalled", remainingPercent: null, shortWindow: null, weeklyWindow: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-claude-error" },
   refreshedAt: null,
 };
+const providerSetupStates: ProviderSetupState[] = [
+  {
+    definition: {
+      provider: "claude", publisher: "Anthropic", packageId: "Anthropic.ClaudeCode",
+      installCommand: "winget install --id Anthropic.ClaudeCode", installUrl: "https://code.claude.com/docs/en/setup",
+      loginCommand: "claude auth login --claudeai",
+    },
+    status: "connected",
+    repairAction: null,
+  },
+  {
+    definition: {
+      provider: "codex", publisher: "OpenAI", packageId: "OpenAI.Codex",
+      installCommand: "winget install --id OpenAI.Codex", installUrl: "https://learn.chatgpt.com/docs/codex/cli",
+      loginCommand: "codex login",
+    },
+    status: "connected",
+    repairAction: null,
+  },
+  {
+    definition: {
+      provider: "github", publisher: "GitHub", packageId: "GitHub.cli",
+      installCommand: "winget install --id GitHub.cli", installUrl: "https://cli.github.com/",
+      loginCommand: "gh auth login --web",
+    },
+    status: "connected",
+    repairAction: null,
+  },
+];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => { resolve = fulfill; });
+  return { promise, resolve };
+}
 
 describe("SettingsApp", () => {
   beforeEach(async () => {
@@ -48,14 +103,23 @@ describe("SettingsApp", () => {
     mocks.listMonitors.mockResolvedValue(monitors);
     mocks.isEnabled.mockResolvedValue(false);
     mocks.getDashboardSnapshot.mockResolvedValue(providerSnapshot);
+    mocks.getProviderSetupStates.mockResolvedValue(providerSetupStates);
+    mocks.installProvider.mockResolvedValue(providerSetupStates[0]);
+    mocks.loginProvider.mockResolvedValue(providerSetupStates[0]);
     mocks.updateSettings.mockImplementation(async (patch: Record<string, unknown>) => ({ ...initialSettings, ...patch }));
     mocks.setTrayLabels.mockResolvedValue(undefined);
     mocks.emitLocaleChanged.mockResolvedValue(undefined);
+    mocks.listenForSettingsChanges.mockResolvedValue(mocks.unlistenSettingsChanges);
+    mocks.activationRevision.mockReturnValue(1);
     mocks.enable.mockResolvedValue(undefined);
     mocks.disable.mockResolvedValue(undefined);
   });
 
-  afterEach(async () => { cleanup(); await setLocale("en"); });
+  afterEach(async () => {
+    cleanup();
+    vi.restoreAllMocks();
+    await setLocale("en");
+  });
 
   it("builds all native tray labels from existing locale keys in every locale", () => {
     for (const locale of SUPPORTED_LOCALES) {
@@ -89,13 +153,165 @@ describe("SettingsApp", () => {
     expect(screen.getByLabelText("Language").querySelectorAll("option")).toHaveLength(8);
   });
 
-  it("keeps settings usable when the initial provider refresh fails", async () => {
-    mocks.getDashboardSnapshot.mockRejectedValue(new Error("provider process failed"));
+  it("offers repair actions without exposing raw native errors", async () => {
+    mocks.getProviderSetupStates.mockRejectedValue(new Error("token=raw-secret"));
     render(<SettingsApp />);
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Placement")).toHaveValue("right");
-    expect(document.body.textContent).not.toContain("provider process failed");
+    expect(await screen.findByText("Provider setup needs attention.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("raw-secret");
+  });
+
+  it("keeps every hidden-window data source dormant until activation", async () => {
+    mocks.activationRevision.mockReturnValue(0);
+    render(<SettingsApp />);
+    await waitFor(() => expect(mocks.listenForSettingsChanges).toHaveBeenCalledTimes(1));
+
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+    expect(mocks.listMonitors).not.toHaveBeenCalled();
+    expect(mocks.isEnabled).not.toHaveBeenCalled();
+    expect(mocks.getProviderSetupStates).not.toHaveBeenCalled();
+  });
+
+  it("reloads persisted settings on focus before exposing editable controls", async () => {
+    const focusedSettings = deferred<typeof initialSettings>();
+    mocks.getSettings
+      .mockResolvedValueOnce(initialSettings)
+      .mockReturnValueOnce(focusedSettings.promise);
+    const view = render(<SettingsApp />);
+    await screen.findByRole("heading", { name: "Settings" });
+
+    mocks.activationRevision.mockReturnValue(2);
+    view.rerender(<SettingsApp />);
+
+    expect(screen.queryByLabelText("Placement")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading");
+    focusedSettings.resolve({ ...initialSettings, enabledProviders: ["codex"] });
+    expect(await screen.findByLabelText("Placement")).toBeEnabled();
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+  });
+
+  it("applies settings events, ignores an older pending read, and cleans up its listener", async () => {
+    const staleRead = deferred<typeof initialSettings>();
+    mocks.getSettings.mockReturnValue(staleRead.promise);
+    let settingsHandler: ((settings: typeof initialSettings) => void) | undefined;
+    mocks.listenForSettingsChanges.mockImplementation(async (handler) => {
+      settingsHandler = handler;
+      return mocks.unlistenSettingsChanges;
+    });
+    const view = render(<SettingsApp />);
+    await waitFor(() => expect(settingsHandler).toBeTypeOf("function"));
+
+    act(() => settingsHandler?.({ ...initialSettings, enabledProviders: ["codex"] }));
+    expect(await screen.findByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+
+    staleRead.resolve(initialSettings);
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" }))
+      .not.toBeChecked());
+    view.unmount();
+    expect(mocks.unlistenSettingsChanges).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the newest event locale when an older locale change completes last", async () => {
+    const olderLocale = deferred<void>();
+    const newerLocale = deferred<void>();
+    const languageChange = vi.spyOn(i18n, "changeLanguage")
+      .mockImplementationOnce(async () => {
+        await olderLocale.promise;
+        return i18n.t;
+      })
+      .mockImplementationOnce(async () => {
+        await newerLocale.promise;
+        return i18n.t;
+      })
+      .mockImplementation(async () => i18n.t);
+    mocks.getSettings.mockResolvedValue({ ...initialSettings, locale: "he" });
+    let settingsHandler: ((settings: typeof initialSettings) => void) | undefined;
+    mocks.listenForSettingsChanges.mockImplementation(async (handler) => {
+      settingsHandler = handler;
+      return mocks.unlistenSettingsChanges;
+    });
+    render(<SettingsApp />);
+    await waitFor(() => expect(languageChange).toHaveBeenCalledWith("he"));
+
+    act(() => settingsHandler?.({ ...initialSettings, locale: "ja", enabledProviders: ["codex"] }));
+    await waitFor(() => expect(languageChange).toHaveBeenCalledWith("ja"));
+    newerLocale.resolve();
+    await waitFor(() => expect(document.documentElement.lang).toBe("ja"));
+
+    olderLocale.resolve();
+    await waitFor(() => expect(languageChange).toHaveBeenCalledTimes(3));
+    expect(languageChange).toHaveBeenLastCalledWith("ja");
+    expect(document.documentElement.lang).toBe("ja");
+  });
+
+  it("uses the latest persisted provider set on first open after onboarding completes", async () => {
+    mocks.activationRevision.mockReturnValue(0);
+    let settingsHandler: ((settings: typeof initialSettings) => void) | undefined;
+    mocks.listenForSettingsChanges.mockImplementation(async (handler) => {
+      settingsHandler = handler;
+      return mocks.unlistenSettingsChanges;
+    });
+    const view = render(<SettingsApp />);
+    await waitFor(() => expect(settingsHandler).toBeTypeOf("function"));
+    act(() => settingsHandler?.({ ...initialSettings, enabledProviders: ["claude"] }));
+
+    mocks.getSettings.mockResolvedValue({ ...initialSettings, enabledProviders: ["codex"] });
+    mocks.activationRevision.mockReturnValue(1);
+    view.rerender(<SettingsApp />);
+    const github = await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" });
+    expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+
+    fireEvent.click(github);
+    await waitFor(() => expect(mocks.updateSettings)
+      .toHaveBeenCalledWith({ enabledProviders: ["codex", "github"] }));
+  });
+
+  it("persists an independently enabled provider set from Settings", async () => {
+    render(<SettingsApp />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" }));
+
+    await waitFor(() => expect(mocks.updateSettings)
+      .toHaveBeenCalledWith({ enabledProviders: ["claude", "codex"] }));
+  });
+
+  it("keeps the last confirmed provider set when persistence fails", async () => {
+    mocks.updateSettings.mockRejectedValue(new Error("token=raw-settings-secret"));
+    render(<SettingsApp />);
+
+    const github = await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" });
+    fireEvent.click(github);
+
+    await waitFor(() => expect(mocks.updateSettings)
+      .toHaveBeenCalledWith({ enabledProviders: ["claude", "codex"] }));
+    expect(github).toBeChecked();
+    expect(document.body.textContent).not.toContain("raw-settings-secret");
+  });
+
+  it("prevents a second provider selection from racing an unconfirmed save", async () => {
+    const firstSave = deferred<typeof initialSettings>();
+    mocks.updateSettings.mockReturnValueOnce(firstSave.promise);
+    render(<SettingsApp />);
+
+    const github = await screen.findByRole("checkbox", { name: "Use GitHub in Dashy" });
+    const codex = screen.getByRole("checkbox", { name: "Use Codex in Dashy" });
+    fireEvent.click(github);
+    await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalledTimes(1));
+
+    expect(github).toBeDisabled();
+    expect(codex).toBeDisabled();
+    fireEvent.click(codex);
+    expect(mocks.updateSettings).toHaveBeenCalledTimes(1);
+
+    firstSave.resolve({ ...initialSettings, enabledProviders: ["claude", "codex"] });
+    await waitFor(() => expect(github).not.toBeChecked());
+    expect(codex).toBeEnabled();
+    expect(mocks.updateSettings).toHaveBeenCalledTimes(1);
   });
 
   it("persists placement, monitor, language, and fullscreen choices", async () => {
@@ -138,7 +354,8 @@ describe("SettingsApp", () => {
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByLabelText("Placement")).toHaveValue("right");
-    expect(screen.getByRole("status")).toHaveTextContent("Try Dashy again later.");
+    expect(screen.getByText("Try Dashy again later.", { selector: ".settings-message" }))
+      .toHaveAttribute("role", "status");
     expect(document.body.textContent).not.toContain("raw monitor details");
   });
 
@@ -152,7 +369,8 @@ describe("SettingsApp", () => {
     expect(startup).toBeDisabled();
     expect(startup).toBePartiallyChecked();
     expect(startup).toHaveAttribute("aria-checked", "mixed");
-    expect(screen.getByRole("status")).toHaveTextContent("Try Dashy again later.");
+    expect(screen.getByText("Try Dashy again later.", { selector: ".settings-message" }))
+      .toHaveAttribute("role", "status");
     expect(document.body.textContent).not.toContain("raw registry details");
   });
 
@@ -207,12 +425,9 @@ describe("SettingsApp", () => {
     expect(screen.queryByText("startup registry unavailable")).not.toBeInTheDocument();
   });
 
-  it("forces a full refresh and renders provider-specific sanitized guidance", async () => {
+  it("keeps Refresh all as a separate enabled-dashboard data action", async () => {
     render(<SettingsApp />);
-    expect(await screen.findByText("Install the Claude CLI, then reopen Dashy.")).toBeInTheDocument();
-    expect(screen.getByText("Sign in to Codex, then retry.")).toBeInTheDocument();
-    expect(screen.getByText("Try GitHub again later.")).toBeInTheDocument();
-    expect(document.body.textContent).not.toContain("raw-secret");
+    await screen.findByRole("heading", { name: "Settings" });
     fireEvent.click(screen.getByRole("button", { name: "Refresh all" }));
     await waitFor(() => expect(mocks.getDashboardSnapshot).toHaveBeenCalledWith(true));
   });

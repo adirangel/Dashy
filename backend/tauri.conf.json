@@ -21,7 +21,7 @@
         "label": "main",
         "title": "Dashy",
         "width": 70,
-        "height": 270,
+        "height": 340,
         "visible": false,
         "resizable": false,
         "decorations": false,
@@ -41,12 +41,37 @@
         "decorations": true,
         "transparent": false,
         "skipTaskbar": false
+      },
+      {
+        "label": "onboarding",
+        "title": "Set up Dashy",
+        "width": 680,
+        "height": 640,
+        "minWidth": 520,
+        "minHeight": 560,
+        "visible": false,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "skipTaskbar": false
       }
     ]
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "targets": ["msi"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "allowDowngrades": false,
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "language": "en-US",
+        "upgradeCode": "ea949cb5-35f6-540d-a3ee-0cc7721c122c"
+      }
+    }
   }
 }

@@ -1,10 +1,14 @@
-import { useEffect, useReducer, useRef, useState, type AnimationEvent, type KeyboardEvent } from "react";
+import {
+  useEffect, useReducer, useRef, useState,
+  type AnimationEvent, type CSSProperties, type KeyboardEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { DashboardSnapshot, ProviderId } from "../dashboard";
 import { useDashboardSnapshot } from "../useDashboardSnapshot";
 import {
   beginNotchExit, completeNotchExit, createExitToken, getCurrentEdgeView, getSettings,
-  isTauriRuntime, listenForEdgeView, setNotchInteraction, showNotchMenu,
+  isTauriRuntime, listenForEdgeView, listenForSettingsChanges, openSettings, setNotchInteraction,
+  showNotchMenu,
   type EdgePlacement, type EdgeViewState, type ExitToken, type NotchInteraction,
 } from "../window";
 import { GitHubCard } from "./GitHubCard";
@@ -20,6 +24,7 @@ type NotchAppProps = {
 };
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "github"];
+const SETTINGS_CONTROL_EXTENT = 70;
 
 const isVisibleView = (view: EdgeViewState) =>
   view.visibility === "rail" || view.visibility === "card" || view.visibility === "pinned";
@@ -82,6 +87,8 @@ export function NotchApp({
   const dashboard = useDashboardSnapshot();
   const native = isTauriRuntime();
   const [persistedPlacement, setPersistedPlacement] = useState<EdgePlacement>("right");
+  const [enabledProviders, setEnabledProviders] = useState<ProviderId[]>(native ? [] : PROVIDERS);
+  const [settingsReady, setSettingsReady] = useState(!native);
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>(selectedProp ?? "claude");
   const initialEdgeView: EdgeViewState = {
     visibility: native ? "hidden" : "card",
@@ -118,12 +125,46 @@ export function NotchApp({
   };
 
   useEffect(() => {
-    if (placementProp || !native) return;
+    if (!native) return;
     let active = true;
-    void getSettings().then((settings) => {
-      if (active) setPersistedPlacement(settings.placement);
-    }).catch(() => undefined);
-    return () => { active = false; };
+    let unlisten: (() => void) | undefined;
+    let eventRevision = 0;
+    let hasSettings = false;
+    const applySettings = (settings: Awaited<ReturnType<typeof getSettings>>) => {
+      hasSettings = true;
+      if (!placementProp) setPersistedPlacement(settings.placement);
+      setEnabledProviders(PROVIDERS.filter((provider) => settings.enabledProviders.includes(provider)));
+      setSettingsReady(true);
+    };
+    void (async () => {
+      try {
+        const stop = await listenForSettingsChanges((settings) => {
+          if (!active) return;
+          eventRevision += 1;
+          applySettings(settings);
+        });
+        if (!active) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+      } catch {
+        // The one-shot settings query below remains available without events.
+      }
+      if (!active) return;
+
+      const queryRevision = eventRevision;
+      try {
+        const settings = await getSettings();
+        if (active && eventRevision === queryRevision) applySettings(settings);
+      } catch {
+        if (active && !hasSettings && eventRevision === queryRevision) {
+          setEnabledProviders([]);
+          setSettingsReady(true);
+        }
+      }
+    })();
+    return () => { active = false; unlisten?.(); };
   }, [native, placementProp]);
 
   useEffect(() => {
@@ -172,6 +213,13 @@ export function NotchApp({
   }, [selectedProp]);
 
   useEffect(() => {
+    if (!enabledProviders.includes(selectedProvider) && enabledProviders[0]) {
+      lastSelected.current = enabledProviders[0];
+      setSelectedProvider(enabledProviders[0]);
+    }
+  }, [enabledProviders, selectedProvider]);
+
+  useEffect(() => {
     const armedProvider = focusRestoreArmed.current;
     if (!armedProvider || !isVisibleView(edgeView)) return;
     focusMetric(edgeView.provider ?? armedProvider);
@@ -205,11 +253,15 @@ export function NotchApp({
   const placement = placementProp ?? (native ? (surface.rendered?.placement ?? edgeView.placement) : persistedPlacement);
   const snapshot = snapshotProp !== undefined ? snapshotProp : dashboard.snapshot;
   const selectedIsStale = snapshot?.[selectedProvider].status === "stale";
-  const visible = surface.rendered !== null;
-  const showCard = surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned";
+  const visible = settingsReady && enabledProviders.length > 0 && surface.rendered !== null;
+  const showCard = visible && (surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned");
+  const railExtent = 30 + enabledProviders.length * 80;
+  const controlExtent = railExtent + SETTINGS_CONTROL_EXTENT;
+  const selectedIndex = Math.max(0, enabledProviders.indexOf(selectedProvider));
+  const joinOffset = (selectedIndex - (enabledProviders.length - 1) / 2) * 80;
   const logicalSize = showCard
     ? placement === "top" ? "340x430" : "370x360"
-    : placement === "top" ? "270x70" : "70x270";
+    : placement === "top" ? `${controlExtent}x70` : `70x${controlExtent}`;
   const send = (interaction: NotchInteraction) => {
     if (native) void setNotchInteraction(interaction).catch(() => undefined);
   };
@@ -261,9 +313,9 @@ export function NotchApp({
     if (forward || backward) {
       event.preventDefault();
       const active = (document.activeElement as HTMLElement | null)?.dataset.provider as ProviderId | undefined;
-      const currentIndex = PROVIDERS.indexOf(active ?? selectedProvider);
+      const currentIndex = Math.max(0, enabledProviders.indexOf(active ?? selectedProvider));
       const delta = forward ? 1 : -1;
-      focusProvider(PROVIDERS[(currentIndex + delta + PROVIDERS.length) % PROVIDERS.length]);
+      focusProvider(enabledProviders[(currentIndex + delta + enabledProviders.length) % enabledProviders.length]);
       return;
     }
     if (edgeView.visibility === "pinned" && event.key === "Tab") {
@@ -317,6 +369,12 @@ export function NotchApp({
       data-testid="notch-surface"
       data-placement={placement}
       data-logical-size={logicalSize}
+      style={{
+        "--rail-extent": `${railExtent}px`,
+        "--control-extent": `${controlExtent}px`,
+        "--control-start": `${-controlExtent / 2}px`,
+        "--join-track-offset": `${joinOffset}px`,
+      } as CSSProperties}
       aria-hidden={surface.exit !== null || undefined}
       onAnimationEnd={onSurfaceAnimationEnd}
       onPointerEnter={() => { if (!surface.exit) send({ kind: "enterSafeRegion" }); }}
@@ -329,6 +387,7 @@ export function NotchApp({
     >
       <div className="notch-content" inert={surface.exit !== null}>
       <MetricRail
+        providers={enabledProviders}
         placement={placement}
         snapshot={snapshot}
         selectedProvider={selectedProvider}
@@ -338,6 +397,18 @@ export function NotchApp({
         refreshingProviders={dashboard.refreshingProviders}
         now={now}
       />
+      <button
+        type="button"
+        className="settings-launcher"
+        aria-label={t("settings.title")}
+        title={t("settings.title")}
+        onClick={() => { if (native) void openSettings().catch(() => undefined); }}
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+          <path d="m9.8 3.3.6-1.3h3.2l.6 1.3 1.7.7 1.4-.5 2.2 2.2-.5 1.4.7 1.7 1.3.6v3.2l-1.3.6-.7 1.7.5 1.4-2.2 2.2-1.4-.5-1.7.7-.6 1.3h-3.2l-.6-1.3-1.7-.7-1.4.5-2.2-2.2.5-1.4-.7-1.7-1.3-.6V9.4l1.3-.6.7-1.7-.5-1.4 2.2-2.2 1.4.5 1.7-.7Z" />
+          <circle cx="12" cy="11" r="2.8" />
+        </svg>
+      </button>
       {showCard && <div className="notch-join" data-provider={selectedProvider} aria-hidden="true" />}
       {showCard && <div className="provider-card-slot" data-testid="provider-card-region">
         {selectedProvider === "github"

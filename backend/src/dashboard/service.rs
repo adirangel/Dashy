@@ -16,6 +16,14 @@ use crate::dashboard::{
 
 const CACHE_TTL: Duration = Duration::minutes(5);
 
+fn provider_index(provider: ProviderId) -> usize {
+    match provider {
+        ProviderId::Claude => 0,
+        ProviderId::Codex => 1,
+        ProviderId::GitHub => 2,
+    }
+}
+
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
 }
@@ -35,8 +43,7 @@ pub struct DashboardService {
     claude: Arc<dyn DataProvider<UsageData>>,
     clock: Arc<dyn Clock>,
     cache: RwLock<Option<DashboardSnapshot>>,
-    refresh_lock: Mutex<()>,
-    refresh_generation: AtomicU64,
+    provider_refreshed_at: RwLock<[Option<DateTime<Utc>>; 3]>,
     github_refresh_gate: Mutex<()>,
     codex_refresh_gate: Mutex<()>,
     claude_refresh_gate: Mutex<()>,
@@ -59,8 +66,7 @@ impl DashboardService {
             claude,
             clock,
             cache: RwLock::new(None),
-            refresh_lock: Mutex::new(()),
-            refresh_generation: AtomicU64::new(0),
+            provider_refreshed_at: RwLock::new([None, None, None]),
             github_refresh_gate: Mutex::new(()),
             codex_refresh_gate: Mutex::new(()),
             claude_refresh_gate: Mutex::new(()),
@@ -71,40 +77,50 @@ impl DashboardService {
     }
 
     pub async fn get_snapshot(&self, force: bool) -> DashboardSnapshot {
-        let observed_generation = self.refresh_generation.load(Ordering::Acquire);
-        if !force {
-            if let Some(snapshot) = self.fresh_snapshot().await {
-                return snapshot;
-            }
-        }
+        self.get_snapshot_for(force, &ProviderId::ALL).await
+    }
 
-        let _refresh_guard = self.refresh_lock.lock().await;
-
-        if force && self.refresh_generation.load(Ordering::Acquire) > observed_generation {
-            return self
-                .cache
-                .read()
-                .await
-                .clone()
-                .expect("a completed refresh must store a snapshot");
+    pub async fn get_snapshot_for(
+        &self,
+        force: bool,
+        providers: &[ProviderId],
+    ) -> DashboardSnapshot {
+        if providers.is_empty() {
+            return self.cached_snapshot_or_empty().await;
         }
-        if !force {
-            if let Some(snapshot) = self.fresh_snapshot().await {
-                return snapshot;
-            }
-        }
+        let now = self.clock.now();
+        let freshness = self.provider_refreshed_at.read().await;
+        let needs_refresh = |provider| {
+            force
+                || freshness[provider_index(provider)]
+                    .is_none_or(|at| now.signed_duration_since(at) >= CACHE_TTL)
+        };
+        let github = providers.contains(&ProviderId::GitHub) && needs_refresh(ProviderId::GitHub);
+        let codex = providers.contains(&ProviderId::Codex) && needs_refresh(ProviderId::Codex);
+        let claude = providers.contains(&ProviderId::Claude) && needs_refresh(ProviderId::Claude);
+        drop(freshness);
 
         let github_generation = self.github_generation.load(Ordering::Acquire);
         let codex_generation = self.codex_generation.load(Ordering::Acquire);
         let claude_generation = self.claude_generation.load(Ordering::Acquire);
         tokio::join!(
-            self.refresh_github(github_generation),
-            self.refresh_codex(codex_generation),
-            self.refresh_claude(claude_generation),
+            async {
+                if github {
+                    self.refresh_github(github_generation).await
+                }
+            },
+            async {
+                if codex {
+                    self.refresh_codex(codex_generation).await
+                }
+            },
+            async {
+                if claude {
+                    self.refresh_claude(claude_generation).await
+                }
+            },
         );
-        let snapshot = self.cached_snapshot().await;
-        self.refresh_generation.fetch_add(1, Ordering::Release);
-        snapshot
+        self.cached_snapshot_or_empty().await
     }
 
     pub async fn refresh_provider(&self, provider: ProviderId) -> DashboardSnapshot {
@@ -114,17 +130,22 @@ impl DashboardService {
             ProviderId::Codex => self.refresh_codex(observed_generation).await,
             ProviderId::Claude => self.refresh_claude(observed_generation).await,
         }
-        self.cached_snapshot().await
+        self.cached_snapshot_or_empty().await
     }
 
-    async fn fresh_snapshot(&self) -> Option<DashboardSnapshot> {
-        let snapshot = self.cache.read().await.clone()?;
-        (self
-            .clock
-            .now()
-            .signed_duration_since(snapshot.refreshed_at)
-            < CACHE_TTL)
-            .then_some(snapshot)
+    /// Reconciles provider state after an external setup process has exited.
+    ///
+    /// Unlike ordinary refreshes, this deliberately does not coalesce with a
+    /// request that acquired the provider gate before the mutation completed:
+    /// once that older request releases the gate, we fetch the post-mutation
+    /// state ourselves.
+    pub async fn refresh_provider_after_mutation(&self, provider: ProviderId) -> DashboardSnapshot {
+        match provider {
+            ProviderId::GitHub => self.refresh_github_after_mutation().await,
+            ProviderId::Codex => self.refresh_codex_after_mutation().await,
+            ProviderId::Claude => self.refresh_claude_after_mutation().await,
+        }
+        self.cached_snapshot_or_empty().await
     }
 
     fn provider_generation(&self, provider: ProviderId) -> &AtomicU64 {
@@ -141,6 +162,15 @@ impl DashboardService {
             return;
         }
 
+        self.fetch_github_and_publish().await;
+    }
+
+    async fn refresh_github_after_mutation(&self) {
+        let _provider_guard = self.github_refresh_gate.lock().await;
+        self.fetch_github_and_publish().await;
+    }
+
+    async fn fetch_github_and_publish(&self) {
         let result = self.github.fetch().await;
         let refreshed_at = self.clock.now();
         let mut cache = self.cache.write().await;
@@ -148,6 +178,8 @@ impl DashboardService {
         let snapshot = cache.get_or_insert_with(|| empty_snapshot(refreshed_at));
         snapshot.github = merge_github(result, previous.as_ref(), refreshed_at);
         snapshot.refreshed_at = snapshot.refreshed_at.max(refreshed_at);
+        self.provider_refreshed_at.write().await[provider_index(ProviderId::GitHub)] =
+            Some(refreshed_at);
         self.github_generation.fetch_add(1, Ordering::Release);
     }
 
@@ -157,6 +189,15 @@ impl DashboardService {
             return;
         }
 
+        self.fetch_codex_and_publish().await;
+    }
+
+    async fn refresh_codex_after_mutation(&self) {
+        let _provider_guard = self.codex_refresh_gate.lock().await;
+        self.fetch_codex_and_publish().await;
+    }
+
+    async fn fetch_codex_and_publish(&self) {
         let result = self.codex.fetch().await;
         let refreshed_at = self.clock.now();
         let mut cache = self.cache.write().await;
@@ -164,6 +205,8 @@ impl DashboardService {
         let snapshot = cache.get_or_insert_with(|| empty_snapshot(refreshed_at));
         snapshot.codex = merge_usage(result, previous.as_ref(), refreshed_at);
         snapshot.refreshed_at = snapshot.refreshed_at.max(refreshed_at);
+        self.provider_refreshed_at.write().await[provider_index(ProviderId::Codex)] =
+            Some(refreshed_at);
         self.codex_generation.fetch_add(1, Ordering::Release);
     }
 
@@ -173,6 +216,15 @@ impl DashboardService {
             return;
         }
 
+        self.fetch_claude_and_publish().await;
+    }
+
+    async fn refresh_claude_after_mutation(&self) {
+        let _provider_guard = self.claude_refresh_gate.lock().await;
+        self.fetch_claude_and_publish().await;
+    }
+
+    async fn fetch_claude_and_publish(&self) {
         let result = self.claude.fetch().await;
         let refreshed_at = self.clock.now();
         let mut cache = self.cache.write().await;
@@ -180,15 +232,17 @@ impl DashboardService {
         let snapshot = cache.get_or_insert_with(|| empty_snapshot(refreshed_at));
         snapshot.claude = merge_usage(result, previous.as_ref(), refreshed_at);
         snapshot.refreshed_at = snapshot.refreshed_at.max(refreshed_at);
+        self.provider_refreshed_at.write().await[provider_index(ProviderId::Claude)] =
+            Some(refreshed_at);
         self.claude_generation.fetch_add(1, Ordering::Release);
     }
 
-    async fn cached_snapshot(&self) -> DashboardSnapshot {
+    async fn cached_snapshot_or_empty(&self) -> DashboardSnapshot {
         self.cache
             .read()
             .await
             .clone()
-            .expect("a completed provider refresh must store a snapshot")
+            .unwrap_or_else(|| empty_snapshot(self.clock.now()))
     }
 }
 
@@ -495,6 +549,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn scoped_refresh_never_fetches_disabled_providers() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture
+            .service
+            .get_snapshot_for(false, &[ProviderId::Claude])
+            .await;
+        assert_eq!(fixture.claude.calls(), 1);
+        assert_eq!(fixture.codex.calls(), 0);
+        assert_eq!(fixture.github.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn newly_enabled_provider_refreshes_even_when_another_provider_is_fresh() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture
+            .service
+            .get_snapshot_for(false, &[ProviderId::Claude])
+            .await;
+        fixture.clock.advance_minutes(1);
+        fixture
+            .service
+            .get_snapshot_for(false, &[ProviderId::Claude, ProviderId::Codex])
+            .await;
+        assert_eq!(fixture.claude.calls(), 1);
+        assert_eq!(fixture.codex.calls(), 1);
+        assert_eq!(fixture.github.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn empty_provider_scope_returns_without_fetching() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        let snapshot = fixture.service.get_snapshot_for(false, &[]).await;
+        assert_eq!(snapshot.claude.status, ProviderStatus::Unavailable);
+        assert_eq!(
+            fixture.claude.calls() + fixture.codex.calls() + fixture.github.calls(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_discovery_fetches_all_three_providers_from_an_empty_cache() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture.service.get_snapshot(true).await;
+        assert_eq!(fixture.claude.calls(), 1);
+        assert_eq!(fixture.codex.calls(), 1);
+        assert_eq!(fixture.github.calls(), 1);
+    }
+
+    #[tokio::test]
     async fn reuses_snapshot_inside_five_minute_ttl() {
         let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
         fixture.service.get_snapshot(false).await;
@@ -710,6 +813,55 @@ mod tests {
         assert_eq!(fixture.codex.calls(), 1);
         assert_eq!(fixture.claude.calls(), 2);
         assert_eq!(first_snapshot, second_snapshot);
+    }
+
+    #[tokio::test]
+    async fn post_mutation_refresh_waits_for_an_older_gate_owner_then_always_fetches_again() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture.service.get_snapshot(false).await;
+        let started_count = Arc::new(AtomicUsize::new(0));
+        let started_notify = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        fixture.claude.wait_for_release(
+            started_count.clone(),
+            started_notify.clone(),
+            release.clone(),
+        );
+
+        let ordinary = tokio::spawn({
+            let service = fixture.service.clone();
+            async move { service.refresh_provider(ProviderId::Claude).await }
+        });
+        while started_count.load(Ordering::SeqCst) < 1 {
+            let notified = started_notify.notified();
+            if started_count.load(Ordering::SeqCst) < 1 {
+                notified.await;
+            }
+        }
+
+        let post_mutation = tokio::spawn({
+            let service = fixture.service.clone();
+            async move {
+                service
+                    .refresh_provider_after_mutation(ProviderId::Claude)
+                    .await
+            }
+        });
+        tokio::task::yield_now().await;
+        assert_eq!(
+            fixture.claude.calls(),
+            2,
+            "the post-mutation refresh must wait for the current gate owner"
+        );
+
+        release.notify_waiters();
+        ordinary.await.unwrap();
+        post_mutation.await.unwrap();
+        assert_eq!(
+            fixture.claude.calls(),
+            3,
+            "the post-mutation refresh must not coalesce with work that began before mutation exit"
+        );
     }
 
     #[tokio::test]

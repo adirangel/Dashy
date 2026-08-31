@@ -3,20 +3,31 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  currentWindowLabel: vi.fn(), getSettings: vi.fn(), listMonitors: vi.fn(),
+  currentWindowLabel: vi.fn(), getSettings: vi.fn(), completeOnboarding: vi.fn(), listMonitors: vi.fn(),
   setTrayLabels: vi.fn(), getDashboardSnapshot: vi.fn(), isEnabled: vi.fn(),
+  providerSetupController: vi.fn(),
   isTauriRuntime: vi.fn(), listenForLocaleChanges: vi.fn(), unlistenLocale: vi.fn(),
   listenForEdgeView: vi.fn(), unlistenEdgeView: vi.fn(),
+  listenForSettingsChanges: vi.fn(), unlistenSettingsChanges: vi.fn(),
   listenForDashboardCacheChanged: vi.fn(), unlistenDashboardCacheChanged: vi.fn(),
+  isCurrentWindowActive: vi.fn(),
+  listenForCurrentWindowActivation: vi.fn(), unlistenWindowActivation: vi.fn(),
 }));
 
 vi.mock("./window", () => ({
   currentWindowLabel: mocks.currentWindowLabel, getSettings: mocks.getSettings,
+  completeOnboarding: mocks.completeOnboarding,
   listMonitors: mocks.listMonitors, setTrayLabels: mocks.setTrayLabels, updateSettings: vi.fn(),
   isTauriRuntime: mocks.isTauriRuntime, listenForLocaleChanges: mocks.listenForLocaleChanges,
   listenForEdgeView: mocks.listenForEdgeView, setNotchInteraction: vi.fn(),
+  listenForSettingsChanges: mocks.listenForSettingsChanges,
   listenForDashboardCacheChanged: mocks.listenForDashboardCacheChanged,
+  isCurrentWindowActive: mocks.isCurrentWindowActive,
+  listenForCurrentWindowActivation: mocks.listenForCurrentWindowActivation,
   showNotchMenu: vi.fn(),
+}));
+vi.mock("./setup/useProviderSetup", () => ({
+  useProviderSetup: () => mocks.providerSetupController(),
 }));
 vi.mock("./dashboard", async (importOriginal) => {
   const original = await importOriginal<typeof import("./dashboard")>();
@@ -34,8 +45,16 @@ describe("window routing", () => {
     mocks.isTauriRuntime.mockReturnValue(true);
     mocks.listenForLocaleChanges.mockResolvedValue(mocks.unlistenLocale);
     mocks.listenForEdgeView.mockResolvedValue(mocks.unlistenEdgeView);
+    mocks.listenForSettingsChanges.mockResolvedValue(mocks.unlistenSettingsChanges);
     mocks.listenForDashboardCacheChanged.mockResolvedValue(mocks.unlistenDashboardCacheChanged);
-    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false });
+    mocks.isCurrentWindowActive.mockResolvedValue(true);
+    mocks.listenForCurrentWindowActivation.mockResolvedValue(mocks.unlistenWindowActivation);
+    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
+    mocks.completeOnboarding.mockResolvedValue({ placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
+    mocks.providerSetupController.mockReturnValue({
+      states: [], busyProvider: null, failureProvider: null, loadFailed: false,
+      reload: vi.fn(), install: vi.fn(), login: vi.fn(),
+    });
     mocks.listMonitors.mockResolvedValue([]);
     mocks.setTrayLabels.mockResolvedValue(undefined);
     mocks.getDashboardSnapshot.mockResolvedValue(unavailableDashboardSnapshot());
@@ -49,13 +68,20 @@ describe("window routing", () => {
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
   });
 
+  it("renders the localized onboarding surface only for the native onboarding label", async () => {
+    render(<App windowLabel="onboarding" />);
+    expect(await screen.findByRole("heading", { name: "Choose what Dashy watches" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Settings" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("notch-app")).not.toBeInTheDocument();
+  });
+
   it("renders the compile-safe notch placeholder for other native labels", () => {
     render(<App windowLabel="main" />);
     expect(screen.getByTestId("notch-app")).toBeInTheDocument();
   });
 
   it("bootstraps the independent main WebView from persisted Rust locale", async () => {
-    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false });
+    mocks.getSettings.mockResolvedValue({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
     render(<App windowLabel="main" />);
 
     await waitFor(() => expect(document.documentElement.lang).toBe("he"));
@@ -80,7 +106,7 @@ describe("window routing", () => {
   });
 
   it("does not let a stale startup read overwrite a newer locale event", async () => {
-    let resolveSettings!: (value: { placement: "right"; monitor: null; locale: "he"; alwaysShowOverFullscreen: false }) => void;
+    let resolveSettings!: (value: { placement: "right"; monitor: null; locale: "he"; alwaysShowOverFullscreen: false; onboardingCompleted: true; enabledProviders: ["claude", "codex", "github"] }) => void;
     mocks.getSettings.mockReturnValue(new Promise((resolve) => { resolveSettings = resolve; }));
     let localeHandler: ((locale: unknown) => void) | undefined;
     mocks.listenForLocaleChanges.mockImplementation(async (handler: (locale: unknown) => void) => {
@@ -91,7 +117,7 @@ describe("window routing", () => {
     await waitFor(() => expect(localeHandler).toBeTypeOf("function"));
 
     localeHandler?.("ja");
-    resolveSettings({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false });
+    resolveSettings({ placement: "right", monitor: null, locale: "he", alwaysShowOverFullscreen: false, onboardingCompleted: true, enabledProviders: ["claude", "codex", "github"] });
 
     await waitFor(() => expect(document.documentElement.lang).toBe("ja"));
     expect(document.documentElement.dir).toBe("ltr");

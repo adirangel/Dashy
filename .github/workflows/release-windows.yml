@@ -1,0 +1,409 @@
+name: Release Windows MSI
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions: {}
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact_digest: ${{ steps.release-artifact.outputs.artifact-digest }}
+      msi_name: ${{ steps.checksum.outputs.msi_name }}
+      checksum_name: ${{ steps.checksum.outputs.checksum_name }}
+      msi_size: ${{ steps.checksum.outputs.msi_size }}
+      checksum_size: ${{ steps.checksum.outputs.checksum_size }}
+      msi_sha256: ${{ steps.checksum.outputs.msi_sha256 }}
+      checksum_sha256: ${{ steps.checksum.outputs.checksum_sha256 }}
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require release commit on origin/main
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:GITHUB_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw "GITHUB_SHA is unavailable or malformed."
+          }
+
+          & git -c "credential.https://github.com.helper=!gh auth git-credential" fetch `
+            --no-tags `
+            --force `
+            --unshallow `
+            origin `
+            "+refs/heads/main:refs/remotes/origin/main"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not fetch origin/main; refusing to build a release."
+          }
+
+          $tagCommitLines = @(& git rev-parse --verify "$($env:GITHUB_SHA)^{commit}")
+          if ($LASTEXITCODE -ne 0 -or $tagCommitLines.Count -ne 1) {
+            throw "Could not resolve the release tag commit."
+          }
+          $tagCommit = ([string]$tagCommitLines[0]).Trim()
+
+          $mainCommitLines = @(& git rev-parse --verify "refs/remotes/origin/main^{commit}")
+          if ($LASTEXITCODE -ne 0 -or $mainCommitLines.Count -ne 1) {
+            throw "Could not resolve origin/main."
+          }
+          $mainCommit = ([string]$mainCommitLines[0]).Trim()
+
+          $headCommitLines = @(& git rev-parse --verify "HEAD^{commit}")
+          if ($LASTEXITCODE -ne 0 -or $headCommitLines.Count -ne 1) {
+            throw "Could not resolve the checked-out release commit."
+          }
+          $headCommit = ([string]$headCommitLines[0]).Trim()
+          if ($headCommit -cne $tagCommit) {
+            throw "The checked-out commit does not match GITHUB_SHA."
+          }
+
+          & git merge-base --is-ancestor $tagCommit $mainCommit
+          $ancestryStatus = $LASTEXITCODE
+          if ($ancestryStatus -eq 1) {
+            throw "The release tag commit is not an ancestor of origin/main."
+          }
+          if ($ancestryStatus -ne 0) {
+            throw "Could not verify release ancestry."
+          }
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.14.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.98.0"
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Restore frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Verify release version
+        shell: pwsh
+        run: node infrastructure/release/verify-version.mjs $env:GITHUB_REF_NAME
+
+      - name: Test release tooling
+        run: npm run test:release
+
+      - name: Verify frontend
+        run: |
+          npm --prefix frontend run test
+          npm --prefix frontend run build
+
+      - name: Verify Rust
+        run: |
+          cargo fmt --manifest-path backend/Cargo.toml --check
+          cargo test --manifest-path backend/Cargo.toml --locked
+          cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: Install pinned Tauri CLI
+        run: cargo install tauri-cli --version 2.11.4 --locked
+
+      - name: Build MSI
+        id: tauri
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        with:
+          projectPath: backend
+          tauriScript: cargo tauri
+          uploadPlainBinary: false
+          uploadWorkflowArtifacts: false
+          args: --bundles msi --target x86_64-pc-windows-msvc -- --locked
+
+      - name: Create MSI checksum and release payload
+        id: checksum
+        shell: pwsh
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          $artifacts = $env:ARTIFACT_PATHS | ConvertFrom-Json
+          $msi = @($artifacts | Where-Object { $_ -like '*.msi' })
+          if ($msi.Count -ne 1) {
+            throw "Expected one MSI artifact, found $($msi.Count)."
+          }
+          if (-not (Test-Path -LiteralPath $msi[0] -PathType Leaf)) {
+            throw "The selected MSI artifact is unavailable."
+          }
+
+          $sourceMsi = Get-Item -LiteralPath $msi[0]
+          if ($sourceMsi.Name -notmatch '^Dashy_(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)_x64_en-US\.msi$') {
+            throw "The MSI artifact name is unexpected."
+          }
+
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "dashy-release-assets"
+          if (Test-Path -LiteralPath $releaseDirectory) {
+            throw "The release payload directory already exists."
+          }
+          New-Item -ItemType Directory -Path $releaseDirectory | Out-Null
+
+          $msiPath = Join-Path $releaseDirectory $sourceMsi.Name
+          Copy-Item -LiteralPath $sourceMsi.FullName -Destination $msiPath
+          $msiItem = Get-Item -LiteralPath $msiPath
+          $msiHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msiPath).Hash.ToLowerInvariant()
+
+          $checksumPath = "$msiPath.sha256"
+          "$msiHash  $($msiItem.Name)" | Set-Content -Encoding ascii -NoNewline -LiteralPath $checksumPath
+          $checksumItem = Get-Item -LiteralPath $checksumPath
+          $checksumHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $checksumPath).Hash.ToLowerInvariant()
+
+          $payloadEntries = @(Get-ChildItem -LiteralPath $releaseDirectory -Force)
+          if ($payloadEntries.Count -ne 2 -or @($payloadEntries | Where-Object { -not $_.PSIsContainer }).Count -ne 2) {
+            throw "The release payload must contain exactly two files."
+          }
+
+          "msi_path=$msiPath" >> $env:GITHUB_OUTPUT
+          "checksum_path=$checksumPath" >> $env:GITHUB_OUTPUT
+          "msi_name=$($msiItem.Name)" >> $env:GITHUB_OUTPUT
+          "checksum_name=$($checksumItem.Name)" >> $env:GITHUB_OUTPUT
+          "msi_size=$($msiItem.Length)" >> $env:GITHUB_OUTPUT
+          "checksum_size=$($checksumItem.Length)" >> $env:GITHUB_OUTPUT
+          "msi_sha256=$msiHash" >> $env:GITHUB_OUTPUT
+          "checksum_sha256=$checksumHash" >> $env:GITHUB_OUTPUT
+
+      - name: Transfer verified release payload
+        id: release-artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dashy-windows-msi-${{ github.sha }}
+          path: |
+            ${{ steps.checksum.outputs.msi_path }}
+            ${{ steps.checksum.outputs.checksum_path }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+
+  release-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified release payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dashy-windows-msi-${{ github.sha }}
+          path: ${{ runner.temp }}/dashy-release-assets
+
+      - name: Create or verify draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+          RELEASE_ASSET_DIRECTORY: ${{ runner.temp }}/dashy-release-assets
+          BUILD_ARTIFACT_DIGEST: ${{ needs.build-windows.outputs.artifact_digest }}
+          BUILD_MSI_NAME: ${{ needs.build-windows.outputs.msi_name }}
+          BUILD_CHECKSUM_NAME: ${{ needs.build-windows.outputs.checksum_name }}
+          BUILD_MSI_SIZE: ${{ needs.build-windows.outputs.msi_size }}
+          BUILD_CHECKSUM_SIZE: ${{ needs.build-windows.outputs.checksum_size }}
+          BUILD_MSI_SHA256: ${{ needs.build-windows.outputs.msi_sha256 }}
+          BUILD_CHECKSUM_SHA256: ${{ needs.build-windows.outputs.checksum_sha256 }}
+          RELEASE_NOTES: |
+            Private Windows x64 test build.
+
+            This MSI is not code-signed. Windows may show an Unknown publisher or SmartScreen warning.
+            Complete the Windows release checklist before publishing this draft.
+        run: |
+          $tag = $env:RELEASE_TAG
+          $repo = $env:RELEASE_REPOSITORY
+          $expectedReleaseSha = $env:EXPECTED_RELEASE_SHA
+          $releaseDirectory = $env:RELEASE_ASSET_DIRECTORY
+
+          if ($tag -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "Refusing non-semantic release tag."
+          }
+          if ($repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+            throw "The release repository is unavailable or malformed."
+          }
+          if ($expectedReleaseSha -notmatch '^[0-9a-f]{40}$') {
+            throw "The triggering release commit is unavailable or malformed."
+          }
+          if (-not (Test-Path -LiteralPath $releaseDirectory -PathType Container)) {
+            throw "The downloaded release payload is unavailable."
+          }
+          if ($env:BUILD_ARTIFACT_DIGEST -notmatch '^[0-9a-f]{64}$') {
+            throw "The workflow artifact digest is unavailable or malformed."
+          }
+          if ($env:BUILD_MSI_SHA256 -notmatch '^[0-9a-f]{64}$' -or
+              $env:BUILD_CHECKSUM_SHA256 -notmatch '^[0-9a-f]{64}$') {
+            throw "Build file digests are unavailable or malformed."
+          }
+
+          $version = $tag.Substring(1)
+          $requiredMsiName = "Dashy_${version}_x64_en-US.msi"
+          if ($env:BUILD_MSI_NAME -cne $requiredMsiName) {
+            throw "The build MSI name does not match the release tag."
+          }
+          if ($env:BUILD_CHECKSUM_NAME -cne "$requiredMsiName.sha256") {
+            throw "The build checksum name does not match the MSI."
+          }
+
+          [int64]$expectedMsiSize = 0
+          [int64]$expectedChecksumSize = 0
+          if (-not [int64]::TryParse($env:BUILD_MSI_SIZE, [ref]$expectedMsiSize) -or $expectedMsiSize -le 0) {
+            throw "The build MSI size is unavailable or malformed."
+          }
+          if (-not [int64]::TryParse($env:BUILD_CHECKSUM_SIZE, [ref]$expectedChecksumSize) -or $expectedChecksumSize -le 0) {
+            throw "The build checksum size is unavailable or malformed."
+          }
+
+          $payloadEntries = @(Get-ChildItem -LiteralPath $releaseDirectory -Force)
+          if ($payloadEntries.Count -ne 2 -or @($payloadEntries | Where-Object { -not $_.PSIsContainer }).Count -ne 2) {
+            throw "The downloaded payload must contain exactly the MSI and its checksum."
+          }
+          $msiPath = Join-Path $releaseDirectory $requiredMsiName
+          $checksumPath = "$msiPath.sha256"
+          if (-not (Test-Path -LiteralPath $msiPath -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
+            throw "The downloaded payload names do not match the verified build metadata."
+          }
+
+          $msiItem = Get-Item -LiteralPath $msiPath
+          $checksumItem = Get-Item -LiteralPath $checksumPath
+          if ($msiItem.Length -ne $expectedMsiSize -or $checksumItem.Length -ne $expectedChecksumSize) {
+            throw "The downloaded payload sizes do not match the build metadata."
+          }
+          $msiHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msiPath).Hash.ToLowerInvariant()
+          $checksumHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $checksumPath).Hash.ToLowerInvariant()
+          if ($msiHash -cne $env:BUILD_MSI_SHA256 -or
+              $checksumHash -cne $env:BUILD_CHECKSUM_SHA256) {
+            throw "The downloaded payload digests do not match the build metadata."
+          }
+
+          $expectedChecksum = "$msiHash  $requiredMsiName"
+          $actualChecksum = Get-Content -Raw -LiteralPath $checksumPath
+          if ($actualChecksum -cne $expectedChecksum) {
+            throw "The checksum file does not describe the selected MSI."
+          }
+
+          $expectedNames = @($requiredMsiName, "$requiredMsiName.sha256")
+          $expectedTitle = "Dashy $tag"
+          $expectedNotes = (([string]$env:RELEASE_NOTES -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd([char[]]"`n")
+          if (-not $expectedNotes) { throw "The required release warning is unavailable." }
+
+          function Assert-DraftRelease($release, [bool] $requireBothAssets) {
+            if (-not $release.isDraft) { throw "Refusing to modify a non-draft release." }
+            if ($release.isPrerelease) { throw "Refusing an unexpected prerelease." }
+            if ([string]$release.name -cne $expectedTitle) {
+              throw "Draft release title does not match the release tag."
+            }
+
+            $releaseBody = (([string]$release.body -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd([char[]]"`n")
+            $bodyHasExpectedPrefix = $releaseBody -ceq $expectedNotes -or
+              $releaseBody.StartsWith("$expectedNotes`n", [StringComparison]::Ordinal)
+            if (-not $bodyHasExpectedPrefix) {
+              throw "Draft release body is missing the required unsigned-build warning."
+            }
+
+            $assets = @($release.assets)
+            $unexpected = @($assets | Where-Object { $expectedNames -cnotcontains $_.name })
+            if ($unexpected.Count) {
+              throw "Draft release contains unexpected assets: $($unexpected.name -join ', ')."
+            }
+            if ($requireBothAssets -and $assets.Count -ne 2) {
+              throw "Draft release must contain exactly the MSI and its checksum."
+            }
+
+            foreach ($asset in $assets) {
+              $localPath = if ($asset.name -ceq $requiredMsiName) { $msiPath } else { $checksumPath }
+              if ([int64]$asset.size -ne (Get-Item -LiteralPath $localPath).Length) {
+                throw "Existing release asset size does not match $($asset.name)."
+              }
+              $localHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localPath).Hash.ToLowerInvariant()
+              if ($asset.digest -cne "sha256:$localHash") {
+                throw "Existing release asset digest does not match $($asset.name)."
+              }
+            }
+          }
+
+          function Assert-LiveReleaseTag {
+            $commitJson = & gh api `
+              --method GET `
+              -H "Accept: application/vnd.github+json" `
+              -H "X-GitHub-Api-Version: 2022-11-28" `
+              "repos/$repo/commits/refs/tags/$tag" 2>$null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not resolve the live release tag."
+            }
+
+            try {
+              $liveCommit = $commitJson | ConvertFrom-Json -ErrorAction Stop
+            } catch {
+              throw "The live release tag response is malformed."
+            }
+            $liveSha = ([string]$liveCommit.sha).Trim()
+            if ($liveSha -notmatch '^[0-9a-f]{40}$') {
+              throw "The live release tag commit is unavailable or malformed."
+            }
+            if ($liveSha -cne $expectedReleaseSha) {
+              throw "The release tag no longer points to the triggering commit."
+            }
+          }
+
+          Assert-LiveReleaseTag
+
+          $releaseJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,name,body,assets 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if (-not $releaseExists) {
+            $notFoundProbe = [string](& gh api "repos/$repo/releases/tags/$tag" 2>&1)
+            if ($LASTEXITCODE -eq 0 -or $notFoundProbe -notmatch '\(HTTP 404\)') {
+              throw "Could not safely determine whether the release exists."
+            }
+          }
+
+          if ($releaseExists) {
+            $release = $releaseJson | ConvertFrom-Json
+            Assert-DraftRelease $release $false
+
+            $remoteNames = @($release.assets | ForEach-Object name)
+            $missingPaths = @()
+            if ($remoteNames -cnotcontains $requiredMsiName) { $missingPaths += $msiPath }
+            if ($remoteNames -cnotcontains "$requiredMsiName.sha256") { $missingPaths += $checksumPath }
+            if ($missingPaths.Count) {
+              Assert-LiveReleaseTag
+              & gh release upload $tag @missingPaths --repo $repo
+              if ($LASTEXITCODE -ne 0) { throw "Release asset upload failed." }
+            }
+          } else {
+            Assert-LiveReleaseTag
+            & gh release create $tag $msiPath $checksumPath `
+              --repo $repo `
+              --draft `
+              --verify-tag `
+              --title $expectedTitle `
+              --generate-notes `
+              --notes $env:RELEASE_NOTES
+            if ($LASTEXITCODE -ne 0) { throw "Draft release creation failed." }
+          }
+
+          $finalJson = & gh release view $tag --repo $repo --json isDraft,isPrerelease,name,body,assets
+          if ($LASTEXITCODE -ne 0) { throw "Draft release verification failed." }
+          $finalRelease = $finalJson | ConvertFrom-Json
+          Assert-DraftRelease $finalRelease $true
+
+          $finalNames = @($finalRelease.assets | ForEach-Object name)
+          foreach ($expectedName in $expectedNames) {
+            if ($finalNames -cnotcontains $expectedName) {
+              throw "Draft release is missing $expectedName."
+            }
+          }
+          Assert-LiveReleaseTag

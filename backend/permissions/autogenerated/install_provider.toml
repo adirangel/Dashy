@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-install-provider"
+description = "Enables the install_provider command without any pre-configured scope."
+commands.allow = ["install_provider"]
+
+[[permission]]
+identifier = "deny-install-provider"
+description = "Denies the install_provider command without any pre-configured scope."
+commands.deny = ["install_provider"]
