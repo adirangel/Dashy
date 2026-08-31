@@ -12,7 +12,7 @@ use super::{
     controller::ExitToken,
     edge::{EdgeInteraction, EdgeViewState},
     menu::{build_menu_spec, build_native_menu, TrayLabels},
-    settings::{AppSettings, SettingsPatch, CURRENT_PROVIDER_SETUP_VERSION},
+    settings::{AppSettings, LocaleCode, SettingsPatch, CURRENT_PROVIDER_SETUP_VERSION},
     DesktopState,
 };
 
@@ -198,6 +198,19 @@ pub async fn update_settings(
     .await
 }
 
+fn onboarding_completion_patch(
+    enabled_providers: Vec<ProviderId>,
+    locale: LocaleCode,
+) -> SettingsPatch {
+    SettingsPatch {
+        onboarding_completed: Some(true),
+        enabled_providers: Some(enabled_providers),
+        locale: Some(locale),
+        provider_setup_version: Some(CURRENT_PROVIDER_SETUP_VERSION),
+        ..Default::default()
+    }
+}
+
 #[tauri::command]
 pub async fn complete_onboarding(
     window: WebviewWindow,
@@ -205,6 +218,7 @@ pub async fn complete_onboarding(
     dashboard: State<'_, AppState>,
     state: State<'_, DesktopState>,
     enabled_providers: Vec<ProviderId>,
+    locale: LocaleCode,
 ) -> Result<AppSettings, String> {
     crate::authorize_caller(&window, &["onboarding"])?;
     let dashboard = dashboard.dashboard.clone();
@@ -214,12 +228,9 @@ pub async fn complete_onboarding(
         &state.settings_side_effect_gate,
         || {
             let previous = state.settings.current()?.enabled_providers;
-            let settings = state.settings.update(SettingsPatch {
-                onboarding_completed: Some(true),
-                enabled_providers: Some(enabled_providers),
-                provider_setup_version: Some(CURRENT_PROVIDER_SETUP_VERSION),
-                ..Default::default()
-            })?;
+            let settings = state
+                .settings
+                .update(onboarding_completion_patch(enabled_providers, locale))?;
             state.controller.queue_interaction(EdgeInteraction::Dismiss);
             emit_settings_changed(&app, &settings)?;
             Ok((previous, settings))
@@ -336,7 +347,7 @@ pub async fn set_tray_labels(
     state: State<'_, DesktopState>,
     labels: TrayLabels,
 ) -> Result<(), String> {
-    crate::authorize_caller(&window, &["settings"])?;
+    crate::authorize_caller(&window, &["settings", "onboarding"])?;
     let _side_effect_guard = state
         .settings_side_effect_gate
         .lock()
@@ -351,13 +362,36 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::{
-        newly_enabled_providers, refresh_newly_enabled_then_notify,
+        newly_enabled_providers, onboarding_completion_patch, refresh_newly_enabled_then_notify,
         run_provider_selection_lifecycle, settings_event_targets, ExitRequest, NotchInteraction,
     };
     use crate::dashboard::models::ProviderId;
     use crate::desktop::settings::{
         AppSettings, EdgePlacement, LocaleCode, MonitorPreference, StoredMonitorRect,
+        CURRENT_PROVIDER_SETUP_VERSION,
     };
+
+    #[test]
+    fn onboarding_completion_patch_carries_selection_locale_and_setup_version() {
+        let patch = onboarding_completion_patch(
+            vec![ProviderId::Claude, ProviderId::Codex],
+            LocaleCode::He,
+        );
+
+        assert_eq!(patch.onboarding_completed, Some(true));
+        assert_eq!(
+            patch.enabled_providers,
+            Some(vec![ProviderId::Claude, ProviderId::Codex])
+        );
+        assert_eq!(patch.locale, Some(LocaleCode::He));
+        assert_eq!(
+            patch.provider_setup_version,
+            Some(CURRENT_PROVIDER_SETUP_VERSION)
+        );
+        assert_eq!(patch.placement, None);
+        assert_eq!(patch.monitor, None);
+        assert_eq!(patch.always_show_over_fullscreen, None);
+    }
 
     #[tokio::test]
     async fn onboarding_completion_runs_persist_publish_refresh_cache_tray_and_hide_in_order() {
