@@ -12,7 +12,7 @@ use super::{
     controller::ExitToken,
     edge::{EdgeInteraction, EdgeViewState},
     menu::{build_menu_spec, build_native_menu, TrayLabels},
-    settings::{AppSettings, SettingsPatch},
+    settings::{AppSettings, SettingsPatch, CURRENT_PROVIDER_SETUP_VERSION},
     DesktopState,
 };
 
@@ -217,6 +217,7 @@ pub async fn complete_onboarding(
             let settings = state.settings.update(SettingsPatch {
                 onboarding_completed: Some(true),
                 enabled_providers: Some(enabled_providers),
+                provider_setup_version: Some(CURRENT_PROVIDER_SETUP_VERSION),
                 ..Default::default()
             })?;
             state.controller.queue_interaction(EdgeInteraction::Dismiss);

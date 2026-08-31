@@ -139,6 +139,40 @@ describe("OnboardingApp", () => {
     expect(screen.getByRole("checkbox", { name: "Use GitHub in Dashy" })).not.toBeChecked();
   });
 
+  it("preserves an explicitly empty legacy selection during the one-time setup review", async () => {
+    mocks.getSettings.mockResolvedValue({
+      ...cleanSettings,
+      onboardingCompleted: true,
+      enabledProviders: [],
+    });
+    mocks.controller.mockReturnValue(controller(states({
+      claude: "connected",
+      codex: "connected",
+      github: "connected",
+    })));
+
+    render(<OnboardingApp />);
+
+    expect(await screen.findByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Use GitHub in Dashy" })).not.toBeChecked();
+  });
+
+  it("offers installation only for providers selected during setup", async () => {
+    render(<OnboardingApp />);
+
+    const claude = await screen.findByRole("checkbox", { name: "Use Claude in Dashy" });
+    expect(screen.queryByRole("button", { name: "Install Claude" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install Codex" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install GitHub" })).not.toBeInTheDocument();
+
+    fireEvent.click(claude);
+
+    expect(screen.getByRole("button", { name: "Install Claude" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Install Codex" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install GitHub" })).not.toBeInTheDocument();
+  });
+
   it("can finish with no providers and persists the exact empty selection once", async () => {
     let resolveCompletion!: (settings: AppSettings) => void;
     mocks.completeOnboarding.mockReturnValue(new Promise((resolve) => {
@@ -182,6 +216,7 @@ describe("OnboardingApp", () => {
       const surface = await screen.findByTestId("onboarding-scroll-surface");
       const finish = await screen.findByRole("button", { name: "Finish setup" });
       const consent = screen.getByRole("checkbox", { name: "Use GitHub in Dashy" });
+      fireEvent.click(consent);
       fireEvent.click(screen.getByRole("button", { name: "Install GitHub" }));
       const confirmation = screen.getByRole("group", { name: "Confirm installation" });
       const style = getComputedStyle(surface);

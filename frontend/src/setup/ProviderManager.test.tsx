@@ -64,6 +64,7 @@ function renderManager(options: {
   failureProvider?: ProviderId | null;
   states?: ProviderSetupState[] | null;
   loadFailed?: boolean;
+  actionsRequireSelection?: boolean;
 } = {}) {
   const status = {
     claude: options.claudeStatus ?? "connected",
@@ -86,6 +87,7 @@ function renderManager(options: {
     }}
     enabledProviders={options.enabledProviders ?? ["claude", "codex", "github"]}
     onEnabledChange={mocks.onEnabledChange}
+    actionsRequireSelection={options.actionsRequireSelection}
   />);
 }
 
@@ -205,6 +207,38 @@ describe("ProviderManager", () => {
     expect(screen.queryByRole("group")).not.toBeInTheDocument();
     expect(mocks.install).not.toHaveBeenCalled();
     expect(mocks.login).not.toHaveBeenCalled();
+  });
+
+  it("closes confirmation when setup deselects its provider", () => {
+    const manager = {
+      states: setupStates({ codex: "notInstalled" }),
+      busyProvider: null,
+      busyAction: null,
+      failureProvider: null,
+      loadFailed: false,
+      install: mocks.install,
+      login: mocks.login,
+      reload: mocks.reload,
+    };
+    const view = render(<ProviderManager
+      controller={manager}
+      enabledProviders={["codex"]}
+      onEnabledChange={mocks.onEnabledChange}
+      actionsRequireSelection
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+    expect(screen.getByRole("group", { name: "Confirm installation" })).toBeInTheDocument();
+
+    view.rerender(<ProviderManager
+      controller={manager}
+      enabledProviders={[]}
+      onEnabledChange={mocks.onEnabledChange}
+      actionsRequireSelection
+    />);
+
+    expect(screen.queryByRole("group", { name: "Confirm installation" })).not.toBeInTheDocument();
+    expect(mocks.install).not.toHaveBeenCalled();
   });
 
   it("restores same-provider focus after keyboard cancel but preserves focus after pointer cancel", async () => {

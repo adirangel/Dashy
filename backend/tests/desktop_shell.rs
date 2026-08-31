@@ -15,7 +15,10 @@ use dashy::{
         },
         menu::{build_menu_spec, resolve_monitor, MonitorResolution, TrayLabels},
         platform::{DesktopError, DesktopProbe, MonitorDescriptor, NativeWindowHandle},
-        settings::{AppSettings, EdgePlacement, MonitorPreference, StoredMonitorRect},
+        settings::{
+            AppSettings, EdgePlacement, MonitorPreference, StoredMonitorRect,
+            CURRENT_PROVIDER_SETUP_VERSION,
+        },
     },
 };
 
@@ -208,6 +211,7 @@ fn configured_settings() -> AppSettings {
     AppSettings {
         onboarding_completed: true,
         enabled_providers: ProviderId::ALL.to_vec(),
+        provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION,
         ..AppSettings::default()
     }
 }

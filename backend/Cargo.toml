@@ -10,7 +10,6 @@ tauri-build = { version = "2", features = [] }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10.4"
-strip-ansi-escapes = "0.2"
 thiserror = "2"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
@@ -24,8 +23,6 @@ tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-t
 tokio = { version = "1", features = ["test-util"] }
 
 [target.'cfg(windows)'.dependencies]
-conpty = "0.7"
-vt100 = "0.16.2"
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
@@ -33,6 +30,3 @@ windows = { version = "0.61", features = [
   "Win32_UI_HiDpi",
   "Win32_UI_WindowsAndMessaging"
 ] }
-
-[target.'cfg(not(windows))'.dependencies]
-portable-pty = "0.9"

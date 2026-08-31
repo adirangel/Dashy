@@ -10,31 +10,30 @@ use serde::Deserialize;
 
 use crate::dashboard::{
     models::{ProviderError, UsageData, UsageWindowData, UsageWindowKind},
-    process::{AllowedProgram, CaptureRunner, CompletionMarker, InteractiveRunner, ProcessError},
+    process::{AllowedProgram, CaptureRunner, ProcessError},
     providers::{remaining_timeout, DataProvider},
 };
 
 const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
-const CLAUDE_TIMEOUT: Duration = Duration::from_secs(15);
+const CLAUDE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RESET_TEXT_SCALARS: usize = 80;
 const MAX_RELATIVE_RESET_MINUTES: i64 = 366 * 24 * 60;
+const SESSION_SUMMARY_PREFIX: &str = "Current session: ";
+const WEEK_SUMMARY_PREFIX: &str = "Current week (all models): ";
+const COMPACT_WINDOW_DELIMITER: &str = "% used · resets ";
 
-pub struct ClaudeProvider<C: CaptureRunner, I: InteractiveRunner> {
+pub struct ClaudeProvider<C: CaptureRunner> {
     capture_runner: C,
-    interactive_runner: I,
 }
 
-impl<C: CaptureRunner, I: InteractiveRunner> ClaudeProvider<C, I> {
-    pub fn new(capture_runner: C, interactive_runner: I) -> Self {
-        Self {
-            capture_runner,
-            interactive_runner,
-        }
+impl<C: CaptureRunner> ClaudeProvider<C> {
+    pub fn new(capture_runner: C) -> Self {
+        Self { capture_runner }
     }
 }
 
 #[async_trait]
-impl<C: CaptureRunner, I: InteractiveRunner> DataProvider<UsageData> for ClaudeProvider<C, I> {
+impl<C: CaptureRunner> DataProvider<UsageData> for ClaudeProvider<C> {
     async fn fetch(&self) -> Result<UsageData, ProviderError> {
         let deadline = tokio::time::Instant::now() + CLAUDE_TIMEOUT;
         let status = self
@@ -51,25 +50,26 @@ impl<C: CaptureRunner, I: InteractiveRunner> DataProvider<UsageData> for ClaudeP
         }
 
         let output = self
-            .interactive_runner
-            .run_command(
+            .capture_runner
+            .capture(
                 AllowedProgram::Claude,
-                vec!["--safe-mode".to_owned(), "--no-chrome".to_owned()],
-                "/usage\r".to_owned(),
-                vec![
-                    CompletionMarker::Exact("Current session".to_owned()),
-                    CompletionMarker::ExactAlternative {
-                        first: "All models".to_owned(),
-                        second: "Current week (all models)".to_owned(),
-                    },
-                    CompletionMarker::Prefix("Resets ".to_owned()),
-                ],
-                Some("/exit\r".to_owned()),
+                [
+                    "--safe-mode",
+                    "--no-chrome",
+                    "--no-session-persistence",
+                    "--print",
+                    "/usage",
+                    "--output-format",
+                    "json",
+                ]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
                 remaining_timeout(deadline)?,
             )
             .await
             .map_err(map_usage_process_error)?;
-        parse_usage(&output)
+        parse_usage_response(&output.stdout)
     }
 }
 
@@ -100,15 +100,106 @@ fn parse_auth_status(response: &str) -> Result<bool, ProviderError> {
     Ok(status.logged_in)
 }
 
-fn parse_usage(response: &str) -> Result<UsageData, ProviderError> {
-    parse_usage_at(response, Local::now())
+fn parse_usage_response(response: &str) -> Result<UsageData, ProviderError> {
+    parse_usage_response_at(response, Local::now())
 }
 
-fn parse_usage_at<Tz>(response: &str, now: DateTime<Tz>) -> Result<UsageData, ProviderError>
+fn parse_usage_response_at<Tz>(
+    response: &str,
+    now: DateTime<Tz>,
+) -> Result<UsageData, ProviderError>
 where
     Tz: TimeZone,
 {
-    let mut sections = response.split('\n').peekable();
+    let response: UsageCommandResponse =
+        serde_json::from_str(response).map_err(|_| ProviderError::UnsupportedOutput)?;
+
+    if response.response_type != "result" {
+        return Err(ProviderError::UnsupportedOutput);
+    }
+    if response.is_error {
+        return Err(ProviderError::Process);
+    }
+    if response.subtype != "success" || response.result.trim().is_empty() {
+        return Err(ProviderError::UnsupportedOutput);
+    }
+
+    parse_usage_summary_at(&response.result, now.clone())
+        .or_else(|_| parse_legacy_usage_summary_at(&response.result, now))
+}
+
+fn parse_usage_summary_at<Tz>(summary: &str, now: DateTime<Tz>) -> Result<UsageData, ProviderError>
+where
+    Tz: TimeZone,
+{
+    let mut session = None;
+    let mut week = None;
+
+    for raw_line in summary.lines() {
+        let line = raw_line.trim_end_matches('\r');
+        let (slot, value) = if let Some(value) = line.strip_prefix(SESSION_SUMMARY_PREFIX) {
+            (&mut session, value)
+        } else if let Some(value) = line.strip_prefix(WEEK_SUMMARY_PREFIX) {
+            (&mut week, value)
+        } else {
+            if line.starts_with("Current session") || line.starts_with("Current week (all models)")
+            {
+                return Err(ProviderError::UnsupportedOutput);
+            }
+            continue;
+        };
+
+        if slot.is_some() {
+            return Err(ProviderError::UnsupportedOutput);
+        }
+        *slot = Some(parse_compact_window(value, &now)?);
+    }
+
+    let session = session.ok_or(ProviderError::UnsupportedOutput)?;
+    let week = week.ok_or(ProviderError::UnsupportedOutput)?;
+    UsageData::try_new(
+        Some(UsageWindowData {
+            label_key: UsageWindowKind::Short,
+            remaining_percent: 100 - session.used_percent,
+            resets_at: Some(session.resets_at),
+        }),
+        Some(UsageWindowData {
+            label_key: UsageWindowKind::Weekly,
+            remaining_percent: 100 - week.used_percent,
+            resets_at: Some(week.resets_at),
+        }),
+    )
+}
+
+fn parse_compact_window<Tz>(value: &str, now: &DateTime<Tz>) -> Result<UsageWindow, ProviderError>
+where
+    Tz: TimeZone,
+{
+    let (percent, reset_text) = value
+        .split_once(COMPACT_WINDOW_DELIMITER)
+        .filter(|(_, reset)| !reset.is_empty() && !reset.contains(COMPACT_WINDOW_DELIMITER))
+        .ok_or(ProviderError::UnsupportedOutput)?;
+    let used_percent = percent
+        .parse::<u8>()
+        .ok()
+        .filter(|parsed| *parsed <= 100 && parsed.to_string() == percent)
+        .ok_or(ProviderError::UnsupportedOutput)?;
+    let resets_at = parse_reset_timestamp(reset_text, now)?;
+
+    Ok(UsageWindow {
+        used_percent,
+        resets_at,
+    })
+}
+
+fn parse_legacy_usage_summary_at<Tz>(
+    summary: &str,
+    now: DateTime<Tz>,
+) -> Result<UsageData, ProviderError>
+where
+    Tz: TimeZone,
+{
+    let mut sections = summary.split('\n').peekable();
     let mut session = None;
     let mut week = None;
     let mut saw_usage_heading = false;
@@ -128,7 +219,7 @@ where
                 saw_usage_heading = true;
                 Some(&mut week)
             }
-            _ if is_excluded_heading(heading) => {
+            _ if is_excluded_legacy_heading(heading) => {
                 saw_usage_heading = true;
                 None
             }
@@ -155,7 +246,7 @@ where
             if slot.is_some() {
                 return Err(ProviderError::UnsupportedOutput);
             }
-            *slot = Some(parse_general_window(&lines, &now)?);
+            *slot = Some(parse_legacy_window(&lines, &now)?);
         }
     }
 
@@ -175,18 +266,11 @@ where
     )
 }
 
-fn is_excluded_heading(heading: &str) -> bool {
-    heading.starts_with("Current ")
-        && (heading.contains("model-specific")
-            || heading.contains("Sonnet")
-            || heading.contains("Opus")
-            || heading.contains("Haiku"))
+fn is_excluded_legacy_heading(heading: &str) -> bool {
+    heading.starts_with("Current week (") && heading.ends_with(')')
 }
 
-fn parse_general_window<Tz>(
-    lines: &[&str],
-    now: &DateTime<Tz>,
-) -> Result<UsageWindow, ProviderError>
+fn parse_legacy_window<Tz>(lines: &[&str], now: &DateTime<Tz>) -> Result<UsageWindow, ProviderError>
 where
     Tz: TimeZone,
 {
@@ -194,20 +278,22 @@ where
         return Err(ProviderError::UnsupportedOutput);
     }
 
-    let used_percent = lines[0]
+    let percent = lines[0]
         .strip_suffix("% used")
-        .and_then(|value| value.parse::<u8>().ok())
-        .filter(|value| *value <= 100)
+        .ok_or(ProviderError::UnsupportedOutput)?;
+    let used_percent = percent
+        .parse::<u8>()
+        .ok()
+        .filter(|parsed| *parsed <= 100 && parsed.to_string() == percent)
         .ok_or(ProviderError::UnsupportedOutput)?;
     let reset_text = lines[1]
         .strip_prefix("Resets ")
         .filter(|value| !value.is_empty())
         .ok_or(ProviderError::UnsupportedOutput)?;
-    let resets_at = parse_reset_timestamp(reset_text, now)?;
 
     Ok(UsageWindow {
         used_percent,
-        resets_at,
+        resets_at: parse_reset_timestamp(reset_text, now)?,
     })
 }
 
@@ -520,6 +606,15 @@ struct AuthStatus {
     logged_in: bool,
 }
 
+#[derive(Deserialize)]
+struct UsageCommandResponse {
+    #[serde(rename = "type")]
+    response_type: String,
+    subtype: String,
+    is_error: bool,
+    result: String,
+}
+
 struct UsageWindow {
     used_percent: u8,
     resets_at: DateTime<Utc>,
@@ -535,10 +630,47 @@ mod tests {
     use super::*;
     use crate::dashboard::process::{AllowedProgram, CapturedOutput, ProcessError};
 
-    fn general_usage(session_used_percent: u8, all_models_used_percent: u8) -> String {
+    fn compact_summary(session_used_percent: u8, week_used_percent: u8) -> String {
         format!(
-            "Current session\n{session_used_percent}% used\nResets 8:40 PM\nAll models\n{all_models_used_percent}% used\nResets Thu 12:00 AM\n"
+            "You are currently using your subscription to power your Claude Code usage\n\nCurrent session: {session_used_percent}% used · resets in 2 hr\nCurrent week (all models): {week_used_percent}% used · resets Sep 3 at 2:00 PM\nCurrent week (Fable): 99% used\n"
         )
+    }
+
+    fn usage_response(result: &str) -> String {
+        serde_json::json!({
+            "is_error": false,
+            "duration_api_ms": 0,
+            "num_turns": 0,
+            "stop_reason": null,
+            "session_id": "fixture",
+            "total_cost_usd": 0,
+            "usage": {},
+            "modelUsage": {},
+            "permission_denials": [],
+            "subtype": "success",
+            "result": result,
+            "type": "result",
+            "duration_ms": 4495,
+            "uuid": "fixture",
+            "queued_turn_count": 0
+        })
+        .to_string()
+    }
+
+    fn auth_status(logged_in: bool) -> CapturedOutput {
+        CapturedOutput {
+            stdout: format!(r#"{{"loggedIn":{logged_in}}}"#),
+            stderr: String::new(),
+            exit_code: 0,
+        }
+    }
+
+    fn usage_output(result: &str) -> CapturedOutput {
+        CapturedOutput {
+            stdout: usage_response(result),
+            stderr: String::new(),
+            exit_code: 0,
+        }
     }
 
     #[test]
@@ -547,13 +679,116 @@ mod tests {
     }
 
     #[test]
-    fn preserves_the_short_and_weekly_general_windows() {
-        let usage = parse_usage(
-            "Current session\n51% used\nResets 8:40 PM\nAll models\n36% used\nResets Thu 12:00 AM\n",
-        )
+    fn parses_v2_1_251_json_and_keeps_only_general_windows() {
+        let now = FixedOffset::east_opt(3 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 31, 12, 0, 0)
+            .unwrap();
+        let response = usage_response(
+            "You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 2% used · resets Aug 31, 10:20pm (Asia/Jerusalem)\nCurrent week (all models): 4% used · resets Sep 6, 6pm (Asia/Jerusalem)\nCurrent week (Fable): 87% used\n\nWhat's contributing to your limits usage?\nLast 7d · 1425 requests · 6 sessions",
+        );
+
+        let usage = parse_usage_response_at(&response, now).unwrap();
+        let short = usage.short_window.unwrap();
+        let weekly = usage.weekly_window.unwrap();
+
+        assert_eq!(short.remaining_percent, 98);
+        assert_eq!(
+            short.resets_at,
+            Some(Utc.with_ymd_and_hms(2026, 8, 31, 19, 20, 0).unwrap())
+        );
+        assert_eq!(weekly.remaining_percent, 96);
+        assert_eq!(
+            weekly.resets_at,
+            Some(Utc.with_ymd_and_hms(2026, 9, 6, 15, 0, 0).unwrap())
+        );
+    }
+
+    #[test]
+    fn accepts_the_legacy_multiline_usage_result_without_restoring_pty_scraping() {
+        let now = FixedOffset::east_opt(3 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 29, 12, 0, 0)
+            .unwrap();
+        let response = usage_response(
+            "Current session\n23% used\nResets in 2 hr\n\nAll models\n41% used\nResets Thu 12:00 AM\n\nCurrent week (Fable)\n99% used\nResets Thu 12:00 AM",
+        );
+
+        let usage = parse_usage_response_at(&response, now).unwrap();
+
+        assert_eq!(usage.short_window.unwrap().remaining_percent, 77);
+        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 59);
+    }
+
+    #[test]
+    fn rejects_malformed_error_and_non_result_json_envelopes() {
+        assert_eq!(
+            parse_usage_response("{not-json"),
+            Err(ProviderError::UnsupportedOutput)
+        );
+        assert_eq!(
+            parse_usage_response(
+                r#"{"type":"result","subtype":"error","is_error":true,"result":"authentication failed"}"#
+            ),
+            Err(ProviderError::Process)
+        );
+        assert_eq!(
+            parse_usage_response(
+                r#"{"type":"assistant","subtype":"success","is_error":false,"result":"ignored"}"#
+            ),
+            Err(ProviderError::UnsupportedOutput)
+        );
+        assert_eq!(
+            parse_usage_response(
+                r#"{"type":"result","subtype":"success","is_error":false,"result":""}"#
+            ),
+            Err(ProviderError::UnsupportedOutput)
+        );
+        assert_eq!(
+            parse_usage_response(r#"{"type":"result","subtype":"success","is_error":false}"#),
+            Err(ProviderError::UnsupportedOutput)
+        );
+        let valid = usage_response(&compact_summary(23, 41));
+        assert_eq!(
+            parse_usage_response(&(valid + "\n{}")),
+            Err(ProviderError::UnsupportedOutput)
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_missing_and_malformed_required_summaries() {
+        let duplicate = "Current session: 23% used · resets in 2 hr\nCurrent session: 24% used · resets in 3 hr\nCurrent week (all models): 41% used · resets Sep 3 at 2:00 PM";
+        let missing = "Current session: 23% used · resets in 2 hr";
+        let malformed = "Current session: 023% used · resets in 2 hr\nCurrent week (all models): 41% used - resets Sep 3 at 2:00 PM";
+
+        for summary in [duplicate, missing, malformed] {
+            assert_eq!(
+                parse_usage_response(&usage_response(summary)),
+                Err(ProviderError::UnsupportedOutput)
+            );
+        }
+    }
+
+    #[test]
+    fn ignores_other_model_buckets_without_accepting_drifted_general_headings() {
+        let usage = parse_usage_response(&usage_response(
+            "Current session: 10% used · resets in 1 hr\nCurrent week (all models): 20% used · resets Sep 3 at 2:00 PM\nCurrent week (Sonnet): 99% used · resets Sep 3 at 2:00 PM\nCurrent week (Opus): malformed",
+        ))
         .unwrap();
-        assert_eq!(usage.short_window.unwrap().remaining_percent, 49);
-        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 64);
+
+        assert_eq!(usage.short_window.unwrap().remaining_percent, 90);
+        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 80);
+
+        for summary in [
+            "Current session 10% used · resets in 1 hr\nCurrent week (all models): 20% used · resets Sep 3 at 2:00 PM",
+            "Current session: 10% used · resets in 1 hr\nCurrent week (all models) 20% used · resets Sep 3 at 2:00 PM",
+            "Current session: 101% used · resets in 1 hr\nCurrent week (all models): 20% used · resets Sep 3 at 2:00 PM",
+        ] {
+            assert_eq!(
+                parse_usage_response(&usage_response(summary)),
+                Err(ProviderError::UnsupportedOutput)
+            );
+        }
     }
 
     #[test]
@@ -562,8 +797,8 @@ mod tests {
             .unwrap()
             .with_ymd_and_hms(2026, 8, 29, 12, 0, 0)
             .unwrap();
-        let usage = parse_usage_at(
-            "Current session\n23% used\nResets in 2 hr 15 min\n\nAll models\n41% used\nResets Thu 12:00 AM\n",
+        let usage = parse_usage_summary_at(
+            "Current session: 23% used · resets in 2 hr 15 min\nCurrent week (all models): 41% used · resets Thu 12:00 AM",
             now,
         )
         .unwrap();
@@ -575,26 +810,6 @@ mod tests {
         assert_eq!(
             usage.weekly_window.unwrap().resets_at,
             Some(Utc.with_ymd_and_hms(2026, 9, 2, 21, 0, 0).unwrap())
-        );
-    }
-
-    #[test]
-    fn converts_current_compact_local_reset_forms_to_structured_utc_times() {
-        let offset = FixedOffset::east_opt(3 * 3600).unwrap();
-        let now = offset.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap();
-        let usage = parse_usage_at(
-            "Current session\n23% used\nResets 4:00pm (Asia/Jerusalem)\n\nAll models\n41% used\nResets Aug 30, 7pm (Asia/Jerusalem)\n",
-            now,
-        )
-        .unwrap();
-
-        assert_eq!(
-            usage.short_window.unwrap().resets_at,
-            Some(Utc.with_ymd_and_hms(2026, 8, 29, 13, 0, 0).unwrap())
-        );
-        assert_eq!(
-            usage.weekly_window.unwrap().resets_at,
-            Some(Utc.with_ymd_and_hms(2026, 8, 30, 16, 0, 0).unwrap())
         );
     }
 
@@ -658,28 +873,36 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_local_clocks_and_unknown_named_zones() {
+    fn reset_parser_rejects_nonexistent_unknown_control_and_oversized_values() {
         let now = FixedOffset::east_opt(9 * 3600)
             .unwrap()
             .with_ymd_and_hms(2026, 3, 8, 14, 0, 0)
             .unwrap();
 
-        assert_eq!(
-            parse_reset_timestamp("2:30am (America/New_York)", &now),
-            Err(ProviderError::UnsupportedOutput)
-        );
-        assert_eq!(
-            parse_reset_timestamp("9am (America/Not_A_Zone)", &now),
-            Err(ProviderError::UnsupportedOutput)
-        );
+        for reset in [
+            "2:30am (America/New_York)".to_owned(),
+            "9am (America/Not_A_Zone)".to_owned(),
+            "Thu 12:00 AM\u{0007}".to_owned(),
+            "x".repeat(81),
+            "in 999999999 hr".to_owned(),
+            "4:00pm (Asia/../Jerusalem)".to_owned(),
+            "4:00PM (Asia/Jerusalem)".to_owned(),
+            "Aug 30 7pm (Asia/Jerusalem)".to_owned(),
+        ] {
+            assert_eq!(
+                parse_reset_timestamp(&reset, &now),
+                Err(ProviderError::UnsupportedOutput),
+                "accepted reset label {reset:?}"
+            );
+        }
     }
 
     #[test]
-    fn reset_parser_handles_local_day_and_year_boundaries_without_guessing_past_times() {
+    fn reset_parser_handles_local_day_and_year_boundaries() {
         let offset = FixedOffset::west_opt(5 * 3600).unwrap();
         let late = offset.with_ymd_and_hms(2026, 12, 31, 23, 30, 0).unwrap();
-        let usage = parse_usage_at(
-            "Current session\n23% used\nResets 8:40 PM\n\nAll models\n41% used\nResets Jan 1 at 1:00 AM\n",
+        let usage = parse_usage_summary_at(
+            "Current session: 23% used · resets 8:40 PM\nCurrent week (all models): 41% used · resets Jan 1 at 1:00 AM",
             late,
         )
         .unwrap();
@@ -695,36 +918,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unrecognized_control_and_oversized_reset_text_before_ipc() {
-        for reset in [
-            "whenever Claude feels ready".to_string(),
-            "Thu 12:00 AM\u{0007}".to_string(),
-            "x".repeat(81),
-            "in 999999999 hr".to_string(),
-            "4:00pm (Asia/../Jerusalem)".to_string(),
-            "4:00PM (Asia/Jerusalem)".to_string(),
-            "0001:00pm (Asia/Jerusalem)".to_string(),
-            "0001:00 PM".to_string(),
-            "1:000 PM".to_string(),
-            "Aug 30 7pm (Asia/Jerusalem)".to_string(),
-            "4:00pm (A/B/C/D/E)".to_string(),
-            "4:00pm Asia/Jerusalem".to_string(),
-        ] {
-            let output = format!(
-                "Current session\n23% used\nResets {reset}\n\nAll models\n41% used\nResets Thu 12:00 AM\n"
-            );
-            assert_eq!(
-                parse_usage_at(&output, Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),),
-                Err(ProviderError::UnsupportedOutput),
-                "accepted reset label {reset:?}"
-            );
-        }
-    }
-
-    #[test]
     fn claude_usage_serializes_only_structured_reset_times() {
-        let usage = parse_usage_at(
-            "Current session\n23% used\nResets in 2 hr\n\nAll models\n41% used\nResets Sep 3 at 2:00 PM\n",
+        let usage = parse_usage_summary_at(
+            "Current session: 23% used · resets in 2 hr\nCurrent week (all models): 41% used · resets Sep 3 at 2:00 PM",
             Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),
         )
         .unwrap();
@@ -740,83 +936,7 @@ mod tests {
         assert!(json["weeklyWindow"].get("resetLabel").is_none());
     }
 
-    #[test]
-    fn accepts_the_legacy_all_models_general_heading() {
-        let usage = parse_usage(
-            "Current session\n51% used\nResets 8:40 PM\nCurrent week (all models)\n36% used\nResets Thu 12:00 AM\n",
-        )
-        .unwrap();
-
-        assert_eq!(usage.short_window.unwrap().remaining_percent, 49);
-        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 64);
-    }
-
-    #[test]
-    fn rejects_non_plan_output() {
-        assert_eq!(
-            parse_usage("Session cost: $0.00"),
-            Err(ProviderError::UnsupportedOutput)
-        );
-    }
-
-    #[test]
-    fn excludes_model_specific_windows_from_the_remaining_allowance() {
-        let output = "Current session\n10% used\nResets in 1 hr\n\nAll models\n20% used\nResets Sep 3 at 2:00 PM\n\nCurrent week (Sonnet)\n99% used\nResets Sep 3 at 2:00 PM\n";
-        let usage = parse_usage(output).unwrap();
-
-        assert_eq!(usage.short_window.unwrap().remaining_percent, 90);
-        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 80);
-    }
-
-    #[test]
-    fn rejects_localized_or_drifted_general_headings() {
-        let localized = "Current session\n23% used\nResets in 2 hr\n\nAll models\n41% used\nאיפוס Sep 3 at 2:00 PM\n";
-        let drifted = "Current session\n23% used\nResets in 2 hr\n\nCurrent week\n41% used\nResets Sep 3 at 2:00 PM\n";
-
-        assert_eq!(
-            parse_usage(localized),
-            Err(ProviderError::UnsupportedOutput)
-        );
-        assert_eq!(parse_usage(drifted), Err(ProviderError::UnsupportedOutput));
-    }
-
-    #[test]
-    fn rejects_malformed_general_window_percentages() {
-        let output = "Current session\n101% used\nResets in 2 hr\n\nAll models\n41% used\nResets Sep 3 at 2:00 PM\n";
-
-        assert_eq!(parse_usage(output), Err(ProviderError::UnsupportedOutput));
-    }
-
-    #[test]
-    fn rejects_duplicate_or_missing_required_general_headings() {
-        let duplicate = "Current session\n23% used\nResets in 2 hr\n\nCurrent session\n41% used\nResets Sep 3 at 2:00 PM\n\nAll models\n41% used\nResets Sep 3 at 2:00 PM\n";
-        let missing = "Current session\n23% used\nResets in 2 hr\n";
-
-        assert_eq!(
-            parse_usage(duplicate),
-            Err(ProviderError::UnsupportedOutput)
-        );
-        assert_eq!(parse_usage(missing), Err(ProviderError::UnsupportedOutput));
-    }
-
-    #[test]
-    fn ignores_the_interactive_command_echo_before_the_usage_windows() {
-        let output = "/usage\r\nCurrent session\n23% used\nResets in 2 hr\n\nAll models\n41% used\nResets Sep 3 at 2:00 PM\n\nCurrent week (model-specific preview)\n";
-        let usage = parse_usage(output).unwrap();
-
-        assert_eq!(usage.short_window.unwrap().remaining_percent, 77);
-        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 59);
-    }
-
     type CaptureCall = (AllowedProgram, Vec<String>, Duration);
-    type InteractiveCall = (
-        AllowedProgram,
-        Vec<String>,
-        String,
-        Vec<CompletionMarker>,
-        Option<String>,
-        Duration,
-    );
 
     #[derive(Clone)]
     struct RecordingCaptureRunner {
@@ -860,57 +980,10 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Default)]
-    struct RecordingInteractiveRunner {
-        calls: std::sync::Arc<Mutex<Vec<InteractiveCall>>>,
-        results: std::sync::Arc<Mutex<VecDeque<Result<String, ProcessError>>>>,
-    }
-
-    impl RecordingInteractiveRunner {
-        fn with_results(results: Vec<Result<String, ProcessError>>) -> Self {
-            Self {
-                calls: std::sync::Arc::new(Mutex::new(Vec::new())),
-                results: std::sync::Arc::new(Mutex::new(results.into())),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl InteractiveRunner for RecordingInteractiveRunner {
-        async fn run_command(
-            &self,
-            program: AllowedProgram,
-            args: Vec<String>,
-            input: String,
-            completion_markers: Vec<CompletionMarker>,
-            exit_input: Option<String>,
-            timeout: Duration,
-        ) -> Result<String, ProcessError> {
-            self.calls.lock().unwrap().push((
-                program,
-                args,
-                input,
-                completion_markers,
-                exit_input,
-                timeout,
-            ));
-            self.results.lock().unwrap().pop_front().unwrap()
-        }
-    }
-
-    fn auth_status(logged_in: bool) -> CapturedOutput {
-        CapturedOutput {
-            stdout: format!(r#"{{"loggedIn":{logged_in}}}"#),
-            stderr: String::new(),
-            exit_code: 0,
-        }
-    }
-
     #[tokio::test]
-    async fn unauthenticated_status_stops_before_starting_a_pty() {
+    async fn unauthenticated_status_stops_before_usage_capture() {
         let capture = RecordingCaptureRunner::with_results(vec![Ok(auth_status(false))]);
-        let interactive = RecordingInteractiveRunner::default();
-        let provider = ClaudeProvider::new(capture.clone(), interactive.clone());
+        let provider = ClaudeProvider::new(capture.clone());
 
         assert_eq!(provider.fetch().await, Err(ProviderError::NotAuthenticated));
         assert_eq!(
@@ -921,66 +994,67 @@ mod tests {
                 Duration::from_secs(10),
             )]
         );
-        assert!(interactive.calls.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn authenticated_usage_uses_safe_mode_and_bounded_interaction() {
-        let capture = RecordingCaptureRunner::with_results(vec![Ok(auth_status(true))]);
-        let interactive = RecordingInteractiveRunner::with_results(vec![Ok(general_usage(23, 41))]);
-        let provider = ClaudeProvider::new(capture, interactive.clone());
+    async fn authenticated_usage_uses_the_exact_noninteractive_command() {
+        let capture = RecordingCaptureRunner::with_results(vec![
+            Ok(auth_status(true)),
+            Ok(usage_output(&compact_summary(23, 41))),
+        ]);
+        let provider = ClaudeProvider::new(capture.clone());
 
         let usage = provider.fetch().await.unwrap();
         assert_eq!(usage.short_window.unwrap().remaining_percent, 77);
         assert_eq!(usage.weekly_window.unwrap().remaining_percent, 59);
-        let calls = interactive.calls.lock().unwrap();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, AllowedProgram::Claude);
-        assert_eq!(calls[0].1, ["--safe-mode", "--no-chrome"]);
-        assert_eq!(calls[0].2, "/usage\r");
+
+        let calls = capture.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1].0, AllowedProgram::Claude,);
         assert_eq!(
-            calls[0].3,
+            calls[1].1,
             [
-                CompletionMarker::Exact("Current session".to_owned()),
-                CompletionMarker::ExactAlternative {
-                    first: "All models".to_owned(),
-                    second: "Current week (all models)".to_owned(),
-                },
-                CompletionMarker::Prefix("Resets ".to_owned()),
+                "--safe-mode",
+                "--no-chrome",
+                "--no-session-persistence",
+                "--print",
+                "/usage",
+                "--output-format",
+                "json",
             ]
         );
-        assert_eq!(calls[0].4.as_deref(), Some("/exit\r"));
-        assert!(calls[0].5 > Duration::ZERO);
-        assert!(calls[0].5 <= CLAUDE_TIMEOUT);
+        assert!(calls[1].2 > Duration::ZERO);
+        assert!(calls[1].2 <= CLAUDE_TIMEOUT);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn interactive_usage_receives_only_the_remaining_provider_timeout_after_auth_delay() {
+    async fn usage_capture_receives_only_the_remaining_total_timeout_after_auth_delay() {
         let capture = RecordingCaptureRunner::with_delayed_results(
-            vec![Ok(auth_status(true))],
-            vec![Duration::from_secs(6)],
+            vec![
+                Ok(auth_status(true)),
+                Ok(usage_output(&compact_summary(23, 41))),
+            ],
+            vec![Duration::from_secs(6), Duration::ZERO],
         );
-        let interactive = RecordingInteractiveRunner::with_results(vec![Ok(general_usage(23, 41))]);
-        let provider = ClaudeProvider::new(capture, interactive.clone());
+        let provider = ClaudeProvider::new(capture.clone());
 
         provider.fetch().await.unwrap();
 
-        let calls = interactive.calls.lock().unwrap();
-        assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].5, Duration::from_secs(9));
+        let calls = capture.calls.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[1].2, Duration::from_secs(24));
     }
 
     #[tokio::test(start_paused = true)]
-    async fn exhausted_provider_deadline_stops_before_starting_the_pty() {
+    async fn exhausted_provider_deadline_stops_before_usage_capture() {
         let capture = RecordingCaptureRunner::with_delayed_results(
             vec![Ok(auth_status(true))],
-            vec![Duration::from_secs(15)],
+            vec![Duration::from_secs(30)],
         );
-        let interactive = RecordingInteractiveRunner::with_results(vec![Ok(general_usage(23, 41))]);
-        let provider = ClaudeProvider::new(capture, interactive.clone());
+        let provider = ClaudeProvider::new(capture.clone());
 
         assert_eq!(provider.fetch().await, Err(ProviderError::Timeout));
-        assert!(interactive.calls.lock().unwrap().is_empty());
+        assert_eq!(capture.calls.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -993,10 +1067,8 @@ mod tests {
             (ProcessError::Io, ProviderError::Network),
         ];
         for (error, expected) in auth_cases {
-            let provider = ClaudeProvider::new(
-                RecordingCaptureRunner::with_results(vec![Err(error)]),
-                RecordingInteractiveRunner::default(),
-            );
+            let provider =
+                ClaudeProvider::new(RecordingCaptureRunner::with_results(vec![Err(error)]));
             assert_eq!(provider.fetch().await, Err(expected));
         }
 
@@ -1008,10 +1080,10 @@ mod tests {
             (ProcessError::Io, ProviderError::Network),
         ];
         for (error, expected) in usage_cases {
-            let provider = ClaudeProvider::new(
-                RecordingCaptureRunner::with_results(vec![Ok(auth_status(true))]),
-                RecordingInteractiveRunner::with_results(vec![Err(error)]),
-            );
+            let provider = ClaudeProvider::new(RecordingCaptureRunner::with_results(vec![
+                Ok(auth_status(true)),
+                Err(error),
+            ]));
             assert_eq!(provider.fetch().await, Err(expected));
         }
     }
@@ -1019,10 +1091,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_claude_usage() {
-        let provider = ClaudeProvider::new(
-            crate::dashboard::process::SystemProcessRunner,
-            crate::dashboard::process::SystemProcessRunner,
-        );
+        let provider = ClaudeProvider::new(crate::dashboard::process::SystemProcessRunner);
         let data = provider.fetch().await.unwrap();
 
         assert!(data.short_window.unwrap().remaining_percent <= 100);

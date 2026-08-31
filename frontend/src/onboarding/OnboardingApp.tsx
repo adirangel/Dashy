@@ -81,11 +81,13 @@ export function OnboardingApp() {
 
   useEffect(() => {
     if (selectionReady || !settings || controller.states === null) return;
-    const selected = settings.enabledProviders.length > 0
+    const selected = settings.onboardingCompleted
       ? settings.enabledProviders
-      : controller.states
-          .filter((state) => state.status === "connected")
-          .map((state) => state.definition.provider);
+      : settings.enabledProviders.length > 0
+        ? settings.enabledProviders
+        : controller.states
+            .filter((state) => state.status === "connected")
+            .map((state) => state.definition.provider);
     setEnabledProviders(selected);
     setSelectionReady(true);
   }, [controller.states, selectionReady, settings]);
@@ -122,6 +124,7 @@ export function OnboardingApp() {
       controller={controller}
       enabledProviders={enabledProviders}
       onEnabledChange={setEnabledProviders}
+      actionsRequireSelection
     />}
 
     <footer className="onboarding-footer">

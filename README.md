@@ -113,9 +113,10 @@ Dashy retains the supported short and weekly general windows, summarizes the low
 remaining percentage in the compact ring, and excludes model-specific, preview, and
 special-program buckets.
 
-Claude usage comes from the documented Claude Code `/usage` interface. Dashy
-retains the current-session and all-models general windows and excludes model-specific
-preview limits.
+Claude usage comes from the documented Claude Code `/usage` interface through its
+non-interactive JSON output. Dashy retains the current-session and all-models general
+windows and excludes model-specific preview limits. This path also avoids workspace
+trust prompts when Dashy starts from the Windows Start menu.
 
 The dashboard primes its local cache on startup and refreshes periodically. Each
 provider remains isolated: one unavailable or signed-out CLI does not prevent the
@@ -126,8 +127,14 @@ other providers from working.
 1. Open the [latest GitHub Release](https://github.com/adirangel/Dashy/releases/latest).
 2. Download the Windows x64 `.msi` asset.
 3. Run the installer and leave **Launch Dashy** selected on the final page.
-4. In first-run setup, choose any combination of Claude, Codex, and GitHub.
-5. Approve only the provider tools you want Dashy to install or connect.
+4. Dashy opens its setup window and asks which combination of Claude, Codex, and
+   GitHub you want to use.
+5. Install or connect only the providers you selected, approving each visible
+   command separately.
+
+Upgrades from a pre-release build reopen this provider chooser once, with the
+existing choices preselected. Completing it records the current setup version so
+later upgrades preserve the selection without prompting again.
 
 The current private-test MSI is not code-signed, so Windows may show an
 **Unknown publisher** or SmartScreen warning. Code signing is required before a
