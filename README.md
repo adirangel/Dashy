@@ -15,8 +15,9 @@ by the interface.
 Dashy is designed to keep useful account activity one deliberate pointer movement
 away without becoming another dashboard that occupies the desktop. The compact rail
 rests just outside the selected screen edge, reveals on hover, and expands only the
-provider the user asks to inspect. Its translucent surfaces preserve visual context
-instead of covering the application underneath.
+provider the user asks to inspect. The rail is a solid tab that blends into the
+screen edge with concave fillets, so it reads as part of the display frame rather
+than a floating window.
 
 Every provider is optional. A user can connect Claude, Codex, GitHub, any combination
 of them, or none during first-run setup. Dashy relies on each provider's existing,
@@ -61,8 +62,9 @@ Keyboard behavior:
 - Escape closes a pinned or expanded card to the rail; a second Escape hides the rail.
 
 Right-click the visible notch for its compact native menu.
-The detached gear at the end of the metric rail opens Settings directly and remains
-available in the right, left, and top placements.
+A small curled tail at the end of the metric rail marks the Settings control; hovering
+or keyboard-focusing it grows a round gear button that opens Settings directly. It
+remains available in the right, left, and top placements.
 
 ## Placement, monitors, and fullscreen
 

@@ -307,7 +307,7 @@ fn enabled_provider_changes_resize_the_collapsed_native_surface() {
     });
     fixture.controller.show_explicit();
     assert!(fixture.controller.step(Duration::ZERO).is_empty());
-    assert_eq!(last_layout(&fixture.window.actions()).size.height, 260);
+    assert_eq!(last_layout(&fixture.window.actions()).size.height, 312);
 
     fixture.window.clear();
     fixture.settings.set(AppSettings {
@@ -315,7 +315,7 @@ fn enabled_provider_changes_resize_the_collapsed_native_surface() {
         ..configured_settings()
     });
     assert!(fixture.controller.step(Duration::from_millis(1)).is_empty());
-    assert_eq!(last_layout(&fixture.window.actions()).size.height, 180);
+    assert_eq!(last_layout(&fixture.window.actions()).size.height, 224);
 }
 
 #[test]
@@ -781,7 +781,7 @@ fn dpi_only_monitor_change_repositions_with_scaled_logical_bounds() {
     fixture.controller.step(Duration::from_millis(1));
 
     let scaled = last_layout(&fixture.window.actions());
-    assert_eq!((scaled.size.width, scaled.size.height), (105, 510));
+    assert_eq!((scaled.size.width, scaled.size.height), (105, 600));
     assert_eq!(
         scaled.position.x + i32::try_from(scaled.size.width).unwrap(),
         1920

@@ -89,17 +89,17 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByRole("toolbar", { name: /provider status/i })).toBeInTheDocument();
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
     expect(screen.getByTestId("notch-surface"))
-      .toHaveAttribute("data-logical-size", "70x340");
+      .toHaveAttribute("data-logical-size", "70x400");
     expect(screen.getByTestId("notch-surface")).not.toHaveClass("is-expanded");
   });
 
   it.each([
-    [["claude"], "right", 1, "110", "180", "70x180"],
-    [["claude"], "top", 1, "110", "180", "180x70"],
-    [["claude", "github"], "right", 2, "190", "260", "70x260"],
-    [["claude", "github"], "top", 2, "190", "260", "260x70"],
-    [["claude", "codex", "github"], "right", 3, "270", "340", "70x340"],
-    [["claude", "codex", "github"], "top", 3, "270", "340", "340x70"],
+    [["claude"], "right", 1, "152", "224", "70x224"],
+    [["claude"], "top", 1, "152", "224", "224x70"],
+    [["claude", "github"], "right", 2, "240", "312", "70x312"],
+    [["claude", "github"], "top", 2, "240", "312", "312x70"],
+    [["claude", "codex", "github"], "right", 3, "328", "400", "70x400"],
+    [["claude", "codex", "github"], "top", 3, "328", "400", "400x70"],
   ] as const)("renders and sizes only enabled providers %#", async (enabledProviders, placement, count, railExtent, controlExtent, logicalSize) => {
     mocks.getSettings.mockResolvedValue({
       placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
@@ -202,12 +202,12 @@ describe("native notch interaction bridge", () => {
     expect(buttons.map((button) => button.dataset.provider)).toEqual(["claude", "github"]);
     expect(screen.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
     expect(screen.getByTestId("notch-surface")).toHaveStyle({
-      "--rail-extent": "190px",
-      "--join-track-offset": "-40px",
+      "--rail-extent": "240px",
+      "--join-track-offset": "-44px",
     });
 
     await emitEdgeView({ visibility: "card", placement: "right", provider: "github" });
-    expect(screen.getByTestId("notch-surface")).toHaveStyle({ "--join-track-offset": "40px" });
+    expect(screen.getByTestId("notch-surface")).toHaveStyle({ "--join-track-offset": "44px" });
   });
 
   it("wraps arrow-key focus through only enabled providers", async () => {
@@ -249,7 +249,7 @@ describe("native notch interaction bridge", () => {
   });
 
   it.each([
-    ["right", "370x360"], ["left", "370x360"], ["top", "340x430"],
+    ["right", "370x400"], ["left", "370x400"], ["top", "400x430"],
   ] as const)("publishes the expanded %s native/CSS geometry contract", async (placement, size) => {
     await renderNativeNotch();
     await emitEdgeView({ visibility: "card", placement, provider: "claude" });
@@ -260,7 +260,7 @@ describe("native notch interaction bridge", () => {
 
   it.each([
     "connected", "loading", "unavailable", "notInstalled", "notAuthenticated", "stale",
-  ] as const)("keeps the %s top rail inside the 340x70 one-line CSS contract", async (status) => {
+  ] as const)("keeps the %s top rail inside the 400x70 one-line CSS contract", async (status) => {
     const statusSnapshot: DashboardSnapshot | null = status === "loading"
       ? null
       : {
@@ -280,7 +280,7 @@ describe("native notch interaction bridge", () => {
     const surface = screen.getByTestId("notch-surface");
     expect(surface).toHaveClass("placement-top");
     expect(surface).not.toHaveClass("is-expanded");
-    expect(surface).toHaveAttribute("data-logical-size", "340x70");
+    expect(surface).toHaveAttribute("data-logical-size", "400x70");
     const claude = screen.getByRole("button", { name: /Claude/i });
     expect(claude.querySelectorAll(":scope > .metric-value, :scope > .metric-status"))
       .toHaveLength(1);

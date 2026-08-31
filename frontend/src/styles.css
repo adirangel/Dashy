@@ -11,6 +11,10 @@
   --text-primary: #f4f7f5;
   --text-secondary: #98a39d;
   --track: rgba(255, 255, 255, 0.12);
+  --notch-bg: #0b0b0c;
+  --notch-bg-raised: #121316;
+  --notch-inner-circle: #17181b;
+  --notch-ring-track: rgba(255, 255, 255, 0.14);
   --claude: #ff7548;
   --codex: #62e6a7;
   --github: #8deb78;

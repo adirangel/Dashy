@@ -14,6 +14,7 @@ import {
 import { GitHubCard } from "./GitHubCard";
 import { MetricRail } from "./MetricRail";
 import { UsageProviderCard } from "./UsageProviderCard";
+import geometry from "./geometry.json";
 import "../notch.css";
 
 type NotchAppProps = {
@@ -24,7 +25,6 @@ type NotchAppProps = {
 };
 
 const PROVIDERS: ProviderId[] = ["claude", "codex", "github"];
-const SETTINGS_CONTROL_EXTENT = 70;
 
 const isVisibleView = (view: EdgeViewState) =>
   view.visibility === "rail" || view.visibility === "card" || view.visibility === "pinned";
@@ -256,13 +256,18 @@ export function NotchApp({
   const cardLayout = selectedProvider === "github" || selectedIsStale ? "tall" : "compact";
   const visible = settingsReady && enabledProviders.length > 0 && surface.rendered !== null;
   const showCard = visible && (surface.rendered?.visibility === "card" || surface.rendered?.visibility === "pinned");
-  const railExtent = 30 + enabledProviders.length * 80;
-  const controlExtent = railExtent + SETTINGS_CONTROL_EXTENT;
+  const railExtent = 2 * (geometry.edgeFillet + geometry.tabEndPadding)
+    + enabledProviders.length * geometry.tileExtent;
+  const controlExtent = railExtent + geometry.settingsControlExtent;
   const selectedIndex = Math.max(0, enabledProviders.indexOf(selectedProvider));
-  const joinOffset = (selectedIndex - (enabledProviders.length - 1) / 2) * 80;
+  const joinOffset = (selectedIndex - (enabledProviders.length - 1) / 2) * geometry.tileExtent;
   const logicalSize = showCard
-    ? placement === "top" ? "340x430" : "370x360"
-    : placement === "top" ? `${controlExtent}x70` : `70x${controlExtent}`;
+    ? placement === "top"
+      ? `${geometry.topExpanded.width}x${geometry.topExpanded.height}`
+      : `${geometry.sideExpanded.width}x${geometry.sideExpanded.height}`
+    : placement === "top"
+      ? `${controlExtent}x${geometry.railThickness}`
+      : `${geometry.railThickness}x${controlExtent}`;
   const send = (interaction: NotchInteraction) => {
     if (native) void setNotchInteraction(interaction).catch(() => undefined);
   };
@@ -375,6 +380,13 @@ export function NotchApp({
         "--control-extent": `${controlExtent}px`,
         "--control-start": `${-controlExtent / 2}px`,
         "--join-track-offset": `${joinOffset}px`,
+        "--rail-thickness": `${geometry.railThickness}px`,
+        "--tile-extent": `${geometry.tileExtent}px`,
+        "--tab-end-padding": `${geometry.tabEndPadding}px`,
+        "--edge-fillet": `${geometry.edgeFillet}px`,
+        "--gear-diameter": `${geometry.gearDiameter}px`,
+        "--gear-gap": `${geometry.gearGap}px`,
+        "--tab-radius": `${geometry.tabOuterRadius}px`,
       } as CSSProperties}
       aria-hidden={surface.exit !== null || undefined}
       onAnimationEnd={onSurfaceAnimationEnd}

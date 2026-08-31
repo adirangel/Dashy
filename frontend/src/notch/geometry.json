@@ -1,0 +1,17 @@
+{
+  "railThickness": 70,
+  "tileExtent": 88,
+  "tabEndPadding": 16,
+  "edgeFillet": 16,
+  "gearDiameter": 52,
+  "gearGap": 12,
+  "gearTailMargin": 8,
+  "settingsControlExtent": 72,
+  "cardWidth": 300,
+  "cardHeight": 360,
+  "sideExpanded": { "width": 370, "height": 400 },
+  "topExpanded": { "width": 400, "height": 430 },
+  "maxProviders": 3,
+  "activationZonePx": 28,
+  "tabOuterRadius": 32
+}
