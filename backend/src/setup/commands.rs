@@ -32,7 +32,10 @@ impl SetupState {
 pub async fn get_provider_setup_states(
     dashboard: State<'_, AppState>,
 ) -> Result<Vec<ProviderSetupState>, String> {
-    let snapshot = dashboard.dashboard.get_snapshot(true).await;
+    // Read through the cache instead of forcing a refresh: opening the settings or
+    // onboarding surface must not spawn a CLI process storm. Providers past the cache
+    // TTL (including the empty first-run cache) still refresh for real.
+    let snapshot = dashboard.dashboard.get_snapshot(false).await;
     Ok(ProviderId::ALL
         .into_iter()
         .map(|provider| provider_setup_state(provider, &snapshot))

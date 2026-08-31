@@ -10,7 +10,7 @@ use crate::dashboard::{
     providers::{remaining_timeout, DataProvider},
 };
 
-const GITHUB_TIMEOUT: Duration = Duration::from_secs(20);
+const GITHUB_TIMEOUT: Duration = Duration::from_secs(40);
 const CONTRIBUTIONS_QUERY: &str = "query DashyContributions {\n  viewer {\n    login\n    contributionsCollection {\n      contributionCalendar {\n        weeks {\n          contributionDays { date contributionCount contributionLevel }\n        }\n      }\n    }\n  }\n}";
 
 pub struct GitHubProvider<R: CaptureRunner> {
@@ -436,8 +436,8 @@ mod tests {
         provider.fetch_at(date(2026, 8, 29)).await.unwrap();
 
         let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls[0].2, Duration::from_secs(20));
-        assert_eq!(calls[1].2, Duration::from_secs(13));
+        assert_eq!(calls[0].2, Duration::from_secs(40));
+        assert_eq!(calls[1].2, Duration::from_secs(33));
     }
 
     #[tokio::test(start_paused = true)]
@@ -451,7 +451,7 @@ mod tests {
                 }),
                 Ok(successful_output()),
             ],
-            vec![Duration::from_secs(20), Duration::ZERO],
+            vec![Duration::from_secs(40), Duration::ZERO],
         );
         let provider = GitHubProvider::new(runner.clone());
 
