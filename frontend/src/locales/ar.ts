@@ -3,7 +3,7 @@ import type { Messages } from "./en";
 const ar = {
   providers: { claude: "Claude", codex: "Codex", github: "GitHub", grok: "Grok", cursor: "Cursor" },
   usage: { shortWindow: "الجلسة الحالية", weeklyWindow: "أسبوعي", monthlyWindow: "شهري", remaining: "متبقٍ {{value}}٪", resets: "تُعاد التهيئة {{time}}" },
-  github: { streakDays: "سلسلة {{count}} أيام", today: "اليوم", contributions: "{{count}} مساهمات", heatmapLabel: "مساهمات GitHub خلال آخر 12 أسبوعًا" },
+  github: { streakDays: "سلسلة {{count}} أيام", today: "اليوم", contributions: "{{count}} مساهمات", heatmapLabel: "مساهمات GitHub خلال آخر 12 أسبوعًا", streakUnit: "يوم متتالي", todayUnit: "مساهمات اليوم" },
   cursor: { plan: "الخطة", account: "الحساب", usageHint: "لا يوفر Cursor حدود الاستخدام. راجع الاستخدام في لوحة تحكم Cursor." },
   status: { loading: "جارٍ التحميل", notInstalled: "غير مثبّت", signInRequired: "يلزم تسجيل الدخول", unavailable: "غير متاح", stale: "آخر بيانات محفوظة", lastUpdated: "آخر تحديث {{time}}" },
   guidance: { installClaude: "ثبّت أداة Claude لسطر الأوامر ثم أعد فتح Dashy.", installCodex: "ثبّت أداة Codex لسطر الأوامر ثم أعد فتح Dashy.", installGitHub: "ثبّت أداة GitHub لسطر الأوامر ثم أعد فتح Dashy.", installGrok: "ثبّت أداة Grok لسطر الأوامر ثم أعد فتح Dashy.", installCursor: "ثبّت أداة Cursor لسطر الأوامر ثم أعد فتح Dashy.", signInClaude: "سجّل الدخول إلى Claude ثم أعد المحاولة.", signInCodex: "سجّل الدخول إلى Codex ثم أعد المحاولة.", signInGitHub: "سجّل الدخول إلى GitHub ثم أعد المحاولة.", signInGrok: "سجّل الدخول إلى Grok ثم أعد المحاولة.", signInCursor: "سجّل الدخول إلى Cursor ثم أعد المحاولة.", retryLater: "جرّب {{provider}} مرة أخرى لاحقًا." },

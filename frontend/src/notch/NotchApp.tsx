@@ -1,5 +1,5 @@
 import {
-  useEffect, useReducer, useRef, useState,
+  useCallback, useEffect, useReducer, useRef, useState,
   type AnimationEvent, type CSSProperties, type KeyboardEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -105,6 +105,22 @@ export function NotchApp({
   });
   const edgeView = surface.authoritative;
   const surfaceRef = useRef<HTMLElement>(null);
+  // The card's live height feeds the CSS that centers it on its tile.
+  const cardObserver = useRef<ResizeObserver | null>(null);
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const cardSlotRef = useCallback((element: HTMLDivElement | null) => {
+    cardObserver.current?.disconnect();
+    cardObserver.current = null;
+    if (!element || typeof ResizeObserver === "undefined") {
+      setCardHeight(null);
+      return;
+    }
+    const measure = () => setCardHeight(element.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    cardObserver.current = observer;
+  }, []);
   const lastSelected = useRef<ProviderId>(selectedProp ?? "claude");
   const edgeViewRef = useRef(edgeView);
   edgeViewRef.current = edgeView;
@@ -387,6 +403,7 @@ export function NotchApp({
         "--control-extent": `${controlExtent}px`,
         "--control-start": `${-controlExtent / 2}px`,
         "--join-track-offset": `${joinOffset}px`,
+        "--card-height": `${cardHeight || geometry.cardHeight}px`,
         "--rail-thickness": `${geometry.railThickness}px`,
         "--tile-extent": `${geometry.tileExtent}px`,
         "--tab-end-padding": `${geometry.tabEndPadding}px`,
@@ -434,6 +451,7 @@ export function NotchApp({
       </button>
       {showCard && <div className="notch-join" data-provider={selectedProvider} aria-hidden="true" />}
       {showCard && <div
+        ref={cardSlotRef}
         className="provider-card-slot"
         data-testid="provider-card-region"
         data-provider={selectedProvider}

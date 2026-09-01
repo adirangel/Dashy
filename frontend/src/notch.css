@@ -214,60 +214,96 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
-  color: #d6d6d6;
+  color: #e9eef0;
   background: transparent;
   box-shadow: none;
   cursor: pointer;
-  transition: background-color 170ms ease, box-shadow 170ms ease, transform 170ms ease;
+  /* The bubble unfurls from where the tail curls, not from its own center. */
+  transform-origin: 50% 22%;
+  transition: background-color 170ms ease, box-shadow 170ms ease, transform 200ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.placement-top .settings-launcher { transform-origin: 22% 50%; }
+
+/* The inner dark disc mirrors the ring tiles, so the open bubble reads as one
+   more tile rather than a foreign floating button. */
+.settings-launcher::after {
+  content: "";
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--notch-inner-circle);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07);
+  opacity: 0;
+  transform: scale(.55);
+  transition: opacity 140ms ease, transform 200ms cubic-bezier(.2, .8, .2, 1);
+  pointer-events: none;
 }
 
 .settings-launcher svg {
-  width: 24px;
-  height: 24px;
+  position: relative;
+  z-index: 1;
+  width: 19px;
+  height: 19px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.8;
+  stroke-width: 1.7;
   opacity: 0;
-  transform: scale(.72);
-  transition: opacity 150ms ease, transform 170ms ease;
+  transform: scale(.6) rotate(-70deg);
+  transition: opacity 140ms ease, transform 240ms cubic-bezier(.2, .8, .2, 1);
 }
 
 /* The resting tail is a lower arc of a circle that curls from under the tab toward
    the screen edge, hinting at the gear bubble that grows here on hover. */
 .settings-launcher::before {
+  --tail-lift: translateY(-6px);
   content: "";
   position: absolute;
-  width: 34px;
-  height: 34px;
-  border: 6px solid transparent;
-  border-top-color: var(--notch-bg);
-  border-right-color: var(--notch-bg);
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
+  background: var(--notch-bg);
+  /* A disc minus an offset disc leaves a crescent that is thick where it meets
+     the tab and tapers to a point; the clip keeps only the top-right quadrant,
+     so the tail sweeps from the tab's end toward the screen edge. */
+  -webkit-mask: radial-gradient(20px circle at 25px 25px, transparent 97%, #000 100%);
+  mask: radial-gradient(20px circle at 25px 25px, transparent 97%, #000 100%);
+  clip-path: polygon(50% -30%, 140% -30%, 140% 50%, 50% 50%);
   opacity: .96;
-  transform: rotate(-8deg);
+  transform: var(--tail-lift) rotate(-8deg);
   transition: opacity 120ms ease, transform 170ms ease;
   pointer-events: none;
 }
 
-.placement-left .settings-launcher::before { transform: scaleX(-1) rotate(-8deg); }
-.placement-top .settings-launcher::before { transform: rotate(-98deg); }
+.placement-left .settings-launcher::before { transform: var(--tail-lift) scaleX(-1) rotate(-8deg); }
+.placement-top .settings-launcher::before { --tail-lift: translateX(-6px); transform: var(--tail-lift) rotate(-98deg); }
 
+/* The open bubble slides back toward the tab so the two black shapes touch
+   and read as one piece: the gear hangs off the tab's rounded end. */
 .settings-launcher:is(:hover, :focus-visible) {
+  --launcher-attach: translateY(-12px);
   background: var(--notch-bg);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .5);
-  transform: scale(1.04);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .5);
+  transform: var(--launcher-attach) scale(1.04);
 }
+.placement-top .settings-launcher:is(:hover, :focus-visible) { --launcher-attach: translateX(-12px); }
 .settings-launcher:is(:hover, :focus-visible)::before {
   opacity: 0;
-  transform: scale(.7);
+  transform: var(--tail-lift) scale(.7);
 }
-.settings-launcher:is(:hover, :focus-visible) svg {
+.settings-launcher:is(:hover, :focus-visible)::after {
   opacity: 1;
   transform: scale(1);
 }
-.settings-launcher:active { transform: scale(.97); }
+.settings-launcher:is(:hover, :focus-visible) svg {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+.settings-launcher:active { transform: var(--launcher-attach, none) scale(.97); }
+.settings-launcher:active svg { transform: scale(1) rotate(30deg); }
 .settings-launcher:focus-visible { outline-offset: 3px; }
 
 .placement-right .settings-launcher,
@@ -412,19 +448,15 @@
 
 .placement-right .provider-card-slot,
 .placement-left .provider-card-slot {
-  /* The ceiling grows with the surface so cards for far tiles on 4-5 provider
-     rails can follow their join diamond instead of floating near the top. */
+  /* Center the card on its tile (50% - 36px + offset is the tile center, the
+     same point the join diamond uses); the clamp keeps the whole card inside
+     the surface for tiles near either end. --card-height is measured live. */
   inset-block-start: clamp(
     16px,
-    calc(50% - 59px + var(--join-track-offset)),
-    max(150px, calc(100% - 376px))
+    calc(50% - 36px + var(--join-track-offset) - var(--card-height, 360px) / 2),
+    calc(100% - var(--card-height, 360px) - 16px)
   );
   transform: none;
-}
-.placement-right .provider-card-slot[data-layout="tall"],
-.placement-left .provider-card-slot[data-layout="tall"] {
-  inset-block-start: 50%;
-  transform: translateY(-50%);
 }
 .placement-right .provider-card-slot { right: 70px; }
 .placement-left .provider-card-slot { left: 70px; }
@@ -478,35 +510,93 @@
   left: calc(50% - 36px + var(--join-track-offset) - 9px);
 }
 
-.provider-card__header { margin-block-end: 18px; }
-.provider-card__eyebrow {
-  margin: 0 0 3px;
-  color: var(--provider-accent);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .14em;
-  text-transform: uppercase;
+/* A thin accent line along the top edge ties the card to its tile color. */
+.provider-card::before {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 1;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--provider-accent) 35%, var(--provider-accent) 65%, transparent);
+  opacity: .7;
+  content: "";
+  pointer-events: none;
 }
-.provider-card h2 { margin: 0; color: var(--text-primary); font-size: 21px; font-weight: 620; letter-spacing: -.025em; }
 
-.usage-windows { display: grid; gap: 17px; }
-.usage-window { display: grid; gap: 8px; }
-.usage-window__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.usage-window h3 { max-width: 54%; margin: 0; color: var(--text-primary); font-size: 12px; font-weight: 560; line-height: 1.25; }
-.usage-window strong { color: var(--provider-accent); font-size: 12px; font-weight: 650; white-space: nowrap; }
-.usage-window__track { height: 5px; overflow: hidden; border-radius: 999px; background: var(--track); direction: ltr; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.provider-card__header { display: flex; align-items: center; gap: 10px; margin-block-end: 14px; }
+.provider-card__disc {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--notch-inner-circle);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .06),
+    0 0 0 3px color-mix(in srgb, var(--provider-accent) 14%, transparent);
+}
+.provider-card__disc .provider-glyph { width: 17px; height: 17px; color: var(--provider-accent); }
+.provider-card__title { display: grid; flex: 1 1 auto; min-width: 0; gap: 2px; }
+.provider-card h2 { margin: 0; color: var(--text-primary); font-size: 15px; font-weight: 640; letter-spacing: -.01em; line-height: 1.15; }
+.provider-card__state { display: inline-flex; align-items: center; gap: 5px; color: #9fd9bd; font-size: 10.5px; font-weight: 550; line-height: 1.2; }
+.provider-card__state-dot { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: var(--codex); }
+.status-stale .provider-card__state { color: var(--warning); }
+.status-stale .provider-card__state-dot { background: var(--warning); }
+.provider-card__updated {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+
+/* Inset boxes shared by usage windows, stat tiles, and the heatmap. */
+.usage-window,
+.card-stat,
+.contribution-heatmap {
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.usage-windows { display: grid; gap: 10px; }
+.usage-window { display: grid; gap: 7px; padding: 10px 11px; }
+.usage-window__row { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.usage-window__text { display: grid; min-width: 0; gap: 2px; }
+.usage-window h3 { margin: 0; color: var(--text-primary); font-size: 12px; font-weight: 600; line-height: 1.2; }
+.usage-window p { margin: 0; color: var(--text-secondary); font-size: 10px; line-height: 1.25; }
+.usage-window__value { flex: 0 0 auto; color: var(--provider-accent); font-size: 22px; font-weight: 680; letter-spacing: -.02em; line-height: 1; white-space: nowrap; }
+.usage-window__value small { margin-inline-start: 1px; font-size: 11px; font-weight: 650; }
+.usage-window:first-child .usage-window__value { font-size: 26px; }
+.usage-window__track { height: 4px; overflow: hidden; border-radius: 999px; background: var(--track); direction: ltr; }
 .usage-window__track span { display: block; height: 100%; border-radius: inherit; background: var(--provider-accent); box-shadow: 0 0 10px color-mix(in srgb, var(--provider-accent) 35%, transparent); }
-.usage-window p { margin: -2px 0 0; color: var(--text-secondary); font-size: 10px; line-height: 1.35; }
 
-.github-summary { display: grid; grid-template-columns: .8fr 1.2fr; gap: 8px; margin-block-end: 17px; }
-.placement-top .github-summary { grid-template-columns: .75fr 1.25fr; }
-.github-summary > div { min-width: 0; padding: 10px; border: 1px solid rgba(255, 255, 255, .07); border-radius: 13px; background: rgba(255, 255, 255, .035); }
-.github-summary span { display: block; color: var(--text-secondary); font-size: 9px; line-height: 1.25; }
-.github-summary strong { display: block; margin-block-start: 4px; overflow: hidden; color: var(--text-primary); font-size: 15px; font-weight: 620; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.github-summary strong b { font: inherit; }
-.github-summary strong small { display: block; margin-block-start: 2px; color: var(--text-secondary); font-size: 9px; font-weight: 550; }
+.card-stats { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; margin-block-end: 10px; }
+.card-stat { display: grid; min-width: 0; gap: 3px; padding: 10px 11px; }
+.card-stat strong { display: block; overflow: hidden; color: var(--text-primary); font-size: 22px; font-weight: 680; letter-spacing: -.02em; line-height: 1; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.card-stat strong b { font: inherit; }
+.card-stat strong small { display: block; margin-block-start: 3px; color: var(--text-secondary); font-size: 9px; font-weight: 550; letter-spacing: 0; }
+.card-stat span { display: block; color: var(--text-secondary); font-size: 10px; line-height: 1.2; }
+.card-stat__text { font-size: 15px !important; line-height: 1.2 !important; }
+.card-stat__tier { text-transform: capitalize; }
+.card-stat__email { font-size: 13px !important; }
 
-.contribution-heatmap { width: 100%; }
+.contribution-heatmap { width: 100%; padding: 10px 11px 9px; }
 .heatmap-months { display: grid; grid-template-columns: repeat(13, 1fr); min-height: 13px; color: var(--text-secondary); font-size: 8px; }
 .heatmap-months span { white-space: nowrap; }
 .heatmap-grid { display: grid; grid-template: repeat(7, 8px) / repeat(13, 8px); gap: 3px; justify-content: space-between; }
@@ -531,7 +621,6 @@
 .status-unavailable .provider-state strong { color: var(--error); }
 
 [dir="rtl"] .provider-card { text-align: right; }
-[dir="rtl"] .provider-card__eyebrow { letter-spacing: .04em; text-transform: none; }
 
 @keyframes card-in {
   from { opacity: 0; transform: translateX(8px); }

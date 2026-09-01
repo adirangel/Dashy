@@ -3,7 +3,7 @@ import type { Messages } from "./en";
 const he = {
   providers: { claude: "Claude", codex: "Codex", github: "GitHub", grok: "Grok", cursor: "Cursor" },
   usage: { shortWindow: "הפעלה נוכחית", weeklyWindow: "שבועי", monthlyWindow: "חודשי", remaining: "נותרו {{value}}%", resets: "מתאפס {{time}}" },
-  github: { streakDays: "רצף של {{count}} ימים", today: "היום", contributions: "{{count}} תרומות", heatmapLabel: "תרומות GitHub ב־12 השבועות האחרונים" },
+  github: { streakDays: "רצף של {{count}} ימים", today: "היום", contributions: "{{count}} תרומות", heatmapLabel: "תרומות GitHub ב־12 השבועות האחרונים", streakUnit: "ימי רצף", todayUnit: "תרומות היום" },
   cursor: { plan: "מסלול", account: "חשבון", usageHint: "Cursor אינו מדווח על מגבלות שימוש. בדקו את השימוש בלוח הבקרה של Cursor." },
   status: { loading: "טוען", notInstalled: "לא מותקן", signInRequired: "נדרשת התחברות", unavailable: "לא זמין", stale: "נתון אחרון שנשמר", lastUpdated: "עודכן לאחרונה {{time}}" },
   guidance: { installClaude: "התקינו את כלי שורת הפקודה של Claude ופתחו שוב את Dashy.", installCodex: "התקינו את כלי שורת הפקודה של Codex ופתחו שוב את Dashy.", installGitHub: "התקינו את כלי שורת הפקודה של GitHub ופתחו שוב את Dashy.", installGrok: "התקינו את כלי שורת הפקודה של Grok ופתחו שוב את Dashy.", installCursor: "התקינו את כלי שורת הפקודה של Cursor ופתחו שוב את Dashy.", signInClaude: "התחברו ל־Claude ונסו שוב.", signInCodex: "התחברו ל־Codex ונסו שוב.", signInGitHub: "התחברו ל־GitHub ונסו שוב.", signInGrok: "התחברו ל־Grok ונסו שוב.", signInCursor: "התחברו ל־Cursor ונסו שוב.", retryLater: "נסו את {{provider}} שוב מאוחר יותר." },
