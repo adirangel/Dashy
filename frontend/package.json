@@ -1,7 +1,7 @@
 {
   "name": "dashy-frontend",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -12,6 +12,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
+    "dashy-workspace": "file:..",
     "i18next": "^26.4.0",
     "react": "latest",
     "react-dom": "latest",
