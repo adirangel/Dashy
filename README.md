@@ -173,6 +173,10 @@ public release.
 Node.js, Rust, Cargo, Tauri, and Visual Studio Build Tools are development
 requirements only. End users do not install them.
 
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers the rules that never bend (CLI-only, bounded parsing, every locale ships), the local gates that CI runs on every pull request, and how to report problems. Security issues go through [SECURITY.md](SECURITY.md).
+
 ## Contributor prerequisites
 
 The requirements in this section apply only when developing or packaging Dashy
@@ -328,3 +332,7 @@ build job and a draft-first publish. The full guarded procedure lives in
 - **A saved monitor is disconnected:** Dashy falls back to the primary monitor; reconnect
   it or choose a new monitor in Settings.
 - **The tray is not visible:** check the Windows hidden-icons area.
+
+## License
+
+Dashy is released under the [MIT License](LICENSE).
