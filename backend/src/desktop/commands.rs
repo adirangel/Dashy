@@ -340,6 +340,22 @@ pub async fn open_settings(window: WebviewWindow, app: AppHandle) -> Result<(), 
     super::show_settings_window(&app)
 }
 
+/// Opens the folder holding the local diagnostics log in Explorer. The log
+/// only ever contains refresh timings and error categories, so exposing the
+/// folder reveals nothing the provider CLIs would not print themselves.
+#[tauri::command]
+pub async fn open_diagnostics_folder(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
+    crate::authorize_caller(&window, &["settings"])?;
+    let directory = app
+        .path()
+        .app_log_dir()
+        .map_err(|error| format!("diagnostics folder is unavailable: {error}"))?;
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("diagnostics folder could not be created: {error}"))?;
+    tauri_plugin_opener::open_path(directory, None::<&str>)
+        .map_err(|error| format!("diagnostics folder could not be opened: {error}"))
+}
+
 #[tauri::command]
 pub async fn set_tray_labels(
     window: WebviewWindow,

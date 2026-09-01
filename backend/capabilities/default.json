@@ -40,6 +40,7 @@
       "allow-get-provider-setup-states",
       "allow-install-provider",
       "allow-login-provider",
+      "allow-open-diagnostics-folder",
       {
         "identifier": "opener:allow-open-url",
         "allow": [
