@@ -17,7 +17,7 @@ export type Messages = {
   };
   settings: { title: string; placement: string; right: string; left: string; top: string; monitor: string; language: string; fullscreen: string; startup: string; providerStatus: string };
   menu: { show: string; refreshAll: string; placement: string; monitor: string; primaryMonitor: string; settings: string; quit: string };
-  actions: { refresh: string; refreshAll: string; openSettings: string; close: string };
+  actions: { refreshAll: string };
 };
 
 const en = {
@@ -39,7 +39,7 @@ const en = {
   },
   settings: { title: "Settings", placement: "Placement", right: "Right", left: "Left", top: "Top", monitor: "Monitor", language: "Language", fullscreen: "Always show over fullscreen apps", startup: "Launch at startup", providerStatus: "Provider status" },
   menu: { show: "Show Dashy", refreshAll: "Refresh all providers", placement: "Placement", monitor: "Monitor", primaryMonitor: "Primary monitor", settings: "Settings", quit: "Quit Dashy" },
-  actions: { refresh: "Refresh", refreshAll: "Refresh all", openSettings: "Open settings", close: "Close" },
+  actions: { refreshAll: "Refresh all" },
 } satisfies Messages;
 
 export default en;

@@ -19,7 +19,7 @@ const ja = {
   },
   settings: { title: "設定", placement: "配置", right: "右", left: "左", top: "上", monitor: "モニター", language: "言語", fullscreen: "全画面アプリの上にも常に表示", startup: "起動時に開く", providerStatus: "プロバイダーの状態" },
   menu: { show: "Dashy を表示", refreshAll: "すべてのプロバイダーを更新", placement: "配置", monitor: "モニター", primaryMonitor: "メインモニター", settings: "設定", quit: "Dashy を終了" },
-  actions: { refresh: "更新", refreshAll: "すべて更新", openSettings: "設定を開く", close: "閉じる" },
+  actions: { refreshAll: "すべて更新" },
 } satisfies Messages;
 
 export default ja;

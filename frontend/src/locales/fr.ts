@@ -19,7 +19,7 @@ const fr = {
   },
   settings: { title: "Paramètres", placement: "Position", right: "Droite", left: "Gauche", top: "Haut", monitor: "Écran", language: "Langue", fullscreen: "Toujours afficher au-dessus des applications en plein écran", startup: "Lancer au démarrage", providerStatus: "État des services" },
   menu: { show: "Afficher Dashy", refreshAll: "Actualiser tous les services", placement: "Position", monitor: "Écran", primaryMonitor: "Écran principal", settings: "Paramètres", quit: "Quitter Dashy" },
-  actions: { refresh: "Actualiser", refreshAll: "Tout actualiser", openSettings: "Ouvrir les paramètres", close: "Fermer" },
+  actions: { refreshAll: "Tout actualiser" },
 } satisfies Messages;
 
 export default fr;

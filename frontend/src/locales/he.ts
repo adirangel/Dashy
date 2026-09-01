@@ -19,7 +19,7 @@ const he = {
   },
   settings: { title: "הגדרות", placement: "מיקום", right: "ימין", left: "שמאל", top: "למעלה", monitor: "צג", language: "שפה", fullscreen: "הצג תמיד מעל יישומים במסך מלא", startup: "הפעל בעת האתחול", providerStatus: "מצב ספקים" },
   menu: { show: "הצג את Dashy", refreshAll: "רענן את כל הספקים", placement: "מיקום", monitor: "צג", primaryMonitor: "צג ראשי", settings: "הגדרות", quit: "צא מ־Dashy" },
-  actions: { refresh: "רענן", refreshAll: "רענן הכול", openSettings: "פתח הגדרות", close: "סגור" },
+  actions: { refreshAll: "רענן הכול" },
 } satisfies Messages;
 
 export default he;

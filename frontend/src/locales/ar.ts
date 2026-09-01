@@ -19,7 +19,7 @@ const ar = {
   },
   settings: { title: "الإعدادات", placement: "الموضع", right: "يمين", left: "يسار", top: "أعلى", monitor: "الشاشة", language: "اللغة", fullscreen: "العرض دائمًا فوق تطبيقات ملء الشاشة", startup: "التشغيل عند بدء النظام", providerStatus: "حالة المزوّدين" },
   menu: { show: "إظهار Dashy", refreshAll: "تحديث جميع المزوّدين", placement: "الموضع", monitor: "الشاشة", primaryMonitor: "الشاشة الرئيسية", settings: "الإعدادات", quit: "إنهاء Dashy" },
-  actions: { refresh: "تحديث", refreshAll: "تحديث الكل", openSettings: "فتح الإعدادات", close: "إغلاق" },
+  actions: { refreshAll: "تحديث الكل" },
 } satisfies Messages;
 
 export default ar;

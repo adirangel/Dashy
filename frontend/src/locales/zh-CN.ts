@@ -19,7 +19,7 @@ const zhCN = {
   },
   settings: { title: "设置", placement: "位置", right: "右侧", left: "左侧", top: "顶部", monitor: "显示器", language: "语言", fullscreen: "始终显示在全屏应用之上", startup: "开机启动", providerStatus: "服务状态" },
   menu: { show: "显示 Dashy", refreshAll: "刷新所有服务", placement: "位置", monitor: "显示器", primaryMonitor: "主显示器", settings: "设置", quit: "退出 Dashy" },
-  actions: { refresh: "刷新", refreshAll: "全部刷新", openSettings: "打开设置", close: "关闭" },
+  actions: { refreshAll: "全部刷新" },
 } satisfies Messages;
 
 export default zhCN;

@@ -19,7 +19,7 @@ const ru = {
   },
   settings: { title: "Настройки", placement: "Положение", right: "Справа", left: "Слева", top: "Сверху", monitor: "Монитор", language: "Язык", fullscreen: "Всегда показывать поверх полноэкранных приложений", startup: "Запускать при входе", providerStatus: "Состояние сервисов" },
   menu: { show: "Показать Dashy", refreshAll: "Обновить все сервисы", placement: "Положение", monitor: "Монитор", primaryMonitor: "Основной монитор", settings: "Настройки", quit: "Выйти из Dashy" },
-  actions: { refresh: "Обновить", refreshAll: "Обновить всё", openSettings: "Открыть настройки", close: "Закрыть" },
+  actions: { refreshAll: "Обновить всё" },
 } satisfies Messages;
 
 export default ru;
