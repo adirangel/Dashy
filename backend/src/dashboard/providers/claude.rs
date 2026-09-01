@@ -161,12 +161,12 @@ where
         Some(UsageWindowData {
             label_key: UsageWindowKind::Short,
             remaining_percent: 100 - session.used_percent,
-            resets_at: Some(session.resets_at),
+            resets_at: session.resets_at,
         }),
         Some(UsageWindowData {
             label_key: UsageWindowKind::Weekly,
             remaining_percent: 100 - week.used_percent,
-            resets_at: Some(week.resets_at),
+            resets_at: week.resets_at,
         }),
     )
 }
@@ -175,21 +175,33 @@ fn parse_compact_window<Tz>(value: &str, now: &DateTime<Tz>) -> Result<UsageWind
 where
     Tz: TimeZone,
 {
-    let (percent, reset_text) = value
+    if let Some((percent, reset_text)) = value
         .split_once(COMPACT_WINDOW_DELIMITER)
         .filter(|(_, reset)| !reset.is_empty() && !reset.contains(COMPACT_WINDOW_DELIMITER))
+    {
+        return Ok(UsageWindow {
+            used_percent: parse_used_percent(percent)?,
+            resets_at: Some(parse_reset_timestamp(reset_text, now)?),
+        });
+    }
+
+    // On a fresh machine with nothing consumed, the CLI prints "0% used" with no
+    // reset clause at all; a bare percentage is a valid window without a reset.
+    let percent = value
+        .strip_suffix("% used")
         .ok_or(ProviderError::UnsupportedOutput)?;
-    let used_percent = percent
+    Ok(UsageWindow {
+        used_percent: parse_used_percent(percent)?,
+        resets_at: None,
+    })
+}
+
+fn parse_used_percent(percent: &str) -> Result<u8, ProviderError> {
+    percent
         .parse::<u8>()
         .ok()
         .filter(|parsed| *parsed <= 100 && parsed.to_string() == percent)
-        .ok_or(ProviderError::UnsupportedOutput)?;
-    let resets_at = parse_reset_timestamp(reset_text, now)?;
-
-    Ok(UsageWindow {
-        used_percent,
-        resets_at,
-    })
+        .ok_or(ProviderError::UnsupportedOutput)
 }
 
 fn parse_legacy_usage_summary_at<Tz>(
@@ -256,12 +268,12 @@ where
         Some(UsageWindowData {
             label_key: UsageWindowKind::Short,
             remaining_percent: 100 - session.used_percent,
-            resets_at: Some(session.resets_at),
+            resets_at: session.resets_at,
         }),
         Some(UsageWindowData {
             label_key: UsageWindowKind::Weekly,
             remaining_percent: 100 - week.used_percent,
-            resets_at: Some(week.resets_at),
+            resets_at: week.resets_at,
         }),
     )
 }
@@ -274,26 +286,30 @@ fn parse_legacy_window<Tz>(lines: &[&str], now: &DateTime<Tz>) -> Result<UsageWi
 where
     Tz: TimeZone,
 {
-    if lines.len() != 2 {
+    // The reset line disappears when nothing is consumed, so one bare
+    // percentage line is a valid window without a reset.
+    if lines.is_empty() || lines.len() > 2 {
         return Err(ProviderError::UnsupportedOutput);
     }
 
     let percent = lines[0]
         .strip_suffix("% used")
         .ok_or(ProviderError::UnsupportedOutput)?;
-    let used_percent = percent
-        .parse::<u8>()
-        .ok()
-        .filter(|parsed| *parsed <= 100 && parsed.to_string() == percent)
-        .ok_or(ProviderError::UnsupportedOutput)?;
-    let reset_text = lines[1]
-        .strip_prefix("Resets ")
-        .filter(|value| !value.is_empty())
-        .ok_or(ProviderError::UnsupportedOutput)?;
+    let used_percent = parse_used_percent(percent)?;
+    let resets_at = match lines.get(1) {
+        Some(line) => {
+            let reset_text = line
+                .strip_prefix("Resets ")
+                .filter(|value| !value.is_empty())
+                .ok_or(ProviderError::UnsupportedOutput)?;
+            Some(parse_reset_timestamp(reset_text, now)?)
+        }
+        None => None,
+    };
 
     Ok(UsageWindow {
         used_percent,
-        resets_at: parse_reset_timestamp(reset_text, now)?,
+        resets_at,
     })
 }
 
@@ -617,7 +633,7 @@ struct UsageCommandResponse {
 
 struct UsageWindow {
     used_percent: u8,
-    resets_at: DateTime<Utc>,
+    resets_at: Option<DateTime<Utc>>,
 }
 
 #[cfg(test)]
@@ -705,6 +721,65 @@ mod tests {
     }
 
     #[test]
+    fn fresh_machine_zero_usage_without_reset_clauses_is_connected() {
+        // Verbatim shape from Claude Code 2.1.248 on a machine with nothing
+        // consumed: both windows print a bare percentage and no reset clause.
+        let response = usage_response(
+            "You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 0% used\nCurrent week (all models): 0% used\n\nWhat's contributing to your limits usage?\nApproximate, based on local sessions on this machine — does not include other devices or claude.ai. Behaviors are independent characteristics, not a breakdown.\n\nLast 24h · 42 requests · 1 session\n  100% of your usage came from subagent-heavy sessions\nLast 7d · 1419 requests · 8 sessions\n  Top subagents: general-purpose 12%, Explore 2%, Plan 1%\n  Top MCP servers: Claude Browser 8%",
+        );
+
+        let usage = parse_usage_response(&response).unwrap();
+        let short = usage.short_window.unwrap();
+        let weekly = usage.weekly_window.unwrap();
+
+        assert_eq!(short.remaining_percent, 100);
+        assert_eq!(short.resets_at, None);
+        assert_eq!(weekly.remaining_percent, 100);
+        assert_eq!(weekly.resets_at, None);
+    }
+
+    #[test]
+    fn a_window_with_a_reset_and_one_without_parse_together() {
+        let now = FixedOffset::east_opt(3 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 29, 12, 0, 0)
+            .unwrap();
+
+        let usage = parse_usage_summary_at(
+            "Current session: 23% used · resets in 2 hr\nCurrent week (all models): 0% used",
+            now,
+        )
+        .unwrap();
+        let short = usage.short_window.unwrap();
+        let weekly = usage.weekly_window.unwrap();
+
+        assert_eq!(short.remaining_percent, 77);
+        assert_eq!(
+            short.resets_at,
+            Some(Utc.with_ymd_and_hms(2026, 8, 29, 11, 0, 0).unwrap())
+        );
+        assert_eq!(weekly.remaining_percent, 100);
+        assert_eq!(weekly.resets_at, None);
+    }
+
+    #[test]
+    fn bare_percentages_stay_strict_about_shape() {
+        for summary in [
+            // A dangling delimiter or trailing text is not a bare percentage.
+            "Current session: 5% used · resets \nCurrent week (all models): 0% used",
+            "Current session: 0% used extra\nCurrent week (all models): 0% used",
+            "Current session: 0 % used\nCurrent week (all models): 0% used",
+            "Current session: 007% used\nCurrent week (all models): 0% used",
+            "Current session: 101% used\nCurrent week (all models): 0% used",
+        ] {
+            assert_eq!(
+                parse_usage_response(&usage_response(summary)),
+                Err(ProviderError::UnsupportedOutput)
+            );
+        }
+    }
+
+    #[test]
     fn accepts_the_legacy_multiline_usage_result_without_restoring_pty_scraping() {
         let now = FixedOffset::east_opt(3 * 3600)
             .unwrap()
@@ -717,6 +792,23 @@ mod tests {
         let usage = parse_usage_response_at(&response, now).unwrap();
 
         assert_eq!(usage.short_window.unwrap().remaining_percent, 77);
+        assert_eq!(usage.weekly_window.unwrap().remaining_percent, 59);
+    }
+
+    #[test]
+    fn accepts_a_legacy_window_whose_reset_line_is_absent_at_zero_usage() {
+        let now = FixedOffset::east_opt(3 * 3600)
+            .unwrap()
+            .with_ymd_and_hms(2026, 8, 29, 12, 0, 0)
+            .unwrap();
+        let response =
+            usage_response("Current session\n0% used\n\nAll models\n41% used\nResets Thu 12:00 AM");
+
+        let usage = parse_usage_response_at(&response, now).unwrap();
+        let short = usage.short_window.unwrap();
+
+        assert_eq!(short.remaining_percent, 100);
+        assert_eq!(short.resets_at, None);
         assert_eq!(usage.weekly_window.unwrap().remaining_percent, 59);
     }
 
@@ -934,6 +1026,47 @@ mod tests {
         assert!(json["weeklyWindow"]["resetsAt"].is_string());
         assert!(json["shortWindow"].get("resetLabel").is_none());
         assert!(json["weeklyWindow"].get("resetLabel").is_none());
+    }
+
+    #[test]
+    fn an_absent_reset_serializes_as_an_explicit_null_key() {
+        // The frontend contract is `resetsAt: string | null`, never undefined:
+        // the key must stay present when the CLI printed no reset clause.
+        let usage = parse_usage_summary_at(
+            "Current session: 0% used\nCurrent week (all models): 0% used",
+            Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),
+        )
+        .unwrap();
+        let snapshot = crate::dashboard::models::UsageSnapshot::connected(
+            usage,
+            Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),
+        );
+        let json = serde_json::to_value(snapshot).unwrap();
+
+        let short = json["shortWindow"].as_object().unwrap();
+        let weekly = json["weeklyWindow"].as_object().unwrap();
+        assert!(short.contains_key("resetsAt") && short["resetsAt"].is_null());
+        assert!(weekly.contains_key("resetsAt") && weekly["resetsAt"].is_null());
+    }
+
+    #[test]
+    fn malformed_legacy_window_bodies_stay_rejected() {
+        for summary in [
+            // An empty window body must not panic and must not parse.
+            "Current session\n\nAll models\n41% used\nResets Thu 12:00 AM",
+            // Trailing junk after the reset line is not a valid window.
+            "Current session\n23% used\nResets in 2 hr\nextra junk\n\nAll models\n41% used\nResets Thu 12:00 AM",
+            // A lone reset line without a percentage is not a valid window.
+            "Current session\nResets in 2 hr\n\nAll models\n41% used\nResets Thu 12:00 AM",
+            // A second line that is not a reset line is not a valid window.
+            "Current session\n23% used\nnot a reset\n\nAll models\n41% used\nResets Thu 12:00 AM",
+        ] {
+            assert_eq!(
+                parse_usage_response(&usage_response(summary)),
+                Err(ProviderError::UnsupportedOutput),
+                "summary should be rejected: {summary:?}"
+            );
+        }
     }
 
     type CaptureCall = (AllowedProgram, Vec<String>, Duration);
