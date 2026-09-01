@@ -555,7 +555,7 @@ describe("ProviderManager", () => {
     expect(document.body.textContent).not.toContain("raw rejected setup details");
   });
 
-  it("renders stable provider order and associates each card, status, selection, and confirmation", () => {
+  it("renders stable provider order and associates each row, status, switch, and confirmation", () => {
     renderManager({ states: setupStates({ claude: "notAuthenticated" }).reverse() });
     expect(screen.getAllByRole("article").map((card) =>
       within(card).getByRole("heading").textContent
@@ -563,9 +563,9 @@ describe("ProviderManager", () => {
     const claudeCard = screen.getByRole("article", { name: "Claude" });
     expect(claudeCard).toHaveAttribute("data-provider", "claude");
     expect(claudeCard).toHaveAttribute("data-status", "notAuthenticated");
-    expect(within(claudeCard).getByText("Sign in required")).toHaveClass("provider-setup-status");
-    expect(within(claudeCard).getByText("Use Claude in Dashy").closest("label"))
-      .toHaveClass("provider-setup-selection");
+    expect(within(claudeCard).getByRole("status")).toHaveTextContent("Sign in required");
+    expect(within(claudeCard).getByRole("checkbox", { name: "Use Claude in Dashy" }))
+      .toHaveClass("settings-switch");
 
     fireEvent.click(within(claudeCard).getByRole("button", { name: "Connect Claude" }));
     const confirmation = within(claudeCard).getByRole("group", { name: "Open official login" });
@@ -576,9 +576,8 @@ describe("ProviderManager", () => {
       .toHaveClass("provider-setup-confirmation-primary");
   });
 
-  it("renders the compact row variant with a glyph, status dot, labelled switch, and inline confirmation", () => {
+  it("renders each provider as a row with a glyph, status dot, labelled switch, and inline confirmation", () => {
     render(<ProviderManager
-      variant="row"
       controller={{
         states: setupStates({ codex: "notAuthenticated", grok: "notInstalled" }),
         busyProvider: null, busyAction: null, failureProvider: null, loadFailed: false,

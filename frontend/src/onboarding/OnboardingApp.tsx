@@ -156,16 +156,18 @@ export function OnboardingApp() {
     tabIndex={0}
   >
     <header className="onboarding-header">
-      <p className="onboarding-eyebrow">{t("setup.eyebrow")}</p>
-      <h1 className="onboarding-title" ref={stepHeading} tabIndex={-1}>
-        {languageStep ? t("setup.languageTitle") : t("setup.title")}
-      </h1>
+      <p className="settings-eyebrow">{t("setup.eyebrow")}</p>
+      <div className="onboarding-title-row">
+        <h1 className="onboarding-title" ref={stepHeading} tabIndex={-1}>
+          {languageStep ? t("setup.languageTitle") : t("setup.title")}
+        </h1>
+        <span className="settings-chip">
+          {t("setup.stepLabel", { current: languageStep ? 1 : 2, total: STEP_COUNT })}
+        </span>
+      </div>
       <span className="onboarding-description">
         {languageStep ? t("setup.languageDescription") : t("setup.description")}
       </span>
-      <p className="onboarding-step-label">
-        {t("setup.stepLabel", { current: languageStep ? 1 : 2, total: STEP_COUNT })}
-      </p>
     </header>
 
     {languageStep && <div
@@ -190,12 +192,17 @@ export function OnboardingApp() {
       </label>)}
     </div>}
 
-    {!languageStep && (controller.states === null || selectionReady) && <ProviderManager
-      controller={controller}
-      enabledProviders={enabledProviders}
-      onEnabledChange={setEnabledProviders}
-      actionsRequireSelection
-    />}
+    {!languageStep && (controller.states === null || selectionReady) && <section
+      className="settings-group settings-group--providers onboarding-providers"
+      aria-label={t("setup.title")}
+    >
+      <ProviderManager
+        controller={controller}
+        enabledProviders={enabledProviders}
+        onEnabledChange={setEnabledProviders}
+        actionsRequireSelection
+      />
+    </section>}
 
     <footer className="onboarding-footer">
       <span className="onboarding-footer-status" role="status" aria-live="polite">
@@ -203,19 +210,19 @@ export function OnboardingApp() {
       </span>
       {languageStep
         ? <button
-          className="onboarding-finish"
+          className="settings-primary-button"
           type="button"
           onClick={() => goToStep("providers")}
         >{t("setup.continue")}</button>
         : <div className="onboarding-step-actions">
           <button
-            className="onboarding-back"
+            className="settings-ghost-button"
             type="button"
             disabled={finishing}
             onClick={() => goToStep("language")}
           >{t("setup.back")}</button>
           {selectionReady && <button
-            className="onboarding-finish"
+            className="settings-primary-button"
             type="button"
             disabled={finishing}
             onClick={() => { void finish(); }}

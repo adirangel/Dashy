@@ -1,0 +1,227 @@
+/* Shared provider-setup controls: the switch, the provider rows, and the
+   inline install/login confirmation. Onboarding and Settings both render
+   these, so they live in one place and look identical in both windows. */
+
+.settings-switch {
+  --switch-accent: var(--codex);
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  appearance: none;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.settings-switch::after {
+  position: absolute;
+  top: 2px;
+  inset-inline-start: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e9eef0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  content: "";
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.settings-switch:checked { background: var(--switch-accent); }
+.settings-switch:checked::after { background: var(--notch-bg); transform: translateX(14px); }
+[dir="rtl"] .settings-switch:checked::after { transform: translateX(-14px); }
+.settings-switch:indeterminate::after { background: var(--text-secondary); transform: translateX(7px); }
+[dir="rtl"] .settings-switch:indeterminate::after { transform: translateX(-7px); }
+.settings-switch:disabled { cursor: default; opacity: .55; }
+
+.provider-setup-list {
+  --setup-hairline: rgba(255, 255, 255, .07);
+  display: grid;
+}
+
+.provider-setup-row {
+  --provider-accent: var(--codex);
+  display: grid;
+  gap: 10px;
+  padding: 8px 2px;
+  border-top: 1px solid var(--setup-hairline);
+}
+
+.provider-setup-row:first-child { border-top: 0; }
+.provider-setup-row[data-provider="claude"] { --provider-accent: var(--claude); }
+.provider-setup-row[data-provider="codex"] { --provider-accent: var(--codex); }
+.provider-setup-row[data-provider="github"] { --provider-accent: var(--github); }
+.provider-setup-row[data-provider="grok"] { --provider-accent: var(--grok); }
+.provider-setup-row[data-provider="cursor"] { --provider-accent: var(--cursor); }
+.provider-setup-row[aria-busy="true"] { opacity: .76; }
+
+.provider-setup-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.provider-setup-disc {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--notch-inner-circle);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+
+.provider-setup-disc .provider-glyph { width: 16px; height: 16px; color: var(--provider-accent); }
+
+.provider-setup-row-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.provider-setup-name {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.provider-setup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.provider-setup-status-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.provider-setup-row[data-status="connected"] .provider-setup-status,
+.provider-setup-row[data-status="stale"] .provider-setup-status { color: #9fd9bd; }
+.provider-setup-row[data-status="connected"] .provider-setup-status-dot,
+.provider-setup-row[data-status="stale"] .provider-setup-status-dot { background: var(--codex); }
+.provider-setup-row[data-status="notAuthenticated"] .provider-setup-status { color: var(--warning); }
+.provider-setup-row[data-status="unavailable"] .provider-setup-status { color: var(--error); }
+.provider-setup-row[aria-busy="true"] .provider-setup-status { color: var(--text-secondary); }
+
+.provider-setup-row[data-enabled="false"] .provider-setup-disc,
+.provider-setup-row[data-enabled="false"] .provider-setup-row-text { opacity: .55; }
+
+.provider-setup-row-actions,
+.provider-setup-confirmation-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.provider-setup-row button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--provider-accent) 45%, var(--setup-hairline));
+  border-radius: 8px;
+  color: var(--provider-accent);
+  background: rgba(255, 255, 255, .04);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.provider-setup-row button:hover {
+  border-color: color-mix(in srgb, var(--provider-accent) 70%, var(--setup-hairline));
+  background: rgba(255, 255, 255, .08);
+}
+
+.provider-setup-row button:disabled { cursor: not-allowed; opacity: .52; }
+
+.provider-setup-row .settings-switch { --switch-accent: var(--provider-accent); }
+
+.provider-setup-confirmation {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--provider-accent) 44%, var(--setup-hairline));
+  border-radius: 10px;
+  background: rgba(0, 0, 0, .16);
+}
+
+.provider-setup-confirmation p,
+.provider-setup-confirmation dl,
+.provider-setup-error,
+.provider-setup-loading {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.provider-setup-confirmation dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+}
+
+.provider-setup-confirmation dt { color: var(--text-secondary); font-weight: 600; }
+
+.provider-setup-confirmation dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.provider-setup-confirmation code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #dce8e0;
+  background: rgba(0, 0, 0, .25);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.provider-setup-row .provider-setup-confirmation-primary {
+  border-color: transparent;
+  color: #07100b;
+  background: var(--provider-accent);
+}
+
+.provider-setup-row .provider-setup-confirmation-cancel {
+  border-color: var(--setup-hairline);
+  color: var(--text-primary);
+}
+
+.provider-setup-technical-value { unicode-bidi: isolate; }
+
+.provider-setup-error { color: var(--error); margin-top: 2px; }
+
+.provider-setup-row .provider-setup-manual-help {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
