@@ -5,6 +5,10 @@
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "test": "npm --prefix frontend run test",
-    "test:release": "node --test infrastructure/release/verify-version.test.mjs"
+    "test:release": "node --test infrastructure/release/verify-version.test.mjs",
+    "icons:build": "node infrastructure/icons/build-icon.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2"
   }
 }
