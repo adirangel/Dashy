@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderId, ProviderStatus } from "../dashboard";
-import { formatDateTime, resolveLocale } from "../i18n";
+import { formatDateTime, formatTime, resolveLocale } from "../i18n";
+import { ProviderGlyph } from "./ProviderGlyph";
 
 export type ProviderViewStatus = ProviderStatus | "loading";
 
@@ -35,6 +36,9 @@ export function ProviderCard({ provider, status, lastSuccessfulRefresh, children
     : status === "unavailable" || status === "stale"
       ? t("guidance.retryLater", { provider: name })
       : null;
+  // The header line only confirms a healthy connection; every other state gets
+  // the full explanation panel below, so no status text is repeated twice.
+  const headerState = status === "connected" ? t("setup.connected") : null;
 
   return <article
     className={`provider-card provider-${provider} status-${status}`}
@@ -43,8 +47,19 @@ export function ProviderCard({ provider, status, lastSuccessfulRefresh, children
     style={{ "--provider-accent": `var(--${provider})` } as React.CSSProperties}
   >
     <header className="provider-card__header">
-      <p className="provider-card__eyebrow">Dashy / {name}</p>
-      <h2>{name}</h2>
+      <span className="provider-card__disc" aria-hidden="true"><ProviderGlyph provider={provider} /></span>
+      <div className="provider-card__title">
+        <h2>{name}</h2>
+        {headerState && <span className="provider-card__state">
+          <i className="provider-card__state-dot" aria-hidden="true" />
+          {headerState}
+        </span>}
+      </div>
+      {showsData && lastSuccessfulRefresh && <time
+        className="provider-card__updated"
+        dateTime={lastSuccessfulRefresh}
+        title={t("status.lastUpdated", { time: formatDateTime(lastSuccessfulRefresh, locale) })}
+      >{formatTime(lastSuccessfulRefresh, locale)}</time>}
     </header>
     {showsData && children}
     {statusText && <aside className="provider-state" role={status === "loading" ? "status" : undefined}>

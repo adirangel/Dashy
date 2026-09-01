@@ -16,14 +16,19 @@ function UsageWindow({ window }: { window: UsageWindowSnapshot }) {
   const formattedValue = formatNumber(value, locale);
 
   return <section className="usage-window" aria-label={label}>
-    <div className="usage-window__heading">
-      <h3>{label}</h3>
-      <strong>{t("usage.remaining", { value: formattedValue })}</strong>
+    <div className="usage-window__row">
+      <div className="usage-window__text">
+        <h3>{label}</h3>
+        {reset && <p>{t("usage.resets", { time: reset })}</p>}
+      </div>
+      <strong className="usage-window__value">
+        <span className="visually-hidden">{t("usage.remaining", { value: formattedValue })}</span>
+        <span aria-hidden="true">{formattedValue}<small>%</small></span>
+      </strong>
     </div>
     <div className="usage-window__track" aria-hidden="true">
       <span style={{ inlineSize: `${value}%` }} />
     </div>
-    {reset && <p>{t("usage.resets", { time: reset })}</p>}
   </section>;
 }
 

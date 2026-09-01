@@ -72,4 +72,10 @@ export function formatDateTime(value: string | Date, locale = resolveLocale(i18n
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+export function formatTime(value: string | Date, locale = resolveLocale(i18n.resolvedLanguage)) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(date);
+}
+
 export default i18n;

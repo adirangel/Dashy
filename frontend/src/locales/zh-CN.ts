@@ -3,7 +3,7 @@ import type { Messages } from "./en";
 const zhCN = {
   providers: { claude: "Claude", codex: "Codex", github: "GitHub", grok: "Grok", cursor: "Cursor" },
   usage: { shortWindow: "当前会话", weeklyWindow: "每周", monthlyWindow: "每月", remaining: "剩余 {{value}}%", resets: "重置时间 {{time}}" },
-  github: { streakDays: "连续 {{count}} 天", today: "今天", contributions: "{{count}} 次贡献", heatmapLabel: "过去 12 周的 GitHub 贡献" },
+  github: { streakDays: "连续 {{count}} 天", today: "今天", contributions: "{{count}} 次贡献", heatmapLabel: "过去 12 周的 GitHub 贡献", streakUnit: "天连续", todayUnit: "今日贡献" },
   cursor: { plan: "订阅方案", account: "账户", usageHint: "Cursor 不提供用量限制数据。请在 Cursor 控制台查看用量。" },
   status: { loading: "正在加载", notInstalled: "未安装", signInRequired: "需要登录", unavailable: "不可用", stale: "上次保存的数据", lastUpdated: "上次更新 {{time}}" },
   guidance: { installClaude: "请安装 Claude CLI，然后重新打开 Dashy。", installCodex: "请安装 Codex CLI，然后重新打开 Dashy。", installGitHub: "请安装 GitHub CLI，然后重新打开 Dashy。", installGrok: "请安装 Grok CLI，然后重新打开 Dashy。", installCursor: "请安装 Cursor CLI，然后重新打开 Dashy。", signInClaude: "请登录 Claude 后重试。", signInCodex: "请登录 Codex 后重试。", signInGitHub: "请登录 GitHub 后重试。", signInGrok: "请登录 Grok 后重试。", signInCursor: "请登录 Cursor 后重试。", retryLater: "请稍后重试 {{provider}}。" },

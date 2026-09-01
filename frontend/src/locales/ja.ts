@@ -3,7 +3,7 @@ import type { Messages } from "./en";
 const ja = {
   providers: { claude: "Claude", codex: "Codex", github: "GitHub", grok: "Grok", cursor: "Cursor" },
   usage: { shortWindow: "現在のセッション", weeklyWindow: "週間", monthlyWindow: "月間", remaining: "残り {{value}}%", resets: "リセット {{time}}" },
-  github: { streakDays: "{{count}} 日連続", today: "今日", contributions: "{{count}} 件のコントリビューション", heatmapLabel: "過去 12 週間の GitHub コントリビューション" },
+  github: { streakDays: "{{count}} 日連続", today: "今日", contributions: "{{count}} 件のコントリビューション", heatmapLabel: "過去 12 週間の GitHub コントリビューション", streakUnit: "日連続", todayUnit: "今日のコントリビューション" },
   cursor: { plan: "プラン", account: "アカウント", usageHint: "Cursor は使用量の上限を公開していません。使用状況は Cursor のダッシュボードで確認してください。" },
   status: { loading: "読み込み中", notInstalled: "未インストール", signInRequired: "サインインが必要です", unavailable: "利用できません", stale: "最後に保存されたデータ", lastUpdated: "最終更新 {{time}}" },
   guidance: { installClaude: "Claude CLI をインストールして Dashy を再度開いてください。", installCodex: "Codex CLI をインストールして Dashy を再度開いてください。", installGitHub: "GitHub CLI をインストールして Dashy を再度開いてください。", installGrok: "Grok CLI をインストールして Dashy を再度開いてください。", installCursor: "Cursor CLI をインストールして Dashy を再度開いてください。", signInClaude: "Claude にサインインして再試行してください。", signInCodex: "Codex にサインインして再試行してください。", signInGitHub: "GitHub にサインインして再試行してください。", signInGrok: "Grok にサインインして再試行してください。", signInCursor: "Cursor にサインインして再試行してください。", retryLater: "後でもう一度 {{provider}} をお試しください。" },

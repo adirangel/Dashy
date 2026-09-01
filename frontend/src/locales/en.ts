@@ -1,7 +1,7 @@
 export type Messages = {
   providers: { claude: string; codex: string; github: string; grok: string; cursor: string };
   usage: { shortWindow: string; weeklyWindow: string; monthlyWindow: string; remaining: string; resets: string };
-  github: { streakDays: string; today: string; contributions: string; heatmapLabel: string };
+  github: { streakDays: string; today: string; contributions: string; heatmapLabel: string; streakUnit: string; todayUnit: string };
   cursor: { plan: string; account: string; usageHint: string };
   status: { loading: string; notInstalled: string; signInRequired: string; unavailable: string; stale: string; lastUpdated: string };
   guidance: { installClaude: string; installCodex: string; installGitHub: string; installGrok: string; installCursor: string; signInClaude: string; signInCodex: string; signInGitHub: string; signInGrok: string; signInCursor: string; retryLater: string };
@@ -23,7 +23,7 @@ export type Messages = {
 const en = {
   providers: { claude: "Claude", codex: "Codex", github: "GitHub", grok: "Grok", cursor: "Cursor" },
   usage: { shortWindow: "Current session", weeklyWindow: "Weekly", monthlyWindow: "Monthly", remaining: "{{value}}% remaining", resets: "Resets {{time}}" },
-  github: { streakDays: "{{count}} day streak", today: "Today", contributions: "{{count}} contributions", heatmapLabel: "GitHub contributions over the last 12 weeks" },
+  github: { streakDays: "{{count}} day streak", today: "Today", contributions: "{{count}} contributions", heatmapLabel: "GitHub contributions over the last 12 weeks", streakUnit: "day streak", todayUnit: "contributions today" },
   cursor: { plan: "Plan", account: "Account", usageHint: "Cursor does not report usage limits. See usage on the Cursor dashboard." },
   status: { loading: "Loading", notInstalled: "Not installed", signInRequired: "Sign in required", unavailable: "Unavailable", stale: "Last known data", lastUpdated: "Last updated {{time}}" },
   guidance: { installClaude: "Install the Claude CLI, then reopen Dashy.", installCodex: "Install the Codex CLI, then reopen Dashy.", installGitHub: "Install the GitHub CLI, then reopen Dashy.", installGrok: "Install the Grok CLI, then reopen Dashy.", installCursor: "Install the Cursor CLI, then reopen Dashy.", signInClaude: "Sign in to Claude, then retry.", signInCodex: "Sign in to Codex, then retry.", signInGitHub: "Sign in to GitHub, then retry.", signInGrok: "Sign in to Grok, then retry.", signInCursor: "Sign in to Cursor, then retry.", retryLater: "Try {{provider}} again later." },

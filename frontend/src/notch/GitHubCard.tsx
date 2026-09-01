@@ -4,6 +4,10 @@ import { formatNumber, resolveLocale } from "../i18n";
 import { formatContributionDate, heatmapMonthLabels, localIsoDate, positionContributionDays } from "./heatmap";
 import { ProviderCard } from "./ProviderCard";
 
+function Unavailable({ label }: { label: string }) {
+  return <><b aria-hidden="true">—</b><small>{label}</small></>;
+}
+
 export function GitHubCard({ snapshot, now = new Date() }: { snapshot: GitHubSnapshot | null; now?: Date }) {
   const { t, i18n } = useTranslation();
   const status = snapshot?.status ?? "loading";
@@ -16,16 +20,14 @@ export function GitHubCard({ snapshot, now = new Date() }: { snapshot: GitHubSna
   const formattedToday = today ? formatNumber(today.count, locale) : null;
 
   return <ProviderCard provider="github" status={status} lastSuccessfulRefresh={snapshot?.lastSuccessfulRefresh}>
-    <div className="github-summary">
-      <div>
-        <span>{formattedStreak ? t("github.streakDays", { count: formattedStreak }) : t("status.unavailable")}</span>
-        <strong data-testid="github-streak-value">{formattedStreak ?? <><b aria-hidden="true">—</b><small>{t("status.unavailable")}</small></>}</strong>
+    <div className="card-stats">
+      <div className="card-stat">
+        <strong data-testid="github-streak-value">{formattedStreak ?? <Unavailable label={t("status.unavailable")} />}</strong>
+        <span>{t("github.streakUnit")}</span>
       </div>
-      <div>
-        <span>{t("github.today")}</span>
-        <strong data-testid="github-today-value">{formattedToday
-          ? t("github.contributions", { count: formattedToday })
-          : <><b aria-hidden="true">—</b><small>{t("status.unavailable")}</small></>}</strong>
+      <div className="card-stat">
+        <strong data-testid="github-today-value">{formattedToday ?? <Unavailable label={t("status.unavailable")} />}</strong>
+        <span>{t("github.todayUnit")}</span>
       </div>
     </div>
     <div className="contribution-heatmap" dir="ltr">

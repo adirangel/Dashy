@@ -241,10 +241,12 @@ describe("compact metric rail", () => {
     expect(button).not.toHaveAccessibleName(expect.stringContaining("Unavailable"));
   });
 
-  it("renders provider glyphs only in compact rings", () => {
+  it("renders one glyph per compact ring plus the selected card's header glyph", () => {
     render(<NotchApp placement="right" snapshot={connected} selectedProvider="claude" />);
-    expect(screen.getAllByTestId(/provider-glyph-/)).toHaveLength(5);
-    expect(within(screen.getByRole("article")).queryByTestId(/provider-glyph-/)).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/provider-glyph-/)).toHaveLength(6);
+    const cardGlyphs = within(screen.getByRole("article")).getAllByTestId(/provider-glyph-/);
+    expect(cardGlyphs).toHaveLength(1);
+    expect(cardGlyphs[0]).toHaveAttribute("data-testid", "provider-glyph-claude");
   });
 
   it("marks a development visual fixture ready only after locale and provider state settle", async () => {
@@ -323,8 +325,10 @@ describe("provider details", () => {
       .format(new Date("2026-06-04T00:00:00Z"));
     const juneSeventh = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" })
       .format(new Date("2026-06-07T00:00:00Z"));
-    expect(screen.getByText("12 day streak")).toBeInTheDocument();
-    expect(screen.getByText("7 contributions")).toBeInTheDocument();
+    expect(screen.getByTestId("github-streak-value")).toHaveTextContent("12");
+    expect(screen.getByText("day streak")).toBeInTheDocument();
+    expect(screen.getByTestId("github-today-value")).toHaveTextContent("7");
+    expect(screen.getByText("contributions today")).toBeInTheDocument();
     expect(screen.getByRole("list", { name: /last 12 weeks/i }).children).toHaveLength(84);
     expect(screen.getByLabelText(`0 contributions — ${juneFourth}`)).toHaveStyle({ gridRow: "5", gridColumn: "1" });
     expect(screen.getByLabelText(`3 contributions — ${juneSeventh}`)).toHaveStyle({ gridRow: "1", gridColumn: "2" });
@@ -352,7 +356,8 @@ describe("provider details", () => {
     render(<NotchApp placement="right" snapshot={connected} selectedProvider="github" />);
     expect(screen.getByTestId("notch-surface")).toHaveClass("placement-right");
     expect(screen.getByRole("article")).toHaveAttribute("dir", "rtl");
-    expect(screen.getByText(/רצף של 12 ימים/)).toBeInTheDocument();
+    expect(screen.getByTestId("github-streak-value")).toHaveTextContent("12");
+    expect(screen.getByText("ימי רצף")).toBeInTheDocument();
   });
 
   it("localizes actionable provider states in an RTL locale", async () => {

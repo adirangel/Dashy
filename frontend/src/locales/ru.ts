@@ -3,7 +3,7 @@ import type { Messages } from "./en";
 const ru = {
   providers: { claude: "Claude", codex: "Codex", github: "GitHub", grok: "Grok", cursor: "Cursor" },
   usage: { shortWindow: "Текущая сессия", weeklyWindow: "За неделю", monthlyWindow: "За месяц", remaining: "Осталось {{value}} %", resets: "Сброс: {{time}}" },
-  github: { streakDays: "Серия: {{count}} дн.", today: "Сегодня", contributions: "Вкладов: {{count}}", heatmapLabel: "Вклады GitHub за последние 12 недель" },
+  github: { streakDays: "Серия: {{count}} дн.", today: "Сегодня", contributions: "Вкладов: {{count}}", heatmapLabel: "Вклады GitHub за последние 12 недель", streakUnit: "дней подряд", todayUnit: "вкладов сегодня" },
   cursor: { plan: "Тариф", account: "Аккаунт", usageHint: "Cursor не сообщает лимиты использования. Смотрите статистику в панели Cursor." },
   status: { loading: "Загрузка", notInstalled: "Не установлено", signInRequired: "Требуется вход", unavailable: "Недоступно", stale: "Последние сохранённые данные", lastUpdated: "Обновлено {{time}}" },
   guidance: { installClaude: "Установите Claude CLI и снова откройте Dashy.", installCodex: "Установите Codex CLI и снова откройте Dashy.", installGitHub: "Установите GitHub CLI и снова откройте Dashy.", installGrok: "Установите Grok CLI и снова откройте Dashy.", installCursor: "Установите Cursor CLI и снова откройте Dashy.", signInClaude: "Войдите в Claude и повторите попытку.", signInCodex: "Войдите в Codex и повторите попытку.", signInGitHub: "Войдите в GitHub и повторите попытку.", signInGrok: "Войдите в Grok и повторите попытку.", signInCursor: "Войдите в Cursor и повторите попытку.", retryLater: "Повторите попытку с {{provider}} позже." },
