@@ -163,14 +163,15 @@
   background: linear-gradient(to bottom, transparent 0%, var(--provider-accent) 48%, transparent 100%);
 }
 
-.provider-setup-card[data-provider="claude"],
-.provider-setup-card--claude { --provider-accent: var(--claude); }
+.provider-setup-card[data-provider="claude"] { --provider-accent: var(--claude); }
 
-.provider-setup-card[data-provider="codex"],
-.provider-setup-card--codex { --provider-accent: var(--codex); }
+.provider-setup-card[data-provider="codex"] { --provider-accent: var(--codex); }
 
-.provider-setup-card[data-provider="github"],
-.provider-setup-card--github { --provider-accent: var(--github); }
+.provider-setup-card[data-provider="github"] { --provider-accent: var(--github); }
+
+.provider-setup-card[data-provider="grok"] { --provider-accent: var(--grok); }
+
+.provider-setup-card[data-provider="cursor"] { --provider-accent: var(--cursor); }
 
 .provider-setup-card:hover {
   border-color: color-mix(in srgb, var(--provider-accent) 42%, var(--setup-border));

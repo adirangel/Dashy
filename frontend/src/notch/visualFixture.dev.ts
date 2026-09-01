@@ -34,6 +34,16 @@ const snapshot: DashboardSnapshot = {
     weeklyWindow: { labelKey: "weekly", remainingPercent: 52, resetsAt: "2026-09-04T21:00:00Z" },
     lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
   },
+  grok: {
+    status: "connected", remainingPercent: 61,
+    shortWindow: null,
+    weeklyWindow: { labelKey: "monthly", remainingPercent: 61, resetsAt: "2026-09-15T00:00:00Z" },
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
+  },
+  cursor: {
+    status: "connected", subscriptionTier: "pro", accountEmail: "fixture@cursor.com",
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
+  },
   refreshedAt: "2026-08-29T09:00:00Z",
 };
 
@@ -43,7 +53,12 @@ export function readVisualFixture(url = window.location.href): VisualFixture | n
   const rawPlacement = params.get("placement");
   const placement: EdgePlacement = rawPlacement === "left" || rawPlacement === "top" ? rawPlacement : "right";
   const rawProvider = params.get("provider");
-  const provider: ProviderId = rawProvider === "codex" || rawProvider === "github" ? rawProvider : "claude";
+  const provider: ProviderId = rawProvider === "codex"
+    || rawProvider === "github"
+    || rawProvider === "grok"
+    || rawProvider === "cursor"
+    ? rawProvider
+    : "claude";
   return {
     placement,
     provider,

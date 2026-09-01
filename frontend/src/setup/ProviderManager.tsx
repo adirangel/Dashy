@@ -18,7 +18,7 @@ type PendingAction = {
   action: "install" | "login";
 };
 
-const providerOrder: ProviderId[] = ["claude", "codex", "github"];
+const providerOrder: ProviderId[] = ["claude", "codex", "github", "grok", "cursor"];
 
 function statusKey(status: ProviderStatus) {
   switch (status) {
@@ -47,7 +47,15 @@ function Confirmation({
 }) {
   const { t } = useTranslation();
   const labelId = `provider-setup-${definition.provider}-${action}-confirmation`;
-  const confirmKey = action === "install" ? "setup.confirmInstall" : "setup.confirmLogin";
+  // Manual-URL providers have no command to run: the confirmation only opens the
+  // official install guide, so it discloses that instead of a winget command.
+  const manualInstall = action === "install" && definition.installKind === "manualUrl";
+  const confirmKey = manualInstall
+    ? "setup.manualHelp"
+    : action === "install" ? "setup.confirmInstall" : "setup.confirmLogin";
+  const disclosureKey = manualInstall
+    ? "setup.installManualDisclosure"
+    : action === "install" ? "setup.installDisclosure" : "setup.loginDisclosure";
 
   return <div
     className="provider-setup-confirmation"
@@ -55,8 +63,8 @@ function Confirmation({
     aria-labelledby={labelId}
   >
     <p id={labelId}>{t(confirmKey)}</p>
-    <p>{t(action === "install" ? "setup.installDisclosure" : "setup.loginDisclosure")}</p>
-    <dl>
+    <p>{t(disclosureKey)}</p>
+    {!manualInstall && <dl>
       {action === "install" && <>
         <dt>{t("setup.publisher")}</dt>
         <dd>{definition.publisher}</dd>
@@ -73,7 +81,7 @@ function Confirmation({
         dir="ltr"
         style={{ unicodeBidi: "isolate" }}
       >{action === "install" ? definition.installCommand : definition.loginCommand}</bdi></code></dd>
-    </dl>
+    </dl>}
     <div className="provider-setup-confirmation-actions">
       <button
         className="provider-setup-confirmation-cancel"
@@ -174,6 +182,14 @@ export function ProviderManager({
       const confirm = (action: PendingAction["action"], restoreKeyboardFocus: boolean) => {
         if (restoreKeyboardFocus) setRestoreFocusProvider(provider);
         setPendingAction(null);
+        // Manual-URL installs never spawn a process: the confirmation opens the
+        // official guide through the exact-URL opener allowlist.
+        if (action === "install" && state.definition.installKind === "manualUrl") {
+          setManualHelpFailureProvider(null);
+          void openUrl(state.definition.installUrl)
+            .catch(() => setManualHelpFailureProvider(provider));
+          return;
+        }
         void controller[action](provider);
       };
       const beginAction = (action: PendingAction["action"]) => {
@@ -248,7 +264,9 @@ export function ProviderManager({
           onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
         />}
 
-        {actionsAvailable && controller.failureProvider === provider && <>
+        {actionsAvailable
+          && (controller.failureProvider === provider
+            || manualHelpFailureProvider === provider) && <>
           <p className="provider-setup-error" role="alert">
             {t(manualHelpFailureProvider === provider
               ? "setup.manualHelpFailure"

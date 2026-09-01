@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "../i18n";
 import { formatDateTime, formatNumber } from "../i18n";
 import type { DashboardSnapshot } from "../dashboard";
+import { CursorCard } from "./CursorCard";
 import { GitHubCard } from "./GitHubCard";
 import { MetricRail } from "./MetricRail";
 import { NotchApp } from "./NotchApp";
@@ -37,6 +38,16 @@ const connected: DashboardSnapshot = {
     weeklyWindow: { labelKey: "weekly", remainingPercent: 72, resetsAt: "2026-09-04T00:00:00Z" },
     lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
   },
+  grok: {
+    status: "connected", remainingPercent: 61,
+    shortWindow: null,
+    weeklyWindow: { labelKey: "monthly", remainingPercent: 61, resetsAt: "2026-09-15T00:00:00Z" },
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
+  },
+  cursor: {
+    status: "connected", subscriptionTier: "pro", accountEmail: "fixture@cursor.com",
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
+  },
   refreshedAt: "2026-08-29T09:00:00Z",
 };
 
@@ -57,7 +68,7 @@ describe("compact metric rail", () => {
     expect(screen.getByTestId("notch-surface")).toHaveClass(`placement-${placement}`);
   });
 
-  it.each(["claude", "codex", "github"] as const)(
+  it.each(["claude", "codex", "github", "grok", "cursor"] as const)(
     "binds the connector to the selected %s metric",
     (provider) => {
       render(<NotchApp placement="top" snapshot={connected} selectedProvider={provider} />);
@@ -73,6 +84,19 @@ describe("compact metric rail", () => {
 
     view.rerender(<NotchApp placement="right" snapshot={connected} selectedProvider="github" />);
     expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-layout", "tall");
+
+    view.rerender(<NotchApp placement="right" snapshot={connected} selectedProvider="cursor" />);
+    expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-layout", "compact");
+  });
+
+  it("keeps a stale cursor card in the bounded tall-card layout", () => {
+    render(<NotchApp
+      placement="right"
+      snapshot={{ ...connected, cursor: { ...connected.cursor, status: "stale" } }}
+      selectedProvider="cursor"
+    />);
+
+    expect(screen.getByTestId("provider-card-region")).toHaveAttribute("data-layout", "tall");
   });
 
   it("keeps stale usage cards in the bounded tall-card layout", () => {
@@ -87,13 +111,16 @@ describe("compact metric rail", () => {
 
   it("uses real provider summaries, a localized streak, and accessible hit targets", () => {
     render(<NotchApp placement="right" snapshot={connected} selectedProvider="claude" />);
-    const buttons = screen.getAllByRole("button", { name: /Claude|Codex|GitHub/ });
-    expect(buttons).toHaveLength(3);
+    const buttons = screen.getAllByRole("button", { name: /Claude|Codex|GitHub|Grok|Cursor/ });
+    expect(buttons).toHaveLength(5);
     buttons.forEach((button) => expect(button).toHaveClass("metric-button"));
     expect(screen.getByRole("progressbar", { name: /Claude/i })).toHaveAttribute("aria-valuenow", "59");
     expect(screen.getByRole("progressbar", { name: /Codex/i })).toHaveAttribute("aria-valuenow", "68");
+    expect(screen.getByRole("progressbar", { name: /Grok/i })).toHaveAttribute("aria-valuenow", "61");
     expect(screen.getByRole("group", { name: /GitHub/i })).not.toHaveAttribute("aria-valuenow");
+    expect(screen.getByRole("group", { name: /Cursor/i })).not.toHaveAttribute("aria-valuenow");
     expect(screen.getByText("12d")).toBeInTheDocument();
+    expect(screen.getByText("pro")).toHaveClass("metric-value--text");
   });
 
   it.each([
@@ -203,7 +230,7 @@ describe("compact metric rail", () => {
 
   it("renders provider glyphs only in compact rings", () => {
     render(<NotchApp placement="right" snapshot={connected} selectedProvider="claude" />);
-    expect(screen.getAllByTestId(/provider-glyph-/)).toHaveLength(3);
+    expect(screen.getAllByTestId(/provider-glyph-/)).toHaveLength(5);
     expect(within(screen.getByRole("article")).queryByTestId(/provider-glyph-/)).not.toBeInTheDocument();
   });
 
@@ -219,6 +246,41 @@ describe("compact metric rail", () => {
 });
 
 describe("provider details", () => {
+  it("renders grok's single monthly billing window without a weekly label", () => {
+    render(<UsageProviderCard provider="grok" snapshot={connected.grok} />);
+    expect(screen.getByRole("heading", { name: "Grok" })).toBeInTheDocument();
+    expect(screen.getByText("Monthly")).toBeInTheDocument();
+    expect(screen.getByText("61% remaining")).toBeInTheDocument();
+    expect(screen.queryByText("Weekly")).not.toBeInTheDocument();
+    expect(screen.getByText(`Resets ${formatDateTime("2026-09-15T00:00:00Z")}`)).toBeInTheDocument();
+  });
+
+  it("renders the cursor account card with plan, account, and no percentages", () => {
+    render(<CursorCard snapshot={connected.cursor} />);
+    expect(screen.getByRole("heading", { name: "Cursor" })).toBeInTheDocument();
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByTestId("cursor-plan-value")).toHaveTextContent("pro");
+    expect(screen.getByTestId("cursor-account-value")).toHaveTextContent("fixture@cursor.com");
+    expect(screen.getByText(/Cursor does not report usage limits/)).toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+  });
+
+  it("keeps absent cursor account fields as explicit unavailability", () => {
+    render(<CursorCard snapshot={{
+      ...connected.cursor,
+      subscriptionTier: null,
+      accountEmail: null,
+    }} />);
+    expect(within(screen.getByTestId("cursor-plan-value")).getByText("Unavailable")).toBeInTheDocument();
+    expect(within(screen.getByTestId("cursor-account-value")).getByText("Unavailable")).toBeInTheDocument();
+  });
+
+  it("shows install guidance for a missing cursor CLI", () => {
+    render(<CursorCard snapshot={{ ...connected.cursor, status: "notInstalled", subscriptionTier: null, accountEmail: null }} />);
+    expect(screen.getByText("Not installed")).toBeInTheDocument();
+    expect(screen.getByText("Install the Cursor CLI, then reopen Dashy.")).toBeInTheDocument();
+  });
+
   it("renders independent short and weekly usage windows with localized reset times", () => {
     render(<UsageProviderCard provider="claude" snapshot={connected.claude} />);
     expect(screen.getByRole("heading", { name: "Claude" })).toBeInTheDocument();

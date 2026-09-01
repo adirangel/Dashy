@@ -24,6 +24,7 @@ const codexState = (status: ProviderSetupState["status"]): ProviderSetupState =>
     provider: "codex",
     publisher: "OpenAI",
     packageId: "OpenAI.Codex",
+    installKind: "winget",
     installCommand: "winget install --id OpenAI.Codex",
     installUrl: "https://learn.chatgpt.com/docs/codex/cli",
     loginCommand: "codex login",

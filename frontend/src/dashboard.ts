@@ -7,7 +7,7 @@ export type ProviderStatus =
   | "notAuthenticated"
   | "unavailable";
 
-export type ProviderId = "github" | "codex" | "claude";
+export type ProviderId = "github" | "codex" | "claude" | "grok" | "cursor";
 
 export type ContributionDay = {
   date: string;
@@ -25,7 +25,7 @@ export type GitHubSnapshot = {
 };
 
 export type UsageWindowSnapshot = {
-  labelKey: "short" | "weekly";
+  labelKey: "short" | "weekly" | "monthly";
   remainingPercent: number;
   resetsAt: string | null;
 };
@@ -39,10 +39,20 @@ export type UsageSnapshot = {
   errorKind: string | null;
 };
 
+export type CursorSnapshot = {
+  status: ProviderStatus;
+  subscriptionTier: string | null;
+  accountEmail: string | null;
+  lastSuccessfulRefresh: string | null;
+  errorKind: string | null;
+};
+
 export type DashboardSnapshot = {
   github: GitHubSnapshot;
   codex: UsageSnapshot;
   claude: UsageSnapshot;
+  grok: UsageSnapshot;
+  cursor: CursorSnapshot;
   refreshedAt: string | null;
 };
 
@@ -67,6 +77,14 @@ export function unavailableDashboardSnapshot(): DashboardSnapshot {
     },
     codex: unavailableUsageSnapshot(),
     claude: unavailableUsageSnapshot(),
+    grok: unavailableUsageSnapshot(),
+    cursor: {
+      status: "unavailable",
+      subscriptionTier: null,
+      accountEmail: null,
+      lastSuccessfulRefresh: null,
+      errorKind: null,
+    },
     refreshedAt: null,
   };
 }

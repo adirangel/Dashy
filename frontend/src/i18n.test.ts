@@ -35,7 +35,7 @@ describe("localization contract", () => {
       "setup.confirmLogin", "setup.connect", "setup.connected", "setup.connecting",
       "setup.continue", "setup.description",
       "setup.eyebrow", "setup.finish", "setup.finishFailure", "setup.install",
-      "setup.installDisclosure", "setup.installing",
+      "setup.installDisclosure", "setup.installManualDisclosure", "setup.installing",
       "setup.languageDescription", "setup.languageTitle",
       "setup.loading", "setup.loginDisclosure",
       "setup.manualHelp", "setup.manualHelpFailure",

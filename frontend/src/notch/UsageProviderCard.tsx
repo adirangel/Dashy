@@ -6,7 +6,11 @@ import { ProviderCard } from "./ProviderCard";
 function UsageWindow({ window }: { window: UsageWindowSnapshot }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.resolvedLanguage);
-  const label = window.labelKey === "short" ? t("usage.shortWindow") : t("usage.weeklyWindow");
+  const label = window.labelKey === "short"
+    ? t("usage.shortWindow")
+    : window.labelKey === "monthly"
+      ? t("usage.monthlyWindow")
+      : t("usage.weeklyWindow");
   const reset = window.resetsAt ? formatDateTime(window.resetsAt, locale) : "";
   const value = Math.min(100, Math.max(0, window.remainingPercent));
   const formattedValue = formatNumber(value, locale);
@@ -27,7 +31,7 @@ export function UsageProviderCard({
   provider,
   snapshot,
 }: {
-  provider: Exclude<ProviderId, "github">;
+  provider: Exclude<ProviderId, "github" | "cursor">;
   snapshot: UsageSnapshot | null;
 }) {
   const status = snapshot?.status ?? "loading";

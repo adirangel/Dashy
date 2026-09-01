@@ -11,6 +11,7 @@ import {
   showNotchMenu,
   type EdgePlacement, type EdgeViewState, type ExitToken, type NotchInteraction,
 } from "../window";
+import { CursorCard } from "./CursorCard";
 import { GitHubCard } from "./GitHubCard";
 import { MetricRail } from "./MetricRail";
 import { UsageProviderCard } from "./UsageProviderCard";
@@ -24,7 +25,7 @@ type NotchAppProps = {
   now?: Date;
 };
 
-const PROVIDERS: ProviderId[] = ["claude", "codex", "github"];
+const PROVIDERS: ProviderId[] = ["claude", "codex", "github", "grok", "cursor"];
 
 const isVisibleView = (view: EdgeViewState) =>
   view.visibility === "rail" || view.visibility === "card" || view.visibility === "pinned";
@@ -259,12 +260,18 @@ export function NotchApp({
   const railExtent = 2 * (geometry.edgeFillet + geometry.tabEndPadding)
     + enabledProviders.length * geometry.tileExtent;
   const controlExtent = railExtent + geometry.settingsControlExtent;
+  // Expanded sizes derive from the enabled-provider count exactly like the Rust
+  // side (edge.rs side_expanded_extent / top_expanded_width).
+  const sideExpandedWidth = geometry.railThickness + geometry.cardWidth;
+  const sideExpandedHeight = Math.max(geometry.cardHeight, controlExtent);
+  const topExpandedWidth = Math.max(geometry.topCardMinWidth, controlExtent);
+  const topExpandedHeight = geometry.railThickness + geometry.cardHeight;
   const selectedIndex = Math.max(0, enabledProviders.indexOf(selectedProvider));
   const joinOffset = (selectedIndex - (enabledProviders.length - 1) / 2) * geometry.tileExtent;
   const logicalSize = showCard
     ? placement === "top"
-      ? `${geometry.topExpanded.width}x${geometry.topExpanded.height}`
-      : `${geometry.sideExpanded.width}x${geometry.sideExpanded.height}`
+      ? `${topExpandedWidth}x${topExpandedHeight}`
+      : `${sideExpandedWidth}x${sideExpandedHeight}`
     : placement === "top"
       ? `${controlExtent}x${geometry.railThickness}`
       : `${geometry.railThickness}x${controlExtent}`;
@@ -386,10 +393,10 @@ export function NotchApp({
         "--edge-fillet": `${geometry.edgeFillet}px`,
         "--gear-diameter": `${geometry.gearDiameter}px`,
         "--tab-radius": `${geometry.tabOuterRadius}px`,
-        "--side-expanded-width": `${geometry.sideExpanded.width}px`,
-        "--side-expanded-height": `${geometry.sideExpanded.height}px`,
-        "--top-expanded-width": `${geometry.topExpanded.width}px`,
-        "--top-expanded-height": `${geometry.topExpanded.height}px`,
+        "--side-expanded-width": `${sideExpandedWidth}px`,
+        "--side-expanded-height": `${sideExpandedHeight}px`,
+        "--top-expanded-width": `${topExpandedWidth}px`,
+        "--top-expanded-height": `${topExpandedHeight}px`,
       } as CSSProperties}
       aria-hidden={surface.exit !== null || undefined}
       onAnimationEnd={onSurfaceAnimationEnd}
@@ -434,7 +441,9 @@ export function NotchApp({
       >
         {selectedProvider === "github"
           ? <GitHubCard snapshot={snapshot?.github ?? null} now={now} />
-          : <UsageProviderCard provider={selectedProvider} snapshot={snapshot?.[selectedProvider] ?? null} />}
+          : selectedProvider === "cursor"
+            ? <CursorCard snapshot={snapshot?.cursor ?? null} />
+            : <UsageProviderCard provider={selectedProvider} snapshot={snapshot?.[selectedProvider] ?? null} />}
       </div>}
       <div className="notch-live-region" role="status" aria-live="polite" aria-atomic="true">
         {selectedIsStale || dashboard.refreshFailures.has(selectedProvider)
