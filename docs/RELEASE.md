@@ -24,8 +24,14 @@ enforced tag ruleset is the external control that closes that race.
    lockfile without changing dependency versions:
 
    ```powershell
-   npm --prefix frontend install --package-lock-only
+   Set-Location frontend
+   npm install --package-lock-only
+   Set-Location ..
    ```
+
+   Run it from inside `frontend`: invoking npm from the repository root with
+   `--prefix frontend` makes npm link the root package into the frontend as a
+   `file:..` dependency, which must not appear in either file.
 
    Review the generated `frontend/package-lock.json` change. The Cargo gate below
    also regenerates the tracked `backend/Cargo.lock` package record. The release
