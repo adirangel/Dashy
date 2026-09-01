@@ -270,7 +270,7 @@ Open Settings from the rail's gear, the tray, or the notch context menu to confi
 - Language
 - Fullscreen override
 - Launch at startup
-- Provider status and manual refresh
+- Providers: enable each one with its switch, install or connect it inline, and refresh all
 
 Settings are stored locally. The startup option uses the operating system's normal
 autostart registration and remains off until explicitly enabled.

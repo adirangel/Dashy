@@ -54,7 +54,7 @@ export function MetricRail({
   const locale = resolveLocale(i18n.resolvedLanguage);
   const orientation = placement === "top" ? "horizontal" : "vertical";
 
-  return <nav className="metric-rail" aria-label={t("settings.providerStatus")} aria-orientation={orientation} role="toolbar">
+  return <nav className="metric-rail" aria-label={t("settings.providers")} aria-orientation={orientation} role="toolbar">
     {providers.map((provider) => {
       const status = viewStatus(snapshot, provider);
       const entry = snapshot?.[provider];

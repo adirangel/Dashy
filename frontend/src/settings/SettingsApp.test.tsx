@@ -170,7 +170,9 @@ describe("SettingsApp", () => {
   it("loads persisted values, discovered monitors, and all eight languages", async () => {
     render(<SettingsApp />);
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Placement")).toHaveValue("right");
+    expect(screen.getByRole("radiogroup", { name: "Placement" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Right" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Left" })).not.toBeChecked();
     expect(screen.getByLabelText("Monitor")).toHaveValue("");
     expect(screen.getByLabelText("Language")).toHaveValue("en");
     expect(screen.getByLabelText("Always show over fullscreen apps")).not.toBeChecked();
@@ -211,10 +213,10 @@ describe("SettingsApp", () => {
     mocks.activationRevision.mockReturnValue(2);
     view.rerender(<SettingsApp />);
 
-    expect(screen.queryByLabelText("Placement")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Placement" })).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Loading");
     focusedSettings.resolve({ ...initialSettings, enabledProviders: ["codex"] });
-    expect(await screen.findByLabelText("Placement")).toBeEnabled();
+    expect(await screen.findByRole("radio", { name: "Right" })).toBeEnabled();
     expect(screen.getByRole("checkbox", { name: "Use Claude in Dashy" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
   });
@@ -343,10 +345,10 @@ describe("SettingsApp", () => {
   it("persists placement, monitor, language, and fullscreen choices", async () => {
     render(<SettingsApp />);
     await screen.findByRole("heading", { name: "Settings" });
-    const placement = screen.getByLabelText("Placement");
-    for (const value of ["left", "top", "right"]) {
-      fireEvent.change(placement, { target: { value } });
+    for (const [value, label] of [["left", "Left"], ["top", "Top"], ["right", "Right"]] as const) {
+      fireEvent.click(screen.getByRole("radio", { name: label }));
       await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalledWith({ placement: value }));
+      await waitFor(() => expect(screen.getByRole("radio", { name: label })).toBeChecked());
     }
     fireEvent.change(screen.getByLabelText("Monitor"), { target: { value: "display-2" } });
     await waitFor(() => expect(mocks.updateSettings).toHaveBeenCalledWith({ monitor: {
@@ -379,7 +381,9 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Placement")).toHaveValue("right");
+    expect(screen.getByRole("radiogroup", { name: "Placement" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Right" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Left" })).not.toBeChecked();
     expect(screen.getByText("Try Dashy again later.", { selector: ".settings-message" }))
       .toHaveAttribute("role", "status");
     expect(document.body.textContent).not.toContain("raw monitor details");
@@ -390,7 +394,9 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Placement")).toHaveValue("right");
+    expect(screen.getByRole("radiogroup", { name: "Placement" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Right" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Left" })).not.toBeChecked();
     const startup = screen.getByLabelText("Launch at startup");
     expect(startup).toBeDisabled();
     expect(startup).toBePartiallyChecked();

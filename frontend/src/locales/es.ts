@@ -17,7 +17,7 @@ const es = {
     publisher: "Editor", packageId: "Paquete", command: "Comando", manualHelp: "Abrir la guía oficial de instalación", manualHelpFailure: "Dashy no pudo abrir la guía oficial de instalación.", finish: "Finalizar configuración",
     finishFailure: "Dashy no pudo guardar la selección de proveedores.", actionFailure: "La configuración del proveedor requiere atención.", loading: "Comprobando las herramientas instaladas",
   },
-  settings: { title: "Configuración", placement: "Posición", right: "Derecha", left: "Izquierda", top: "Arriba", monitor: "Monitor", language: "Idioma", fullscreen: "Mostrar siempre sobre aplicaciones a pantalla completa", startup: "Abrir al iniciar", providerStatus: "Estado de proveedores" },
+  settings: { title: "Configuración", placement: "Posición", right: "Derecha", left: "Izquierda", top: "Arriba", monitor: "Monitor", language: "Idioma", fullscreen: "Mostrar siempre sobre aplicaciones a pantalla completa", startup: "Abrir al iniciar", display: "Pantalla", providers: "Proveedores" },
   menu: { show: "Mostrar Dashy", refreshAll: "Actualizar todos los proveedores", placement: "Posición", monitor: "Monitor", primaryMonitor: "Monitor principal", settings: "Configuración", quit: "Salir de Dashy" },
   actions: { refreshAll: "Actualizar todo" },
 } satisfies Messages;

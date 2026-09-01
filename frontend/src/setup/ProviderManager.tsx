@@ -2,8 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ProviderId, ProviderStatus } from "../dashboard";
+import { ProviderGlyph } from "../notch/ProviderGlyph";
 import type { ProviderSetupDefinition } from "./api";
 import type { ProviderSetupController } from "./useProviderSetup";
+
+// "card" is the onboarding grid of large cards; "row" is the compact Settings
+// list where each provider is one line with a glyph, status, and switch.
+type ProviderManagerVariant = "card" | "row";
 
 type ProviderManagerProps = {
   controller: ProviderSetupController;
@@ -11,6 +16,7 @@ type ProviderManagerProps = {
   onEnabledChange: (providers: ProviderId[]) => void;
   selectionDisabled?: boolean;
   actionsRequireSelection?: boolean;
+  variant?: ProviderManagerVariant;
 };
 
 type PendingAction = {
@@ -109,6 +115,7 @@ export function ProviderManager({
   onEnabledChange,
   selectionDisabled = false,
   actionsRequireSelection = false,
+  variant = "card",
 }: ProviderManagerProps) {
   const { t } = useTranslation();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -116,6 +123,9 @@ export function ProviderManager({
   const [manualHelpFailureProvider, setManualHelpFailureProvider] = useState<ProviderId | null>(null);
   const selectionRefs = useRef<Partial<Record<ProviderId, HTMLInputElement | null>>>({});
   const cardRefs = useRef<Partial<Record<ProviderId, HTMLElement | null>>>({});
+  const isRow = variant === "row";
+  const containerClass = isRow ? "provider-setup-list" : "provider-setup-grid";
+  const itemClass = isRow ? "provider-setup-row" : "provider-setup-card";
 
   useEffect(() => {
     if (!restoreFocusProvider || pendingAction !== null) return;
@@ -142,8 +152,8 @@ export function ProviderManager({
   }, [actionsRequireSelection, enabledProviders, manualHelpFailureProvider]);
 
   if (controller.states === null) {
-    return <div className="provider-setup-grid">
-      <div className="provider-setup-card" data-status={controller.loadFailed ? "unavailable" : "loading"}>
+    return <div className={containerClass}>
+      <div className={itemClass} data-status={controller.loadFailed ? "unavailable" : "loading"}>
         {controller.loadFailed
           ? <>
             <p className="provider-setup-error" role="alert">{t("setup.actionFailure")}</p>
@@ -165,7 +175,7 @@ export function ProviderManager({
   );
   const setupActionActive = controller.busyProvider !== null;
 
-  return <div className="provider-setup-grid">
+  return <div className={containerClass}>
     {providerOrder.map((provider) => {
       const state = statesByProvider.get(provider);
       if (!state) return null;
@@ -178,6 +188,8 @@ export function ProviderManager({
       const pending = pendingAction?.provider === provider ? pendingAction : null;
       const isEnabled = enabledProviders.includes(provider);
       const actionsAvailable = !actionsRequireSelection || isEnabled;
+      const showFailure = actionsAvailable
+        && (controller.failureProvider === provider || manualHelpFailureProvider === provider);
 
       const confirm = (action: PendingAction["action"], restoreKeyboardFocus: boolean) => {
         if (restoreKeyboardFocus) setRestoreFocusProvider(provider);
@@ -200,12 +212,102 @@ export function ProviderManager({
         if (restoreKeyboardFocus) setRestoreFocusProvider(provider);
         setPendingAction(null);
       };
+      const openManualHelp = () => {
+        setManualHelpFailureProvider(null);
+        void openUrl(state.definition.installUrl)
+          .catch(() => setManualHelpFailureProvider(provider));
+      };
+
+      const statusText = busyStatus ?? t(statusKey(state.status));
+      const selection = <input
+        ref={(element) => { selectionRefs.current[provider] = element; }}
+        className={isRow ? "settings-switch" : undefined}
+        type="checkbox"
+        aria-label={isRow ? t("setup.useProvider", { provider: name }) : undefined}
+        checked={isEnabled}
+        disabled={selectionDisabled}
+        onChange={(event) => onEnabledChange(event.target.checked
+          ? [...enabledProviders, provider]
+          : enabledProviders.filter((enabled) => enabled !== provider))}
+      />;
+      const actions = <>
+        {actionsAvailable && state.repairAction === "install" && <button
+          type="button"
+          disabled={setupActionActive}
+          onClick={() => beginAction("install")}
+        >{t("setup.install", { provider: name })}</button>}
+        {actionsAvailable && state.repairAction === "login" && <button
+          type="button"
+          disabled={setupActionActive}
+          onClick={() => beginAction("login")}
+        >{t("setup.connect", { provider: name })}</button>}
+        {actionsAvailable && (state.status === "stale" || state.status === "unavailable")
+          && state.repairAction === null && <button
+          type="button"
+          disabled={setupActionActive}
+          onClick={() => {
+            setManualHelpFailureProvider(null);
+            void controller.reload();
+          }}
+        >{t("setup.retry")}</button>}
+      </>;
+      const confirmation = actionsAvailable && pending && <Confirmation
+        definition={state.definition}
+        action={pending.action}
+        disabled={setupActionActive}
+        onCancel={cancel}
+        onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
+      />;
+      const failure = showFailure && <>
+        <p className="provider-setup-error" role="alert">
+          {t(manualHelpFailureProvider === provider
+            ? "setup.manualHelpFailure"
+            : "setup.actionFailure")}
+        </p>
+        <button
+          className="provider-setup-manual-help"
+          type="button"
+          disabled={setupActionActive}
+          onClick={openManualHelp}
+        >{t("setup.manualHelp")}</button>
+      </>;
+
+      if (isRow) {
+        return <article
+          ref={(element) => { cardRefs.current[provider] = element; }}
+          aria-labelledby={headingId}
+          aria-busy={isBusy || undefined}
+          className={itemClass}
+          data-provider={provider}
+          data-status={state.status}
+          data-enabled={isEnabled}
+          key={provider}
+          tabIndex={-1}
+        >
+          <div className="provider-setup-row-main">
+            <span className="provider-setup-disc"><ProviderGlyph provider={provider} /></span>
+            <div className="provider-setup-row-text">
+              <h3 className="provider-setup-name" id={headingId}>{name}</h3>
+              <span
+                className="provider-setup-status"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              ><i className="provider-setup-status-dot" aria-hidden="true" />{statusText}</span>
+            </div>
+            <div className="provider-setup-row-actions">{actions}</div>
+            {selection}
+          </div>
+          {confirmation}
+          {failure}
+        </article>;
+      }
 
       return <article
         ref={(element) => { cardRefs.current[provider] = element; }}
         aria-labelledby={headingId}
         aria-busy={isBusy || undefined}
-        className="provider-setup-card"
+        className={itemClass}
         data-provider={provider}
         data-status={state.status}
         key={provider}
@@ -218,71 +320,18 @@ export function ProviderManager({
             role="status"
             aria-live="polite"
             aria-atomic="true"
-          >{busyStatus ?? t(statusKey(state.status))}</span>
+          >{statusText}</span>
         </header>
 
         <label className="provider-setup-selection">
-          <input
-            ref={(element) => { selectionRefs.current[provider] = element; }}
-            type="checkbox"
-            checked={isEnabled}
-            disabled={selectionDisabled}
-            onChange={(event) => onEnabledChange(event.target.checked
-              ? [...enabledProviders, provider]
-              : enabledProviders.filter((enabled) => enabled !== provider))}
-          />
+          {selection}
           <span>{t("setup.useProvider", { provider: name })}</span>
         </label>
 
-        <div className="provider-setup-actions">
-          {actionsAvailable && state.repairAction === "install" && <button
-            type="button"
-            disabled={setupActionActive}
-            onClick={() => beginAction("install")}
-          >{t("setup.install", { provider: name })}</button>}
-          {actionsAvailable && state.repairAction === "login" && <button
-            type="button"
-            disabled={setupActionActive}
-            onClick={() => beginAction("login")}
-          >{t("setup.connect", { provider: name })}</button>}
-          {actionsAvailable && (state.status === "stale" || state.status === "unavailable")
-            && state.repairAction === null && <button
-            type="button"
-            disabled={setupActionActive}
-            onClick={() => {
-              setManualHelpFailureProvider(null);
-              void controller.reload();
-            }}
-          >{t("setup.retry")}</button>}
-        </div>
+        <div className="provider-setup-actions">{actions}</div>
 
-        {actionsAvailable && pending && <Confirmation
-          definition={state.definition}
-          action={pending.action}
-          disabled={setupActionActive}
-          onCancel={cancel}
-          onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
-        />}
-
-        {actionsAvailable
-          && (controller.failureProvider === provider
-            || manualHelpFailureProvider === provider) && <>
-          <p className="provider-setup-error" role="alert">
-            {t(manualHelpFailureProvider === provider
-              ? "setup.manualHelpFailure"
-              : "setup.actionFailure")}
-          </p>
-          <button
-            className="provider-setup-manual-help"
-            type="button"
-            disabled={setupActionActive}
-            onClick={() => {
-              setManualHelpFailureProvider(null);
-              void openUrl(state.definition.installUrl)
-                .catch(() => setManualHelpFailureProvider(provider));
-            }}
-          >{t("setup.manualHelp")}</button>
-        </>}
+        {confirmation}
+        {failure}
       </article>;
     })}
   </div>;

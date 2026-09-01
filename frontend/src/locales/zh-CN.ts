@@ -17,7 +17,7 @@ const zhCN = {
     publisher: "发布者", packageId: "软件包", command: "命令", manualHelp: "打开官方安装指南", manualHelpFailure: "Dashy 无法打开官方安装指南。", finish: "完成设置",
     finishFailure: "Dashy 无法保存服务商选择。", actionFailure: "服务商设置需要处理。", loading: "正在检查已安装的工具",
   },
-  settings: { title: "设置", placement: "位置", right: "右侧", left: "左侧", top: "顶部", monitor: "显示器", language: "语言", fullscreen: "始终显示在全屏应用之上", startup: "开机启动", providerStatus: "服务状态" },
+  settings: { title: "设置", placement: "位置", right: "右侧", left: "左侧", top: "顶部", monitor: "显示器", language: "语言", fullscreen: "始终显示在全屏应用之上", startup: "开机启动", display: "显示", providers: "服务" },
   menu: { show: "显示 Dashy", refreshAll: "刷新所有服务", placement: "位置", monitor: "显示器", primaryMonitor: "主显示器", settings: "设置", quit: "退出 Dashy" },
   actions: { refreshAll: "全部刷新" },
 } satisfies Messages;

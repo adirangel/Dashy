@@ -62,7 +62,7 @@ describe("compact metric rail", () => {
     ["right", "vertical"], ["left", "vertical"], ["top", "horizontal"],
   ] as const)("uses the shared %s placement geometry", (placement, orientation) => {
     render(<NotchApp placement={placement} snapshot={connected} selectedProvider="claude" />);
-    expect(screen.getByRole("toolbar", { name: /provider status/i }))
+    expect(screen.getByRole("toolbar", { name: /^providers$/i }))
       .toHaveAttribute("aria-orientation", orientation);
     expect(screen.getByRole("button", { name: /settings/i })).toHaveClass("settings-launcher");
     expect(screen.getByTestId("notch-surface")).toHaveClass(`placement-${placement}`);
