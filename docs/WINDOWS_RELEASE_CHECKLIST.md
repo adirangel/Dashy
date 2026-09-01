@@ -11,7 +11,7 @@ not treat a developer workstation as a clean-machine result.
       both `version` fields at the root of `frontend/package-lock.json` and its
       `packages[""]` entry.
 - [ ] Maintainers edited only the three version manifests, then ran
-      `npm --prefix frontend install --package-lock-only` immediately after the
+      `npm install --package-lock-only` inside `frontend` immediately after the
       frontend edit and one unlocked Cargo gate to regenerate the tracked lockfiles.
       The release commit contains exactly the three manifests, `backend/Cargo.lock`,
       and `frontend/package-lock.json` (five reviewed files total). `v0.1.0` was a
