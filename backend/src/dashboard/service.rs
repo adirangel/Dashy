@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::dashboard::{
+    diagnostics::{DiagnosticsSink, NoopDiagnostics, RefreshRecord},
     models::{
         AccountData, AccountSnapshot, DashboardSnapshot, GitHubData, GitHubSnapshot, ProviderError,
         ProviderErrorKind, ProviderId, ProviderStatus, UsageData, UsageSnapshot,
@@ -52,6 +53,7 @@ pub struct DashboardService {
     grok: Arc<dyn DataProvider<UsageData>>,
     cursor: Arc<dyn DataProvider<AccountData>>,
     clock: Arc<dyn Clock>,
+    diagnostics: Arc<dyn DiagnosticsSink>,
     cache: RwLock<Option<DashboardSnapshot>>,
     provider_refreshed_at: RwLock<[Option<DateTime<Utc>>; PROVIDER_COUNT]>,
     slots: [ProviderSlot; PROVIDER_COUNT],
@@ -81,6 +83,7 @@ impl DashboardService {
             grok,
             cursor,
             clock,
+            diagnostics: Arc::new(NoopDiagnostics),
             cache: RwLock::new(None),
             provider_refreshed_at: RwLock::new([None; PROVIDER_COUNT]),
             slots: std::array::from_fn(|_| ProviderSlot {
@@ -169,10 +172,32 @@ impl DashboardService {
         self.fetch_and_publish(provider).await;
     }
 
+    /// Routes one line per refresh to the local diagnostics log.
+    pub fn with_diagnostics(mut self, diagnostics: Arc<dyn DiagnosticsSink>) -> Self {
+        self.diagnostics = diagnostics;
+        self
+    }
+
+    fn record_refresh<T>(
+        &self,
+        provider: ProviderId,
+        started: std::time::Instant,
+        result: &Result<T, ProviderError>,
+    ) {
+        self.diagnostics.record(&RefreshRecord {
+            at: self.clock.now(),
+            provider,
+            error: result.as_ref().err().map(ToString::to_string),
+            duration: started.elapsed(),
+        });
+    }
+
     async fn fetch_and_publish(&self, provider: ProviderId) {
         match provider {
             ProviderId::GitHub => {
+                let started = std::time::Instant::now();
                 let result = self.github.fetch().await;
+                self.record_refresh(provider, started, &result);
                 self.publish_with(
                     provider,
                     |snapshot| &mut snapshot.github,
@@ -181,7 +206,9 @@ impl DashboardService {
                 .await;
             }
             ProviderId::Codex => {
+                let started = std::time::Instant::now();
                 let result = self.codex.fetch().await;
+                self.record_refresh(provider, started, &result);
                 self.publish_with(
                     provider,
                     |snapshot| &mut snapshot.codex,
@@ -190,7 +217,9 @@ impl DashboardService {
                 .await;
             }
             ProviderId::Claude => {
+                let started = std::time::Instant::now();
                 let result = self.claude.fetch().await;
+                self.record_refresh(provider, started, &result);
                 self.publish_with(
                     provider,
                     |snapshot| &mut snapshot.claude,
@@ -199,7 +228,9 @@ impl DashboardService {
                 .await;
             }
             ProviderId::Grok => {
+                let started = std::time::Instant::now();
                 let result = self.grok.fetch().await;
+                self.record_refresh(provider, started, &result);
                 self.publish_with(
                     provider,
                     |snapshot| &mut snapshot.grok,
@@ -208,7 +239,9 @@ impl DashboardService {
                 .await;
             }
             ProviderId::Cursor => {
+                let started = std::time::Instant::now();
                 let result = self.cursor.fetch().await;
+                self.record_refresh(provider, started, &result);
                 self.publish_with(
                     provider,
                     |snapshot| &mut snapshot.cursor,
@@ -415,6 +448,21 @@ mod tests {
     };
 
     use super::{Clock, DashboardService};
+    use crate::dashboard::diagnostics::{DiagnosticsSink, RefreshRecord};
+
+    #[derive(Default)]
+    struct RecordingDiagnostics {
+        lines: std::sync::Mutex<Vec<(ProviderId, Option<String>)>>,
+    }
+
+    impl DiagnosticsSink for RecordingDiagnostics {
+        fn record(&self, record: &RefreshRecord) {
+            self.lines
+                .lock()
+                .unwrap()
+                .push((record.provider, record.error.clone()));
+        }
+    }
 
     #[derive(Default)]
     struct TestClock {
@@ -540,6 +588,7 @@ mod tests {
     struct ServiceFixture {
         service: Arc<DashboardService>,
         clock: Arc<TestClock>,
+        diagnostics: Arc<RecordingDiagnostics>,
         github: Arc<FakeProvider<GitHubData>>,
         codex: Arc<FakeProvider<UsageData>>,
         claude: Arc<FakeProvider<UsageData>>,
@@ -590,17 +639,22 @@ mod tests {
                 subscription_tier: Some("pro".to_owned()),
                 account_email: Some("fixture@example.com".to_owned()),
             }));
-            let service = Arc::new(DashboardService::new(
-                github.clone(),
-                codex.clone(),
-                claude.clone(),
-                grok.clone(),
-                cursor.clone(),
-                clock.clone(),
-            ));
+            let diagnostics = Arc::new(RecordingDiagnostics::default());
+            let service = Arc::new(
+                DashboardService::new(
+                    github.clone(),
+                    codex.clone(),
+                    claude.clone(),
+                    grok.clone(),
+                    cursor.clone(),
+                    clock.clone(),
+                )
+                .with_diagnostics(diagnostics.clone()),
+            );
             Self {
                 service,
                 clock,
+                diagnostics,
                 github,
                 codex,
                 claude,
@@ -608,6 +662,29 @@ mod tests {
                 cursor,
             }
         }
+    }
+
+    #[tokio::test]
+    async fn every_refresh_leaves_one_diagnostics_line_with_its_outcome() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture.grok.fail_with(ProviderError::NotAuthenticated);
+        fixture
+            .service
+            .get_snapshot_for(false, &[ProviderId::Claude, ProviderId::Grok])
+            .await;
+
+        let mut lines = fixture.diagnostics.lines.lock().unwrap().clone();
+        lines.sort_by_key(|(provider, _)| super::provider_index(*provider));
+        assert_eq!(
+            lines,
+            vec![
+                (ProviderId::Claude, None),
+                (
+                    ProviderId::Grok,
+                    Some("provider authentication is unavailable".to_owned())
+                ),
+            ]
+        );
     }
 
     #[tokio::test]

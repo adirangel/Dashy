@@ -8,7 +8,7 @@ import type { AppSettings } from "../window";
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(), updateSettings: vi.fn(), listMonitors: vi.fn(), setTrayLabels: vi.fn(),
   getDashboardSnapshot: vi.fn(), enable: vi.fn(), disable: vi.fn(), isEnabled: vi.fn(),
-  emitLocaleChanged: vi.fn(),
+  emitLocaleChanged: vi.fn(), openDiagnosticsFolder: vi.fn(),
   listenForSettingsChanges: vi.fn(), unlistenSettingsChanges: vi.fn(),
   activationRevision: vi.fn(),
   getProviderSetupStates: vi.fn(), installProvider: vi.fn(), loginProvider: vi.fn(),
@@ -19,6 +19,7 @@ vi.mock("../window", () => ({
   listMonitors: mocks.listMonitors, setTrayLabels: mocks.setTrayLabels,
   emitLocaleChanged: mocks.emitLocaleChanged,
   listenForSettingsChanges: mocks.listenForSettingsChanges,
+  openDiagnosticsFolder: mocks.openDiagnosticsFolder,
 }));
 vi.mock("../useWindowActivation", () => ({
   useWindowActivationRevision: () => mocks.activationRevision(),
@@ -455,6 +456,20 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(mocks.enable).toHaveBeenCalledTimes(1));
     expect(startup).not.toBeChecked();
     expect(screen.queryByText("startup registry unavailable")).not.toBeInTheDocument();
+  });
+
+  it("opens the local diagnostics folder and reports a sanitized failure", async () => {
+    mocks.openDiagnosticsFolder.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("raw-diagnostics-path"));
+    render(<SettingsApp />);
+    await screen.findByRole("heading", { name: "Settings" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open log folder" }));
+    await waitFor(() => expect(mocks.openDiagnosticsFolder).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Try Dashy again later.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open log folder" }));
+    expect(await screen.findByText("Try Dashy again later.", { selector: ".settings-message" })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("raw-diagnostics-path");
   });
 
   it("keeps Refresh all as a separate enabled-dashboard data action", async () => {

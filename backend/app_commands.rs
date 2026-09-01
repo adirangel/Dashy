@@ -20,6 +20,7 @@ macro_rules! dashy_app_commands {
             show_notch_menu,
             open_settings,
             set_tray_labels,
+            open_diagnostics_folder,
         }
     };
 }

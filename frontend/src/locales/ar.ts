@@ -17,7 +17,7 @@ const ar = {
     publisher: "الناشر", packageId: "الحزمة", command: "الأمر", manualHelp: "فتح دليل التثبيت الرسمي", manualHelpFailure: "تعذر على Dashy فتح دليل التثبيت الرسمي.", finish: "إنهاء الإعداد",
     finishFailure: "تعذر على Dashy حفظ اختيار الموفرين.", actionFailure: "يحتاج إعداد الموفر إلى إجراء.", loading: "جارٍ فحص الأدوات المثبتة",
   },
-  settings: { title: "الإعدادات", placement: "الموضع", right: "يمين", left: "يسار", top: "أعلى", monitor: "الشاشة", language: "اللغة", fullscreen: "العرض دائمًا فوق تطبيقات ملء الشاشة", startup: "التشغيل عند بدء النظام", display: "العرض", providers: "المزوّدون" },
+  settings: { title: "الإعدادات", placement: "الموضع", right: "يمين", left: "يسار", top: "أعلى", monitor: "الشاشة", language: "اللغة", fullscreen: "العرض دائمًا فوق تطبيقات ملء الشاشة", startup: "التشغيل عند بدء النظام", display: "العرض", providers: "المزوّدون", diagnostics: "التشخيص", diagnosticsHint: "سجل محلي لتحديثات المزوّدين: أي أداة عملت، كم استغرقت، وهل نجحت. بدون مخرجات أو أسرار.", openLogFolder: "فتح مجلد السجل" },
   menu: { show: "إظهار Dashy", refreshAll: "تحديث جميع المزوّدين", placement: "الموضع", monitor: "الشاشة", primaryMonitor: "الشاشة الرئيسية", settings: "الإعدادات", quit: "إنهاء Dashy" },
   actions: { refreshAll: "تحديث الكل" },
 } satisfies Messages;

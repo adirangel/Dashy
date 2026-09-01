@@ -43,6 +43,7 @@ pub(crate) fn authorize_caller(
 pub fn run() {
     use dashboard::{
         commands::{get_dashboard_snapshot, refresh_dashboard_provider},
+        diagnostics::FileDiagnostics,
         process::SystemProcessRunner,
         providers::{
             claude::ClaudeProvider, codex::CodexProvider, cursor::CursorProvider,
@@ -53,8 +54,8 @@ pub fn run() {
     use desktop::{
         commands::{
             begin_notch_exit, complete_notch_exit, complete_onboarding, get_current_edge_view,
-            get_settings, list_monitors, open_settings, set_notch_interaction, set_tray_labels,
-            show_notch_menu, update_settings,
+            get_settings, list_monitors, open_diagnostics_folder, open_settings,
+            set_notch_interaction, set_tray_labels, show_notch_menu, update_settings,
         },
         controller::{start_controller_runtime, TauriWindowPort, WindowPort},
         menu::TrayState,
@@ -70,14 +71,18 @@ pub fn run() {
     };
 
     let process_runner = SystemProcessRunner;
-    let dashboard = Arc::new(DashboardService::new(
-        Arc::new(GitHubProvider::new(process_runner)),
-        Arc::new(CodexProvider::new(process_runner)),
-        Arc::new(ClaudeProvider::new(process_runner)),
-        Arc::new(GrokProvider::new(process_runner)),
-        Arc::new(CursorProvider::new(process_runner)),
-        Arc::new(SystemClock),
-    ));
+    let diagnostics = Arc::new(FileDiagnostics::new());
+    let dashboard = Arc::new(
+        DashboardService::new(
+            Arc::new(GitHubProvider::new(process_runner)),
+            Arc::new(CodexProvider::new(process_runner)),
+            Arc::new(ClaudeProvider::new(process_runner)),
+            Arc::new(GrokProvider::new(process_runner)),
+            Arc::new(CursorProvider::new(process_runner)),
+            Arc::new(SystemClock),
+        )
+        .with_diagnostics(diagnostics.clone()),
+    );
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -91,7 +96,10 @@ pub fn run() {
             SystemProcessRunner,
         )))))
         .on_menu_event(|app, event| handle_menu_action(app, event.id.as_ref()))
-        .setup(|app| {
+        .setup(move |app| {
+            // The log lives in the per-user app log directory; attaching it here
+            // (rather than at construction) is what gives us the resolved path.
+            diagnostics.attach_directory(app.path().app_log_dir().map_err(std::io::Error::other)?);
             let settings = Arc::new(service_from_tauri_store(app).map_err(std::io::Error::other)?);
             let settings_changes = settings.subscribe();
             let probe: Arc<dyn DesktopProbe> =
@@ -491,6 +499,7 @@ mod config_tests {
                 "allow-get-provider-setup-states",
                 "allow-install-provider",
                 "allow-login-provider",
+                "allow-open-diagnostics-folder",
                 {
                     "identifier": "opener:allow-open-url",
                     "allow": [
@@ -561,6 +570,7 @@ mod config_tests {
             "install-provider",
             "list-monitors",
             "login-provider",
+            "open-diagnostics-folder",
             "open-settings",
             "refresh-dashboard-provider",
             "set-notch-interaction",

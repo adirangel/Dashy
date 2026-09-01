@@ -14,6 +14,7 @@ import {
   emitLocaleChanged,
   listMonitors,
   listenForSettingsChanges,
+  openDiagnosticsFolder,
   updateSettings,
   type AppSettings,
   type EdgePlacement,
@@ -249,6 +250,10 @@ export function SettingsApp() {
       providerSaveInFlight.current = false;
     }
   };
+  const openLogFolder = () => {
+    setMessage("");
+    void openDiagnosticsFolder().catch(() => setMessage(t("guidance.retryLater", { provider: "Dashy" })));
+  };
   const refreshAll = async () => {
     setBusy(true);
     setMessage("");
@@ -324,6 +329,16 @@ export function SettingsApp() {
         onEnabledChange={(enabledProviders) => { void saveProviders(enabledProviders); }}
         selectionDisabled={busy}
       />
+    </section>
+
+    <h2 className="settings-section-label" id="settings-diagnostics-title">{t("settings.diagnostics")}</h2>
+    <section className="settings-group" aria-labelledby="settings-diagnostics-title">
+      <div className="settings-row">
+        <p className="settings-row-hint">{t("settings.diagnosticsHint")}</p>
+        <button className="settings-ghost-button" type="button" onClick={openLogFolder}>
+          {t("settings.openLogFolder")}
+        </button>
+      </div>
     </section>
     <p className="settings-message" role="status" aria-live="polite">{message}</p>
   </main>;
