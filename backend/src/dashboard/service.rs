@@ -847,6 +847,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn maps_unsupported_output_to_an_unavailable_tile() {
+        // The exact chain behind the fresh-machine "Unavailable" bug: a parser
+        // rejection must surface as Unavailable with its error kind, not panic
+        // or masquerade as another status.
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture.claude.fail_with(ProviderError::UnsupportedOutput);
+
+        let snapshot = fixture.service.get_snapshot(false).await;
+
+        assert_eq!(snapshot.claude.status, ProviderStatus::Unavailable);
+        assert_eq!(
+            snapshot.claude.error_kind,
+            Some(ProviderErrorKind::UnsupportedOutput)
+        );
+        assert_eq!(snapshot.claude.remaining_percent, None);
+        assert_eq!(snapshot.claude.short_window, None);
+        assert_eq!(snapshot.claude.weekly_window, None);
+        assert_eq!(snapshot.codex.status, ProviderStatus::Connected);
+    }
+
+    #[tokio::test]
     async fn starts_all_providers_before_any_can_complete() {
         let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
         let barrier = Arc::new(Barrier::new(3));
