@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="56" viewBox="0 0 300 56" role="img" aria-label="Sponsor Dashy — funds the code-signing certificate">
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#62e6a7" stop-opacity="0"/>
+      <stop offset=".35" stop-color="#62e6a7"/>
+      <stop offset=".65" stop-color="#8deb78"/>
+      <stop offset="1" stop-color="#8deb78" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151a1c"/>
+      <stop offset="1" stop-color="#0b0f11"/>
+    </linearGradient>
+    <linearGradient id="heart" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7548"/>
+      <stop offset="1" stop-color="#ff9a7a"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- tile -->
+  <rect x=".5" y=".5" width="299" height="55" rx="16" fill="url(#bg)" stroke="#ffffff" stroke-opacity=".08"/>
+  <!-- accent hairline along the top edge, like the provider card -->
+  <rect x="24" y="1" width="252" height="2" rx="1" fill="url(#edge)" opacity=".85"/>
+  <!-- glyph disc -->
+  <circle cx="30" cy="28" r="16" fill="#17181b" stroke="#ffffff" stroke-opacity=".06"/>
+  <circle cx="30" cy="28" r="16" fill="none" stroke="#ff7548" stroke-opacity=".28" stroke-width="3"/>
+  <path d="M30 35.2c-.3 0-.6-.1-.8-.3l-6-5.7c-1.9-1.8-1.9-4.8 0-6.6 1.7-1.6 4.3-1.7 6.1-.3l.7.6.7-.6c1.8-1.4 4.4-1.3 6.1.3 1.9 1.8 1.9 4.8 0 6.6l-6 5.7c-.2.2-.5.3-.8.3z" fill="url(#heart)" filter="url(#glow)"/>
+  <!-- text -->
+  <text x="56" y="25" fill="#f4f7f5" font-family="Segoe UI Variable, Segoe UI, system-ui, -apple-system, sans-serif" font-size="15" font-weight="650" letter-spacing="-.2">Sponsor Dashy</text>
+  <text x="56" y="42" fill="#98a39d" font-family="Segoe UI Variable, Segoe UI, system-ui, -apple-system, sans-serif" font-size="11">Funds the code-signing certificate</text>
+  <!-- chevron -->
+  <path d="M272 22l6 6-6 6" fill="none" stroke="#62e6a7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,4 @@
+# Shows GitHub's "Sponsor" button on the repository once the GitHub Sponsors
+# profile for this account is approved. Contributions fund the code-signing
+# certificate for Windows releases first; see README "Support Dashy".
+github: [adirangel]
