@@ -14,6 +14,8 @@ by the interface.
 
 ![Dashy revealing Claude usage from the right edge](docs/images/dashy-right-edge.png)
 
+<a href="https://github.com/sponsors/adirangel"><img src="docs/images/sponsor-button.svg" width="300" height="56" alt="Sponsor Dashy — funds the code-signing certificate"></a>
+
 ## The experience
 
 Dashy keeps useful account activity one deliberate pointer movement away without
@@ -332,6 +334,15 @@ build job and a draft-first publish. The full guarded procedure lives in
 - **A saved monitor is disconnected:** Dashy falls back to the primary monitor; reconnect
   it or choose a new monitor in Settings.
 - **The tray is not visible:** check the Windows hidden-icons area.
+
+## Support Dashy
+
+Dashy is free and will stay free. Its one real cost is the Windows code-signing
+certificate: without it, every download shows a SmartScreen warning, and the
+automatic updater cannot ship. Sponsorship goes there first, and the README will
+say so the day the installer is signed.
+
+<a href="https://github.com/sponsors/adirangel"><img src="docs/images/sponsor-button.svg" width="300" height="56" alt="Sponsor Dashy"></a>
 
 ## License
 
