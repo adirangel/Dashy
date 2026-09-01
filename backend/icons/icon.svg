@@ -1,0 +1,23 @@
+<svg viewBox="0 0 256 256" width="256" height="256" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dashy app icon: one ring tile from the notch — a dark rounded tile, a
+       green "remaining" ring, the inner disc, and the accent dot. Source of
+       truth for icon.ico; regenerate with `node infrastructure/icons/build-icon.mjs`. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#151a1c"/>
+      <stop offset="1" stop-color="#0b0f11"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#62e6a7"/>
+      <stop offset="1" stop-color="#8deb78"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <rect x="1" y="1" width="254" height="254" rx="57" fill="none" stroke="#ffffff" stroke-opacity=".07" stroke-width="2"/>
+  <circle cx="128" cy="128" r="74" fill="none" stroke="#ffffff" stroke-opacity=".13" stroke-width="22"/>
+  <circle cx="128" cy="128" r="74" fill="none" stroke="url(#arc)" stroke-width="22" stroke-linecap="round"
+          stroke-dasharray="339 465" transform="rotate(-90 128 128)"/>
+  <circle cx="128" cy="128" r="50" fill="#17181b"/>
+  <circle cx="128" cy="128" r="50" fill="none" stroke="#ffffff" stroke-opacity=".06" stroke-width="2"/>
+  <circle cx="128" cy="128" r="13" fill="#ff7548"/>
+</svg>

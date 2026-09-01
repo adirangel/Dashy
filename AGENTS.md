@@ -5,7 +5,7 @@ Dashy is a compact, local-first desktop productivity dashboard.
 - `frontend/` owns the React user interface and browser-side state.
 - `backend/` owns the Tauri desktop shell and native capabilities.
 - `docs/` contains current product documentation and the active backlog; completed implementation plans are not retained.
-- `infrastructure/` owns the release tooling: version verification and the tests that pin the release workflow's shape.
+- `infrastructure/` owns the build tooling: release version verification, the tests that pin the release workflow's shape, and the app-icon generator (`backend/icons/icon.svg` is the source; `npm run icons:build` regenerates `icon.ico`).
 
 Windows is the current release target. Preserve the existing desktop portability boundaries for future macOS and Linux support.
 
