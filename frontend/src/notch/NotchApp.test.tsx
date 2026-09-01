@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "../i18n";
-import { formatDateTime, formatNumber } from "../i18n";
+import { formatDateTime, formatNumber, formatRelativeTime } from "../i18n";
 import type { DashboardSnapshot } from "../dashboard";
 import { CursorCard } from "./CursorCard";
 import { GitHubCard } from "./GitHubCard";
@@ -262,12 +262,14 @@ describe("compact metric rail", () => {
 
 describe("provider details", () => {
   it("renders grok's single monthly billing window without a weekly label", () => {
-    render(<UsageProviderCard provider="grok" snapshot={connected.grok} />);
+    const now = new Date(2026, 7, 26, 12);
+    render(<UsageProviderCard provider="grok" snapshot={connected.grok} now={now} />);
     expect(screen.getByRole("heading", { name: "Grok" })).toBeInTheDocument();
     expect(screen.getByText("Monthly")).toBeInTheDocument();
     expect(screen.getByText("61% remaining")).toBeInTheDocument();
     expect(screen.queryByText("Weekly")).not.toBeInTheDocument();
-    expect(screen.getByText(`Resets ${formatDateTime("2026-09-15T00:00:00Z")}`)).toBeInTheDocument();
+    expect(screen.getByText(`Resets ${formatRelativeTime("2026-09-15T00:00:00Z", now)}`))
+      .toHaveAttribute("title", formatDateTime("2026-09-15T00:00:00Z"));
   });
 
   it("renders the cursor account card with plan, account, and no percentages", () => {
@@ -297,13 +299,15 @@ describe("provider details", () => {
   });
 
   it("renders independent short and weekly usage windows with localized reset times", () => {
-    render(<UsageProviderCard provider="claude" snapshot={connected.claude} />);
+    const now = new Date(2026, 7, 26, 12);
+    render(<UsageProviderCard provider="claude" snapshot={connected.claude} now={now} />);
     expect(screen.getByRole("heading", { name: "Claude" })).toBeInTheDocument();
     expect(screen.getByText("Current session")).toBeInTheDocument();
     expect(screen.getByText("83% remaining")).toBeInTheDocument();
     expect(screen.getByText("Weekly")).toBeInTheDocument();
     expect(screen.getByText("59% remaining")).toBeInTheDocument();
-    expect(screen.getByText(`Resets ${formatDateTime("2026-09-03T14:00:00Z")}`)).toBeInTheDocument();
+    expect(screen.getByText(`Resets ${formatRelativeTime("2026-09-03T14:00:00Z", now)}`))
+      .toHaveAttribute("title", formatDateTime("2026-09-03T14:00:00Z"));
     expect(screen.queryByText(/Thursday 12:00 AM/)).not.toBeInTheDocument();
   });
 
@@ -313,8 +317,8 @@ describe("provider details", () => {
       ...connected.claude,
       shortWindow: { ...connected.claude.shortWindow!, resetsAt: "2026-09-03T14:00:00Z" },
       weeklyWindow: { ...connected.claude.weeklyWindow!, resetsAt: null },
-    }} />);
-    const localizedReset = formatDateTime("2026-09-03T14:00:00Z", locale);
+    }} now={new Date(2026, 7, 26, 12)} />);
+    const localizedReset = formatRelativeTime("2026-09-03T14:00:00Z", new Date(2026, 7, 26, 12), locale);
     expect(screen.getByText((content) => content.includes(localizedReset))).toBeInTheDocument();
     expect(screen.queryByText(/Sep 3 at 2:00 PM|Thursday 12:00 AM/)).not.toBeInTheDocument();
   });

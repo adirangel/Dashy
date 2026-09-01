@@ -78,4 +78,22 @@ export function formatTime(value: string | Date, locale = resolveLocale(i18n.res
   return new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(date);
 }
 
+// "in 2 hours" / "in 3 days": the coarsest unit that still reads naturally.
+// Falls back to the absolute time once the moment has passed.
+export function formatRelativeTime(
+  value: string | Date,
+  now: Date,
+  locale = resolveLocale(i18n.resolvedLanguage),
+) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const minutes = Math.round((date.getTime() - now.getTime()) / 60_000);
+  if (minutes <= 0) return formatDateTime(date, locale);
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "long" });
+  if (minutes < 60) return formatter.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return formatter.format(hours, "hour");
+  return formatter.format(Math.round(hours / 24), "day");
+}
+
 export default i18n;

@@ -461,7 +461,7 @@ export function NotchApp({
           ? <GitHubCard snapshot={snapshot?.github ?? null} now={now} />
           : selectedProvider === "cursor"
             ? <CursorCard snapshot={snapshot?.cursor ?? null} />
-            : <UsageProviderCard provider={selectedProvider} snapshot={snapshot?.[selectedProvider] ?? null} />}
+            : <UsageProviderCard provider={selectedProvider} snapshot={snapshot?.[selectedProvider] ?? null} now={now} />}
       </div>}
       <div className="notch-live-region" role="status" aria-live="polite" aria-atomic="true">
         {selectedIsStale || dashboard.refreshFailures.has(selectedProvider)
