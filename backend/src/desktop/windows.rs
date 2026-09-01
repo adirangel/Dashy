@@ -586,6 +586,7 @@ mod tests {
             MonitorWorkArea::new(-1920, 40, 1920, 1040).unwrap(),
             EdgeUiState::CardVisible,
             Some(ProviderId::Codex),
+            3,
         );
 
         apply_window_bounds_with(&api, 77, &visible).unwrap();
@@ -610,6 +611,7 @@ mod tests {
             MonitorWorkArea::new(0, 0, 1920, 1040).unwrap(),
             EdgeUiState::Hidden,
             None,
+            3,
         );
         apply_window_bounds_with(&api, 88, &hidden).unwrap();
         let calls = api.calls.lock().unwrap();

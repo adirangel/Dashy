@@ -46,7 +46,7 @@ not treat a developer workstation as a clean-machine result.
       `.msi.sha256` asset, with no NSIS installer or plain executable.
 - [ ] The downloaded MSI SHA-256 matches the first field in its downloaded
       `.msi.sha256` file. Use the reproducible download-and-compare command in
-      [Create a Windows release](../README.md#create-a-windows-release).
+      [Creating a Windows release](RELEASE.md).
 - [ ] The draft title, tag, and generated notes identify the intended version.
 - [ ] The draft clearly states that the private-test MSI is unsigned and may show
       an Unknown publisher or SmartScreen warning, when code signing is not enabled.
@@ -58,7 +58,8 @@ not treat a developer workstation as a clean-machine result.
 - [ ] Complete MSI installation successfully.
 - [ ] Leave **Launch Dashy** selected and confirm Dashy opens to first-run setup.
 - [ ] Confirm WebView2 is downloaded only when the runtime is missing.
-- [ ] Configure Claude only, Codex only, GitHub only, two-provider combinations, all three, and none.
+- [ ] Configure each provider alone (Claude, Codex, GitHub, Grok, Cursor), at
+      least one multi-provider combination, all five, and none.
 - [ ] Confirm every install and login action requires its own approval.
 - [ ] Confirm the provider login opens in a visible terminal/browser flow.
 - [ ] Confirm Dashy never asks for or displays a token, API key, or password.
@@ -70,7 +71,8 @@ not treat a developer workstation as a clean-machine result.
 - [ ] Confirm Dashy preferences survive the upgrade.
 - [ ] Uninstall Dashy from Installed apps.
 - [ ] Confirm Dashy is removed.
-- [ ] Confirm Claude, Codex, GitHub CLI, and their login sessions remain untouched.
+- [ ] Confirm the provider CLIs (Claude, Codex, GitHub, Grok, Cursor) and their
+      login sessions remain untouched.
 
 ## Publish decision
 

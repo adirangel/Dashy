@@ -35,16 +35,18 @@ const mocks = {
 };
 
 const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = {
-  claude: { publisher: "Anthropic", packageId: "Anthropic.ClaudeCode", installCommand: "winget install --id Anthropic.ClaudeCode --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://code.claude.com/docs/en/setup", loginCommand: "claude auth login --claudeai" },
-  codex: { publisher: "OpenAI", packageId: "OpenAI.Codex", installCommand: "winget install --id OpenAI.Codex --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://learn.chatgpt.com/docs/codex/cli", loginCommand: "codex login" },
-  github: { publisher: "GitHub", packageId: "GitHub.cli", installCommand: "winget install --id GitHub.cli --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://cli.github.com/", loginCommand: "gh auth login --web" },
+  claude: { publisher: "Anthropic", packageId: "Anthropic.ClaudeCode", installKind: "winget", installCommand: "winget install --id Anthropic.ClaudeCode --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://code.claude.com/docs/en/setup", loginCommand: "claude auth login --claudeai" },
+  codex: { publisher: "OpenAI", packageId: "OpenAI.Codex", installKind: "winget", installCommand: "winget install --id OpenAI.Codex --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://learn.chatgpt.com/docs/codex/cli", loginCommand: "codex login" },
+  github: { publisher: "GitHub", packageId: "GitHub.cli", installKind: "winget", installCommand: "winget install --id GitHub.cli --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://cli.github.com/", loginCommand: "gh auth login --web" },
+  grok: { publisher: "xAI", packageId: "xAI.GrokBuild", installKind: "winget", installCommand: "winget install --id xAI.GrokBuild --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://docs.x.ai/build/overview", loginCommand: "grok login" },
+  cursor: { publisher: "Anysphere", packageId: null, installKind: "manualUrl", installCommand: null, installUrl: "https://cursor.com/docs/cli/installation", loginCommand: "cursor-agent login" },
 };
 
 function setupStates(
   status: Partial<Record<ProviderId, ProviderStatus>> = {},
   repairAction: Partial<Record<ProviderId, "install" | "login" | null>> = {},
 ): ProviderSetupState[] {
-  return (["claude", "codex", "github"] as ProviderId[]).map((provider) => ({
+  return (["claude", "codex", "github", "grok", "cursor"] as ProviderId[]).map((provider) => ({
     definition: { provider, ...metadata[provider] },
     status: status[provider] ?? "connected",
     repairAction: repairAction[provider]
@@ -70,6 +72,8 @@ function renderManager(options: {
     claude: options.claudeStatus ?? "connected",
     codex: options.codexStatus ?? "connected",
     github: options.githubStatus ?? "connected",
+    grok: "connected",
+    cursor: "connected",
   } satisfies Record<ProviderId, ProviderStatus>;
   const states = options.states === undefined
     ? setupStates(status)
@@ -85,7 +89,7 @@ function renderManager(options: {
       login: mocks.login,
       reload: mocks.reload,
     }}
-    enabledProviders={options.enabledProviders ?? ["claude", "codex", "github"]}
+    enabledProviders={options.enabledProviders ?? ["claude", "codex", "github", "grok", "cursor"]}
     onEnabledChange={mocks.onEnabledChange}
     actionsRequireSelection={options.actionsRequireSelection}
   />);
@@ -494,6 +498,43 @@ describe("ProviderManager", () => {
     expect(within(githubCard).getByRole("button", { name: "Connect GitHub" })).toBeEnabled();
   });
 
+  it("confirms a manual-URL install by opening the official guide without any command", () => {
+    apiMocks.openUrl.mockResolvedValue(undefined);
+    renderManager({ states: setupStates({ cursor: "notInstalled" }, { cursor: "install" }) });
+
+    const cursorCard = screen.getByRole("article", { name: "Cursor" });
+    fireEvent.click(within(cursorCard).getByRole("button", { name: "Install Cursor" }));
+
+    const confirmation = within(cursorCard).getByRole("group", {
+      name: "Open official installation guide",
+    });
+    expect(within(confirmation).getByText("Dashy will open the official install guide in your browser.")).toBeInTheDocument();
+    expect(within(confirmation).queryByText(/winget/)).not.toBeInTheDocument();
+    expect(within(confirmation).queryByText("Package")).not.toBeInTheDocument();
+
+    fireEvent.click(within(confirmation).getByRole("button", {
+      name: "Open official installation guide",
+    }), { detail: 1 });
+
+    expect(apiMocks.openUrl).toHaveBeenCalledExactlyOnceWith("https://cursor.com/docs/cli/installation");
+    expect(mocks.install).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a manual-help failure when the official guide cannot open", async () => {
+    apiMocks.openUrl.mockRejectedValue(new Error("opener offline"));
+    renderManager({ states: setupStates({ cursor: "notInstalled" }, { cursor: "install" }) });
+
+    const cursorCard = screen.getByRole("article", { name: "Cursor" });
+    fireEvent.click(within(cursorCard).getByRole("button", { name: "Install Cursor" }));
+    fireEvent.click(within(cursorCard).getByRole("button", {
+      name: "Open official installation guide",
+    }), { detail: 1 });
+
+    expect(await within(cursorCard).findByRole("alert"))
+      .toHaveTextContent("Dashy could not open the official installation guide.");
+    expect(document.body.textContent).not.toContain("opener offline");
+  });
+
   it.each(["stale", "unavailable"] as const)(
     "retries a %s provider without opening login consent",
     (providerStatus) => {
@@ -518,7 +559,7 @@ describe("ProviderManager", () => {
     renderManager({ states: setupStates({ claude: "notAuthenticated" }).reverse() });
     expect(screen.getAllByRole("article").map((card) =>
       within(card).getByRole("heading").textContent
-    )).toEqual(["Claude", "Codex", "GitHub"]);
+    )).toEqual(["Claude", "Codex", "GitHub", "Grok", "Cursor"]);
     const claudeCard = screen.getByRole("article", { name: "Claude" });
     expect(claudeCard).toHaveAttribute("data-provider", "claude");
     expect(claudeCard).toHaveAttribute("data-status", "notAuthenticated");

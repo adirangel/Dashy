@@ -8,7 +8,8 @@ Approved product and architecture design for Dashy's first Windows installer.
 
 - Publish a normal Windows x64 MSI as a GitHub Release asset.
 - Let a new user install and run Dashy without installing developer tooling.
-- Let each user enable any combination of Claude, Codex, and GitHub.
+- Let each user enable any combination of the supported providers (Claude,
+  Codex, GitHub, Grok, Cursor).
 - Install missing provider CLIs only after explicit, provider-specific consent.
 - Complete provider authentication through each provider's official login flow.
 - Keep credentials outside Dashy and local to the provider tools that own them.
@@ -35,7 +36,7 @@ or SmartScreen prompt.
 
 At the end of installation, the installer offers a checked-by-default `Launch
 Dashy` option. When Dashy starts for the first time, it opens provider onboarding
-instead of assuming that all three providers are required.
+instead of assuming that every provider is required.
 
 Provider installation and authentication remain in this visible post-MSI setup
 window, where they run in the signed-in user's context. MSI custom actions must not
@@ -51,8 +52,8 @@ their accounts.
 
 ## First-run onboarding
 
-Onboarding presents independent cards for Claude, Codex, and GitHub. A user may
-configure one provider, any pair, all three, or none. Each card has one of these
+Onboarding presents an independent card per supported provider. A user may
+configure one provider, any combination, all of them, or none. Each card has one of these
 states:
 
 - `Not installed`
@@ -91,10 +92,14 @@ WinGet package allowlist is:
 | Claude | `claude` | `Anthropic.ClaudeCode` |
 | Codex | `codex` | `OpenAI.Codex` |
 | GitHub | `gh` | `GitHub.cli` |
+| Grok | `grok` | `xAI.GrokBuild` |
+| Cursor | `cursor-agent` | manual install (no WinGet package) |
 
 For a missing CLI, the provider card shows the product name, publisher, exact
 package ID, and the command Dashy proposes to run. The user must approve that
-provider before anything starts.
+provider before anything starts. Cursor has no WinGet package: after the same
+consent step, Dashy only opens the official installation guide from an exact-URL
+allowlist and never runs an install command for it.
 
 After approval, Dashy opens a visible PowerShell or Windows Terminal process and
 runs the allowlisted `winget install` command. The child process remains visible
@@ -118,9 +123,10 @@ the official interactive command in a visible terminal:
 | Claude | `claude auth login --claudeai` | `claude auth status` |
 | Codex | `codex login` | `codex login status` |
 | GitHub | `gh auth login --web` | `gh auth status --hostname github.com` |
+| Grok | `grok login` | stdio handshake over `grok agent stdio` |
+| Cursor | `cursor-agent login` | `cursor-agent status --format json` |
 
-Claude and Codex use their official browser login to connect an eligible Claude
-or ChatGPT subscription. GitHub uses the GitHub CLI browser flow. Dashy does not
+Each provider uses its official browser or terminal login flow. Dashy does not
 display fields for passwords, API keys, OAuth codes, access tokens, or refresh
 tokens.
 

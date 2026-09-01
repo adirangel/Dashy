@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ProviderId, ProviderStatus } from "../dashboard";
 
+export type ProviderInstallKind = "winget" | "manualUrl";
+
 export type ProviderSetupDefinition = {
   provider: ProviderId;
   publisher: string;
-  packageId: string;
-  installCommand: string;
+  packageId: string | null;
+  installKind: ProviderInstallKind;
+  installCommand: string | null;
   installUrl: string;
   loginCommand: string;
 };
@@ -18,7 +21,7 @@ export type ProviderSetupState = {
 
 export type ProviderSetupAction = "install" | "login";
 
-const providerIds = new Set<ProviderId>(["claude", "codex", "github"]);
+const providerIds = new Set<ProviderId>(["claude", "codex", "github", "grok", "cursor"]);
 const providerStatuses = new Set<ProviderStatus>([
   "connected", "stale", "notInstalled", "notAuthenticated", "unavailable",
 ]);
@@ -26,6 +29,8 @@ const approvedInstallUrls: Record<ProviderId, string> = {
   claude: "https://code.claude.com/docs/en/setup",
   codex: "https://learn.chatgpt.com/docs/codex/cli",
   github: "https://cli.github.com/",
+  grok: "https://docs.x.ai/build/overview",
+  cursor: "https://cursor.com/docs/cli/installation",
 };
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -37,12 +42,19 @@ function isProviderSetupDefinition(value: unknown): value is ProviderSetupDefini
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   return hasExactKeys(candidate, [
-    "provider", "publisher", "packageId", "installCommand", "installUrl", "loginCommand",
+    "provider", "publisher", "packageId", "installKind", "installCommand", "installUrl",
+    "loginCommand",
   ])
     && providerIds.has(candidate.provider as ProviderId)
     && typeof candidate.publisher === "string"
-    && typeof candidate.packageId === "string"
-    && typeof candidate.installCommand === "string"
+    && (candidate.packageId === null || typeof candidate.packageId === "string")
+    && (candidate.installKind === "winget" || candidate.installKind === "manualUrl")
+    // A winget install needs a package id; a manual install must not claim one.
+    && (candidate.installKind === "winget") === (typeof candidate.packageId === "string")
+    // Same coherence for the command: winget shows one, manual installs have none.
+    && (candidate.installKind === "winget"
+      ? typeof candidate.installCommand === "string"
+      : candidate.installCommand === null)
     && candidate.installUrl === approvedInstallUrls[candidate.provider as ProviderId]
     && typeof candidate.loginCommand === "string";
 }

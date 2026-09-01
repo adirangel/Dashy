@@ -26,9 +26,7 @@ const SETTINGS_CONTROL_EXTENT: u32 = GEAR_GAP + GEAR_DIAMETER + GEAR_TAIL_MARGIN
 const CARD_WIDTH: u32 = 300;
 const TOP_CARD_MIN_WIDTH: u32 = 340;
 const CARD_HEIGHT: u32 = 360;
-// A 4th provider raises control_logical_extent past the fixed expanded sizes below;
-// grow sideExpanded.height / topExpanded.width in geometry.json alongside this.
-const MAX_PROVIDER_COUNT: u8 = 3;
+const MAX_PROVIDER_COUNT: u8 = 5;
 const BASE_DPI: u32 = 96;
 const MIN_EFFECTIVE_DPI: u32 = 48;
 const MAX_EFFECTIVE_DPI: u32 = 768;
@@ -614,8 +612,15 @@ pub fn visible_rect(
     placement: EdgePlacement,
     work_area: MonitorWorkArea,
     state: EdgeUiState,
+    provider_count: u8,
 ) -> Rect {
-    visible_rect_scaled(placement, work_area, MonitorScale::ONE, state)
+    visible_rect_scaled(
+        placement,
+        work_area,
+        MonitorScale::ONE,
+        state,
+        provider_count,
+    )
 }
 
 pub fn visible_rect_scaled(
@@ -623,8 +628,9 @@ pub fn visible_rect_scaled(
     work_area: MonitorWorkArea,
     scale: MonitorScale,
     state: EdgeUiState,
+    provider_count: u8,
 ) -> Rect {
-    visible_rect_scaled_for_provider_count(placement, work_area, scale, state, 3)
+    visible_rect_scaled_for_provider_count(placement, work_area, scale, state, provider_count)
 }
 
 fn visible_rect_scaled_for_provider_count(
@@ -642,8 +648,8 @@ fn visible_rect_scaled_for_provider_count(
     let top_rail_width = scale.logical_to_physical(control_extent);
     let top_rail_height = scale.logical_to_physical(TOP_RAIL_HEIGHT);
     let side_card_width = scale.logical_to_physical(SIDE_RAIL_WIDTH + CARD_WIDTH);
-    let side_card_height = scale.logical_to_physical(side_expanded_extent());
-    let top_card_width = scale.logical_to_physical(top_expanded_width());
+    let side_card_height = scale.logical_to_physical(side_expanded_extent(provider_count));
+    let top_card_width = scale.logical_to_physical(top_expanded_width(provider_count));
     let top_card_height = scale.logical_to_physical(TOP_RAIL_HEIGHT + CARD_HEIGHT);
     match (placement, expanded) {
         (EdgePlacement::Right, false) => {
@@ -714,8 +720,16 @@ pub fn window_layout(
     work_area: MonitorWorkArea,
     state: EdgeUiState,
     provider: Option<ProviderId>,
+    provider_count: u8,
 ) -> WindowLayout {
-    window_layout_scaled(placement, work_area, MonitorScale::ONE, state, provider, 3)
+    window_layout_scaled(
+        placement,
+        work_area,
+        MonitorScale::ONE,
+        state,
+        provider,
+        provider_count,
+    )
 }
 
 pub fn window_layout_scaled(
@@ -820,14 +834,15 @@ fn control_logical_extent(provider_count: u8) -> u32 {
     rail_logical_extent(provider_count) + SETTINGS_CONTROL_EXTENT
 }
 
-// The expanded surface keeps one fixed size for every provider count so pinned cards
-// never resize when providers are enabled or disabled.
-fn side_expanded_extent() -> u32 {
-    CARD_HEIGHT.max(control_logical_extent(MAX_PROVIDER_COUNT))
+// The expanded surface tracks the enabled-provider count: it must always contain
+// the rail plus settings control, but a five-provider ceiling would waste most of
+// the screen edge for the common smaller selections.
+fn side_expanded_extent(provider_count: u8) -> u32 {
+    CARD_HEIGHT.max(control_logical_extent(provider_count))
 }
 
-fn top_expanded_width() -> u32 {
-    TOP_CARD_MIN_WIDTH.max(control_logical_extent(MAX_PROVIDER_COUNT))
+fn top_expanded_width(provider_count: u8) -> u32 {
+    TOP_CARD_MIN_WIDTH.max(control_logical_extent(provider_count))
 }
 
 fn subtract_from_end(start: i32, length: u32, amount: u32) -> i32 {
@@ -872,21 +887,16 @@ mod tests {
         assert_eq!(contract["settingsControlExtent"], SETTINGS_CONTROL_EXTENT);
         assert_eq!(contract["cardWidth"], CARD_WIDTH);
         assert_eq!(contract["cardHeight"], CARD_HEIGHT);
-        assert_eq!(
-            contract["sideExpanded"]["width"],
-            SIDE_RAIL_WIDTH + CARD_WIDTH
-        );
-        assert_eq!(contract["sideExpanded"]["height"], side_expanded_extent());
-        assert_eq!(contract["topExpanded"]["width"], top_expanded_width());
-        assert_eq!(
-            contract["topExpanded"]["height"],
-            TOP_RAIL_HEIGHT + CARD_HEIGHT
-        );
+        assert_eq!(contract["topCardMinWidth"], TOP_CARD_MIN_WIDTH);
+        // Expanded sizes are derived per enabled-provider count on both sides of the
+        // contract; fixed sideExpanded/topExpanded entries must not come back.
+        assert!(contract.get("sideExpanded").is_none());
+        assert!(contract.get("topExpanded").is_none());
         assert_eq!(contract["maxProviders"], MAX_PROVIDER_COUNT);
         assert_eq!(contract["activationZonePx"], ACTIVATION_ZONE_PX);
 
         // tauri.conf.json is the fourth copy of this geometry: the main window must be
-        // created at the collapsed three-provider rail size.
+        // created at the collapsed rail size for the maximum provider count.
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
         let main = config["app"]["windows"]
@@ -904,16 +914,34 @@ mod tests {
         assert_eq!(rail_logical_extent(1), 152);
         assert_eq!(rail_logical_extent(2), 240);
         assert_eq!(rail_logical_extent(3), 328);
+        assert_eq!(rail_logical_extent(4), 416);
+        assert_eq!(rail_logical_extent(5), 504);
         assert_eq!(control_logical_extent(1), 224);
         assert_eq!(control_logical_extent(2), 312);
         assert_eq!(control_logical_extent(3), 400);
-        assert_eq!(side_expanded_extent(), 400);
-        assert_eq!(top_expanded_width(), 400);
+        assert_eq!(control_logical_extent(4), 488);
+        assert_eq!(control_logical_extent(5), 576);
+        assert_eq!(side_expanded_extent(1), 360);
+        assert_eq!(side_expanded_extent(2), 360);
+        assert_eq!(side_expanded_extent(3), 400);
+        assert_eq!(side_expanded_extent(4), 488);
+        assert_eq!(side_expanded_extent(5), 576);
+        assert_eq!(top_expanded_width(1), 340);
+        assert_eq!(top_expanded_width(2), 340);
+        assert_eq!(top_expanded_width(3), 400);
+        assert_eq!(top_expanded_width(4), 488);
+        assert_eq!(top_expanded_width(5), 576);
     }
 
     #[test]
-    fn provider_count_sizes_each_collapsed_placement_without_changing_expanded_bounds() {
-        for (provider_count, extent) in [(1, 224), (2, 312), (3, 400)] {
+    fn provider_count_sizes_both_the_collapsed_and_expanded_placements() {
+        for (provider_count, extent, side_card, top_card) in [
+            (1, 224, (370, 360), (340, 430)),
+            (2, 312, (370, 360), (340, 430)),
+            (3, 400, (370, 400), (400, 430)),
+            (4, 488, (370, 488), (488, 430)),
+            (5, 576, (370, 576), (576, 430)),
+        ] {
             let side_rail = window_layout_scaled(
                 EdgePlacement::Right,
                 work(),
@@ -930,7 +958,7 @@ mod tests {
                 None,
                 provider_count,
             );
-            let side_card = window_layout_scaled(
+            let side_card_layout = window_layout_scaled(
                 EdgePlacement::Right,
                 work(),
                 MonitorScale::ONE,
@@ -938,7 +966,7 @@ mod tests {
                 Some(ProviderId::Claude),
                 provider_count,
             );
-            let top_card = window_layout_scaled(
+            let top_card_layout = window_layout_scaled(
                 EdgePlacement::Top,
                 work(),
                 MonitorScale::ONE,
@@ -949,8 +977,14 @@ mod tests {
 
             assert_eq!((side_rail.size.width, side_rail.size.height), (70, extent));
             assert_eq!((top_rail.size.width, top_rail.size.height), (extent, 70));
-            assert_eq!((side_card.size.width, side_card.size.height), (370, 400));
-            assert_eq!((top_card.size.width, top_card.size.height), (400, 430));
+            assert_eq!(
+                (side_card_layout.size.width, side_card_layout.size.height),
+                side_card
+            );
+            assert_eq!(
+                (top_card_layout.size.width, top_card_layout.size.height),
+                top_card
+            );
         }
     }
 
@@ -1048,17 +1082,19 @@ mod tests {
             EdgePlacement::Left,
             EdgePlacement::Top,
         ] {
-            let rail = visible_rect(placement, work, EdgeUiState::RailVisible);
-            let card = visible_rect(placement, work, EdgeUiState::CardVisible);
-            assert!(work.rect().contains_rect(rail), "{placement:?} rail");
-            assert!(work.rect().contains_rect(card), "{placement:?} card");
+            for provider_count in 1..=MAX_PROVIDER_COUNT {
+                let rail = visible_rect(placement, work, EdgeUiState::RailVisible, provider_count);
+                let card = visible_rect(placement, work, EdgeUiState::CardVisible, provider_count);
+                assert!(work.rect().contains_rect(rail), "{placement:?} rail");
+                assert!(work.rect().contains_rect(card), "{placement:?} card");
+            }
         }
     }
 
     #[test]
     fn visible_geometry_has_binding_dimensions_and_expands_inward() {
         assert_eq!(
-            visible_rect(EdgePlacement::Right, work(), EdgeUiState::RailVisible),
+            visible_rect(EdgePlacement::Right, work(), EdgeUiState::RailVisible, 3),
             Rect {
                 x: 1850,
                 y: 320,
@@ -1067,7 +1103,7 @@ mod tests {
             }
         );
         assert_eq!(
-            visible_rect(EdgePlacement::Left, work(), EdgeUiState::RailVisible),
+            visible_rect(EdgePlacement::Left, work(), EdgeUiState::RailVisible, 3),
             Rect {
                 x: 0,
                 y: 320,
@@ -1076,7 +1112,7 @@ mod tests {
             }
         );
         assert_eq!(
-            visible_rect(EdgePlacement::Top, work(), EdgeUiState::RailVisible),
+            visible_rect(EdgePlacement::Top, work(), EdgeUiState::RailVisible, 3),
             Rect {
                 x: 760,
                 y: 0,
@@ -1085,7 +1121,7 @@ mod tests {
             }
         );
         assert_eq!(
-            visible_rect(EdgePlacement::Right, work(), EdgeUiState::CardVisible),
+            visible_rect(EdgePlacement::Right, work(), EdgeUiState::CardVisible, 3),
             Rect {
                 x: 1550,
                 y: 320,
@@ -1094,7 +1130,7 @@ mod tests {
             }
         );
         assert_eq!(
-            visible_rect(EdgePlacement::Left, work(), EdgeUiState::CardVisible),
+            visible_rect(EdgePlacement::Left, work(), EdgeUiState::CardVisible, 3),
             Rect {
                 x: 0,
                 y: 320,
@@ -1103,11 +1139,40 @@ mod tests {
             }
         );
         assert_eq!(
-            visible_rect(EdgePlacement::Top, work(), EdgeUiState::CardVisible),
+            visible_rect(EdgePlacement::Top, work(), EdgeUiState::CardVisible, 3),
             Rect {
                 x: 760,
                 y: 0,
                 width: 400,
+                height: 430,
+            }
+        );
+        // Five enabled providers grow both the collapsed rail and the expanded card
+        // surface; the work-area centering follows: (1040 - 576) / 2 = 232.
+        assert_eq!(
+            visible_rect(EdgePlacement::Right, work(), EdgeUiState::RailVisible, 5),
+            Rect {
+                x: 1850,
+                y: 232,
+                width: 70,
+                height: 576,
+            }
+        );
+        assert_eq!(
+            visible_rect(EdgePlacement::Right, work(), EdgeUiState::CardVisible, 5),
+            Rect {
+                x: 1550,
+                y: 232,
+                width: 370,
+                height: 576,
+            }
+        );
+        assert_eq!(
+            visible_rect(EdgePlacement::Top, work(), EdgeUiState::CardVisible, 5),
+            Rect {
+                x: 672,
+                y: 0,
+                width: 576,
                 height: 430,
             }
         );
@@ -1131,6 +1196,7 @@ mod tests {
                 work(),
                 scale,
                 EdgeUiState::RailVisible,
+                3,
             );
             assert_eq!((rail.width, rail.height), (rail_width, rail_height));
 
@@ -1139,6 +1205,7 @@ mod tests {
                 work(),
                 scale,
                 EdgeUiState::CardVisible,
+                3,
             );
             assert_eq!((card.width, card.height), (card_width, card_height));
 
@@ -1159,21 +1226,43 @@ mod tests {
                 work(),
                 scale,
                 EdgeUiState::RailVisible,
+                3,
             );
-            let left_rail =
-                visible_rect_scaled(EdgePlacement::Left, work(), scale, EdgeUiState::RailVisible);
-            let top_rail =
-                visible_rect_scaled(EdgePlacement::Top, work(), scale, EdgeUiState::RailVisible);
+            let left_rail = visible_rect_scaled(
+                EdgePlacement::Left,
+                work(),
+                scale,
+                EdgeUiState::RailVisible,
+                3,
+            );
+            let top_rail = visible_rect_scaled(
+                EdgePlacement::Top,
+                work(),
+                scale,
+                EdgeUiState::RailVisible,
+                3,
+            );
             let right_card = visible_rect_scaled(
                 EdgePlacement::Right,
                 work(),
                 scale,
                 EdgeUiState::CardVisible,
+                3,
             );
-            let left_card =
-                visible_rect_scaled(EdgePlacement::Left, work(), scale, EdgeUiState::CardVisible);
-            let top_card =
-                visible_rect_scaled(EdgePlacement::Top, work(), scale, EdgeUiState::CardVisible);
+            let left_card = visible_rect_scaled(
+                EdgePlacement::Left,
+                work(),
+                scale,
+                EdgeUiState::CardVisible,
+                3,
+            );
+            let top_card = visible_rect_scaled(
+                EdgePlacement::Top,
+                work(),
+                scale,
+                EdgeUiState::CardVisible,
+                3,
+            );
 
             assert_eq!(side_rail.width, scale.logical_to_physical(70));
             assert_eq!(side_rail.height, scale.logical_to_physical(400));
@@ -1298,7 +1387,7 @@ mod tests {
             EdgePlacement::Top,
         ] {
             for state in [EdgeUiState::RailVisible, EdgeUiState::CardVisible] {
-                let rect = visible_rect(placement, small, state);
+                let rect = visible_rect(placement, small, state, 5);
                 assert!(small.rect().contains_rect(rect));
                 assert!(rect.width <= small.width);
                 assert!(rect.height <= small.height);
@@ -1313,7 +1402,7 @@ mod tests {
             EdgePlacement::Left,
             EdgePlacement::Top,
         ] {
-            let hidden = window_layout(placement, work(), EdgeUiState::Hidden, None);
+            let hidden = window_layout(placement, work(), EdgeUiState::Hidden, None, 3);
             assert!(!hidden.visible);
             assert!(!work().rect().intersects(hidden.rect()));
         }

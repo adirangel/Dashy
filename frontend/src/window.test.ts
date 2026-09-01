@@ -39,7 +39,7 @@ describe("strict edge-view validation", () => {
   });
 
   it("rejects a malformed current-view command response at the native boundary", async () => {
-    mocks.invoke.mockResolvedValue({ visibility: "card", placement: "right", provider: "claude", cursor: null });
+    mocks.invoke.mockResolvedValue({ visibility: "card", placement: "right", provider: "claude", pointer: null });
     await expect(getCurrentEdgeView()).rejects.toThrow(/invalid edge view/i);
   });
 
@@ -65,10 +65,12 @@ describe("strict edge-view validation", () => {
   it("accepts an exact coherent payload", () => {
     expect(isEdgeViewState({ visibility: "pinned", placement: "left", provider: "codex" })).toBe(true);
     expect(isEdgeViewState({ visibility: "rail", placement: "top", provider: null })).toBe(true);
+    expect(isEdgeViewState({ visibility: "card", placement: "right", provider: "grok" })).toBe(true);
+    expect(isEdgeViewState({ visibility: "pinned", placement: "top", provider: "cursor" })).toBe(true);
   });
 
   it.each([
-    { visibility: "card", placement: "right", provider: "claude", cursor: { x: 1, y: 2 } },
+    { visibility: "card", placement: "right", provider: "claude", pointer: { x: 1, y: 2 } },
     { visibility: "card", placement: "right", provider: "claude", extra: true },
     { visibility: "visible", placement: "right", provider: "claude" },
     { visibility: "card", placement: "bottom", provider: "claude" },

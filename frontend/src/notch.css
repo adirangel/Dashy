@@ -360,6 +360,15 @@
   direction: ltr;
 }
 
+/* Account tiles show a plan-tier word instead of a percentage. */
+.metric-value--text {
+  max-width: 62px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+}
+
 .metric-status {
   display: block;
   max-width: 62px;
@@ -403,7 +412,13 @@
 
 .placement-right .provider-card-slot,
 .placement-left .provider-card-slot {
-  inset-block-start: clamp(16px, calc(50% - 59px + var(--join-track-offset)), 150px);
+  /* The ceiling grows with the surface so cards for far tiles on 4-5 provider
+     rails can follow their join diamond instead of floating near the top. */
+  inset-block-start: clamp(
+    16px,
+    calc(50% - 59px + var(--join-track-offset)),
+    max(150px, calc(100% - 376px))
+  );
   transform: none;
 }
 .placement-right .provider-card-slot[data-layout="tall"],
@@ -500,6 +515,13 @@
 .heatmap-grid i[data-level="2"] { background: rgba(77, 157, 81, .8); }
 .heatmap-grid i[data-level="3"] { background: #68bd69; }
 .heatmap-grid i[data-level="4"] { background: var(--github); box-shadow: 0 0 5px rgba(141, 235, 120, .35); }
+
+.cursor-usage-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.45;
+}
 
 .provider-state { display: grid; gap: 7px; padding: 14px; border: 1px solid rgba(255, 255, 255, .07); border-radius: 14px; background: rgba(255, 255, 255, .035); }
 .provider-state strong { color: var(--text-primary); font-size: 13px; }

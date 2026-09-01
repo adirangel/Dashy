@@ -1,0 +1,8 @@
+{
+  "status": "authenticated",
+  "isAuthenticated": true,
+  "hasAccessToken": true,
+  "hasRefreshToken": true,
+  "userInfo": { "email": "fixture@example.com" },
+  "futureField": "ignored"
+}

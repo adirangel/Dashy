@@ -58,7 +58,7 @@ const EDGE_VIEW_EVENT = "dashy://edge-view";
 const DASHBOARD_CACHE_CHANGED_EVENT = "dashy://dashboard-cache-changed";
 const placements = new Set<EdgePlacement>(["right", "left", "top"]);
 const visibilities = new Set<EdgeVisibility>(["hidden", "rail", "card", "pinned", "suppressed"]);
-const providers = new Set<ProviderId>(["claude", "codex", "github"]);
+const providers = new Set<ProviderId>(["claude", "codex", "github", "grok", "cursor"]);
 const EXIT_TOKEN_PATTERN = /^[a-z0-9-]{1,32}$/;
 let exitTokenSequence = 0;
 

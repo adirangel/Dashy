@@ -63,6 +63,25 @@ const snapshot: DashboardSnapshot = {
     lastSuccessfulRefresh: "2026-08-29T09:00:00Z",
     errorKind: null,
   },
+  grok: {
+    status: "connected",
+    remainingPercent: 61,
+    shortWindow: null,
+    weeklyWindow: {
+      labelKey: "monthly",
+      remainingPercent: 61,
+      resetsAt: null,
+    },
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z",
+    errorKind: null,
+  },
+  cursor: {
+    status: "connected",
+    subscriptionTier: "pro",
+    accountEmail: "fixture@cursor.com",
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z",
+    errorKind: null,
+  },
   refreshedAt: "2026-08-29T09:00:00Z",
 };
 

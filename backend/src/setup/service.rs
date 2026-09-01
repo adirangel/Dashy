@@ -16,7 +16,12 @@ impl SetupService {
     }
 
     pub async fn install(&self, provider: ProviderId) -> Result<(), String> {
-        let package = ProviderSetupDefinition::for_provider(provider).package_id;
+        // Manual-URL providers are installed through their official guide, which the
+        // frontend opens from its exact-URL allowlist; defense in depth keeps this
+        // path from ever spawning a process for them.
+        let Some(package) = ProviderSetupDefinition::for_provider(provider).package_id else {
+            return Err("provider does not support automated install".to_owned());
+        };
         self.runner
             .run_visible(
                 AllowedProgram::Winget,
@@ -41,6 +46,8 @@ impl SetupService {
             ProviderId::Claude => (AllowedProgram::Claude, vec!["auth", "login", "--claudeai"]),
             ProviderId::Codex => (AllowedProgram::Codex, vec!["login"]),
             ProviderId::GitHub => (AllowedProgram::Gh, vec!["auth", "login", "--web"]),
+            ProviderId::Grok => (AllowedProgram::Grok, vec!["login"]),
+            ProviderId::Cursor => (AllowedProgram::CursorAgent, vec!["login"]),
         };
         self.runner
             .run_visible(program, args.into_iter().map(str::to_owned).collect())
@@ -121,12 +128,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn install_uses_only_the_exact_grok_winget_package() {
+        let runner = Arc::new(RecordingRunner::default());
+        let service = SetupService::new(runner.clone());
+        service.install(ProviderId::Grok).await.unwrap();
+        let calls = runner.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, AllowedProgram::Winget);
+        assert_eq!(calls[0].1[2], "xAI.GrokBuild");
+    }
+
+    #[tokio::test]
+    async fn cursor_install_never_spawns_a_process() {
+        let runner = Arc::new(RecordingRunner::default());
+        let service = SetupService::new(runner.clone());
+
+        assert_eq!(
+            service.install(ProviderId::Cursor).await,
+            Err("provider does not support automated install".to_owned())
+        );
+        assert!(runner.calls().is_empty());
+    }
+
+    #[tokio::test]
     async fn login_uses_the_official_subscription_commands() {
         let runner = Arc::new(RecordingRunner::default());
         let service = SetupService::new(runner.clone());
         service.login(ProviderId::Claude).await.unwrap();
         service.login(ProviderId::Codex).await.unwrap();
         service.login(ProviderId::GitHub).await.unwrap();
+        service.login(ProviderId::Grok).await.unwrap();
+        service.login(ProviderId::Cursor).await.unwrap();
         assert_eq!(
             runner.calls(),
             vec![
@@ -139,6 +171,8 @@ mod tests {
                     AllowedProgram::Gh,
                     vec!["auth".into(), "login".into(), "--web".into()]
                 ),
+                (AllowedProgram::Grok, vec!["login".into()]),
+                (AllowedProgram::CursorAgent, vec!["login".into()]),
             ]
         );
     }

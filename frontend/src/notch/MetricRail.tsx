@@ -27,6 +27,18 @@ function statusValue(status: ProviderViewStatus, t: (key: string) => string) {
   return status === "connected" ? null : t(statusTranslationKey(status));
 }
 
+// Three tile shapes: usage rings show a remaining percentage, the activity ring
+// shows today's GitHub level with a streak, and account tiles have no metric at
+// all — a neutral ring with the plan tier as the compact value.
+type MetricKind = "usage" | "activity" | "account";
+const METRIC_KIND: Record<ProviderId, MetricKind> = {
+  claude: "usage",
+  codex: "usage",
+  grok: "usage",
+  github: "activity",
+  cursor: "account",
+};
+
 export function MetricRail({
   providers,
   placement,
@@ -46,27 +58,40 @@ export function MetricRail({
     {providers.map((provider) => {
       const status = viewStatus(snapshot, provider);
       const entry = snapshot?.[provider];
-      const isGitHub = provider === "github";
+      const kind = METRIC_KIND[provider];
       const statusText = statusValue(status, t);
-      const usageValue = !isGitHub && entry && "remainingPercent" in entry ? entry.remainingPercent : null;
+      const usageValue = kind === "usage" && entry && "remainingPercent" in entry
+        ? entry.remainingPercent
+        : null;
       const hasUsage = usageValue !== null;
-      const streak = isGitHub && entry && "currentStreakDays" in entry ? entry.currentStreakDays : null;
-      const today = isGitHub && entry && "contributionDays" in entry
+      const streak = kind === "activity" && entry && "currentStreakDays" in entry
+        ? entry.currentStreakDays
+        : null;
+      const today = kind === "activity" && entry && "contributionDays" in entry
         ? entry.contributionDays?.find((day) => day.date === localIsoDate(now))
         : undefined;
-      const ringValue = isGitHub
+      const tier = kind === "account" && entry && "subscriptionTier" in entry
+        ? entry.subscriptionTier
+        : null;
+      const ringValue = kind === "activity"
         ? today ? Math.min(100, Math.max(0, today.level * 25)) : null
         : usageValue;
-      const compactValue = isGitHub
+      const compactValue = kind === "activity"
         ? streak === null ? "—" : new Intl.NumberFormat(locale, { style: "unit", unit: "day", unitDisplay: "narrow" }).format(streak)
-        : hasUsage ? `${formatNumber(usageValue, locale)}%` : "—";
+        : kind === "account"
+          ? tier ?? "—"
+          : hasUsage ? `${formatNumber(usageValue, locale)}%` : "—";
       const name = t(`providers.${provider}`);
-      const githubState = isGitHub
+      const githubState = kind === "activity"
         ? `${streak === null ? t("status.unavailable") : t("github.streakDays", { count: formatNumber(streak, locale) })}; ${t("github.today")}: ${today ? t("github.contributions", { count: formatNumber(today.count, locale) }) : t("status.unavailable")}`
         : null;
-      const accessibleState = isGitHub
+      const accessibleState = kind === "activity"
         ? statusText ? `${statusText}; ${githubState}` : githubState
-        : statusText ?? (hasUsage ? t("usage.remaining", { value: formatNumber(usageValue, locale) }) : t("status.unavailable"));
+        : kind === "account"
+          // A connected account without a reported tier is still connected, not
+          // unavailable — the tile just has no plan name to read out.
+          ? statusText ?? (tier ? `${t("cursor.plan")}: ${tier}` : t("setup.connected"))
+          : statusText ?? (hasUsage ? t("usage.remaining", { value: formatNumber(usageValue, locale) }) : t("status.unavailable"));
 
       return <button
         type="button"
@@ -83,7 +108,7 @@ export function MetricRail({
       >
         <ProgressRing
           value={ringValue}
-          semantic={isGitHub ? "activity" : "progress"}
+          semantic={kind === "usage" ? "progress" : "activity"}
           label={`${name}: ${accessibleState}`}
           className={refreshingProviders.has(provider) ? "is-refreshing" : ""}
         >
@@ -91,7 +116,9 @@ export function MetricRail({
         </ProgressRing>
         {statusText
           ? <span className="metric-status">{statusText}</span>
-          : <span className="metric-value">{compactValue}</span>}
+          : <span className={`metric-value${kind === "account" ? " metric-value--text" : ""}`}>
+            {compactValue}
+          </span>}
       </button>;
     })}
   </nav>;

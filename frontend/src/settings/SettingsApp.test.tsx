@@ -57,12 +57,15 @@ const providerSnapshot: DashboardSnapshot = {
   github: { status: "unavailable", accountLogin: null, contributionDays: null, currentStreakDays: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-github-error" },
   codex: { status: "notAuthenticated", remainingPercent: null, shortWindow: null, weeklyWindow: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-codex-error" },
   claude: { status: "notInstalled", remainingPercent: null, shortWindow: null, weeklyWindow: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-claude-error" },
+  grok: { status: "notAuthenticated", remainingPercent: null, shortWindow: null, weeklyWindow: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-grok-error" },
+  cursor: { status: "unavailable", subscriptionTier: null, accountEmail: null, lastSuccessfulRefresh: null, errorKind: "raw-secret-cursor-error" },
   refreshedAt: null,
 };
 const providerSetupStates: ProviderSetupState[] = [
   {
     definition: {
       provider: "claude", publisher: "Anthropic", packageId: "Anthropic.ClaudeCode",
+      installKind: "winget",
       installCommand: "winget install --id Anthropic.ClaudeCode", installUrl: "https://code.claude.com/docs/en/setup",
       loginCommand: "claude auth login --claudeai",
     },
@@ -72,6 +75,7 @@ const providerSetupStates: ProviderSetupState[] = [
   {
     definition: {
       provider: "codex", publisher: "OpenAI", packageId: "OpenAI.Codex",
+      installKind: "winget",
       installCommand: "winget install --id OpenAI.Codex", installUrl: "https://learn.chatgpt.com/docs/codex/cli",
       loginCommand: "codex login",
     },
@@ -81,8 +85,30 @@ const providerSetupStates: ProviderSetupState[] = [
   {
     definition: {
       provider: "github", publisher: "GitHub", packageId: "GitHub.cli",
+      installKind: "winget",
       installCommand: "winget install --id GitHub.cli", installUrl: "https://cli.github.com/",
       loginCommand: "gh auth login --web",
+    },
+    status: "connected",
+    repairAction: null,
+  },
+  {
+    definition: {
+      provider: "grok", publisher: "xAI", packageId: "xAI.GrokBuild",
+      installKind: "winget",
+      installCommand: "winget install --id xAI.GrokBuild", installUrl: "https://docs.x.ai/build/overview",
+      loginCommand: "grok login",
+    },
+    status: "connected",
+    repairAction: null,
+  },
+  {
+    definition: {
+      provider: "cursor", publisher: "Anysphere", packageId: null,
+      installKind: "manualUrl",
+      installCommand: null,
+      installUrl: "https://cursor.com/docs/cli/installation",
+      loginCommand: "cursor-agent login",
     },
     status: "connected",
     repairAction: null,

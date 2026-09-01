@@ -33,6 +33,7 @@ const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = 
   claude: {
     publisher: "Anthropic",
     packageId: "Anthropic.ClaudeCode",
+    installKind: "winget",
     installCommand: "winget install --id Anthropic.ClaudeCode --exact --source winget --interactive --accept-source-agreements --accept-package-agreements",
     installUrl: "https://code.claude.com/docs/en/setup",
     loginCommand: "claude auth login --claudeai",
@@ -40,6 +41,7 @@ const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = 
   codex: {
     publisher: "OpenAI",
     packageId: "OpenAI.Codex",
+    installKind: "winget",
     installCommand: "winget install --id OpenAI.Codex --exact --source winget --interactive --accept-source-agreements --accept-package-agreements",
     installUrl: "https://learn.chatgpt.com/docs/codex/cli",
     loginCommand: "codex login",
@@ -47,9 +49,26 @@ const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = 
   github: {
     publisher: "GitHub",
     packageId: "GitHub.cli",
+    installKind: "winget",
     installCommand: "winget install --id GitHub.cli --exact --source winget --interactive --accept-source-agreements --accept-package-agreements",
     installUrl: "https://cli.github.com/",
     loginCommand: "gh auth login --web",
+  },
+  grok: {
+    publisher: "xAI",
+    packageId: "xAI.GrokBuild",
+    installKind: "winget",
+    installCommand: "winget install --id xAI.GrokBuild --exact --source winget --interactive --accept-source-agreements --accept-package-agreements",
+    installUrl: "https://docs.x.ai/build/overview",
+    loginCommand: "grok login",
+  },
+  cursor: {
+    publisher: "Anysphere",
+    packageId: null,
+    installKind: "manualUrl",
+    installCommand: null,
+    installUrl: "https://cursor.com/docs/cli/installation",
+    loginCommand: "cursor-agent login",
   },
 };
 
@@ -62,14 +81,17 @@ const cleanSettings: AppSettings = {
   enabledProviders: [],
 };
 
-function states(status: Record<ProviderId, ProviderStatus>): ProviderSetupState[] {
-  return (["claude", "codex", "github"] as ProviderId[]).map((provider) => ({
-    definition: { provider, ...metadata[provider] },
-    status: status[provider],
-    repairAction: status[provider] === "notInstalled"
-      ? "install"
-      : status[provider] === "notAuthenticated" ? "login" : null,
-  }));
+function states(status: Partial<Record<ProviderId, ProviderStatus>>): ProviderSetupState[] {
+  return (["claude", "codex", "github", "grok", "cursor"] as ProviderId[]).map((provider) => {
+    const providerStatus = status[provider] ?? "notInstalled";
+    return {
+      definition: { provider, ...metadata[provider] },
+      status: providerStatus,
+      repairAction: providerStatus === "notInstalled"
+        ? "install"
+        : providerStatus === "notAuthenticated" ? "login" : null,
+    };
+  });
 }
 
 function controller(providerStates = states({

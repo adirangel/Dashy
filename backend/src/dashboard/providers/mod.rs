@@ -6,7 +6,9 @@ use crate::dashboard::models::ProviderError;
 
 pub mod claude;
 pub mod codex;
+pub mod cursor;
 pub mod github;
+pub mod grok;
 
 #[async_trait]
 pub trait DataProvider<T>: Send + Sync {

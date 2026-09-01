@@ -8,9 +8,22 @@ import { getProviderSetupStates, installProvider, loginProvider } from "./api";
 const codex = {
   definition: {
     provider: "codex", publisher: "OpenAI", packageId: "OpenAI.Codex",
+    installKind: "winget",
     installCommand: "winget install --id OpenAI.Codex --exact --source winget --interactive --accept-source-agreements --accept-package-agreements",
     installUrl: "https://learn.chatgpt.com/docs/codex/cli",
     loginCommand: "codex login",
+  },
+  status: "notInstalled",
+  repairAction: "install",
+};
+
+const cursor = {
+  definition: {
+    provider: "cursor", publisher: "Anysphere", packageId: null,
+    installKind: "manualUrl",
+    installCommand: null,
+    installUrl: "https://cursor.com/docs/cli/installation",
+    loginCommand: "cursor-agent login",
   },
   status: "notInstalled",
   repairAction: "install",
@@ -20,8 +33,30 @@ describe("provider setup IPC", () => {
   beforeEach(() => mocks.invoke.mockReset());
 
   it("accepts the exact setup contract", async () => {
-    mocks.invoke.mockResolvedValue([codex]);
-    await expect(getProviderSetupStates()).resolves.toEqual([codex]);
+    mocks.invoke.mockResolvedValue([codex, cursor]);
+    await expect(getProviderSetupStates()).resolves.toEqual([codex, cursor]);
+  });
+
+  it.each([
+    ["a missing install kind", (definition: Record<string, unknown>) => { delete definition.installKind; }],
+    ["an unknown install kind", (definition: Record<string, unknown>) => { definition.installKind = "script"; }],
+    ["a winget kind without a package id", (definition: Record<string, unknown>) => { definition.packageId = null; }],
+    ["a manual kind claiming a package id", (definition: Record<string, unknown>) => {
+      definition.installKind = "manualUrl";
+    }],
+    ["a winget kind without an install command", (definition: Record<string, unknown>) => {
+      definition.installCommand = null;
+    }],
+    ["a manual kind claiming an install command", (definition: Record<string, unknown>) => {
+      definition.installKind = "manualUrl";
+      definition.packageId = null;
+    }],
+  ] as const)("rejects %s before it reaches the UI", async (_case, mutate) => {
+    const definition = { ...codex.definition } as Record<string, unknown>;
+    mutate(definition);
+    mocks.invoke.mockResolvedValue([{ ...codex, definition }]);
+
+    await expect(getProviderSetupStates()).rejects.toThrow(/invalid provider setup response/i);
   });
 
   it("rejects extra native fields before they reach the UI", async () => {

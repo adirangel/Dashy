@@ -26,6 +26,8 @@ pub enum AllowedProgram {
     Gh,
     Codex,
     Claude,
+    Grok,
+    CursorAgent,
     Winget,
 }
 
@@ -35,6 +37,8 @@ impl AllowedProgram {
             Self::Gh => "gh",
             Self::Codex => "codex",
             Self::Claude => "claude",
+            Self::Grok => "grok",
+            Self::CursorAgent => "cursor-agent",
             Self::Winget => "winget",
         }
     }
@@ -75,6 +79,7 @@ fn current_windows_program_search_paths() -> Vec<PathBuf> {
     let local_app_data = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     let program_files = std::env::var_os("ProgramFiles").map(PathBuf::from);
     let program_files_x86 = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from);
+    let user_profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
 
     windows_program_search_paths(
         process_path.as_deref(),
@@ -83,6 +88,7 @@ fn current_windows_program_search_paths() -> Vec<PathBuf> {
         local_app_data.as_deref(),
         program_files.as_deref(),
         program_files_x86.as_deref(),
+        user_profile.as_deref(),
     )
 }
 
@@ -94,6 +100,7 @@ fn windows_program_search_paths(
     local_app_data: Option<&std::path::Path>,
     program_files: Option<&std::path::Path>,
     program_files_x86: Option<&std::path::Path>,
+    user_profile: Option<&std::path::Path>,
 ) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for value in [process_path, user_path, machine_path]
@@ -104,12 +111,18 @@ fn windows_program_search_paths(
     }
     if let Some(root) = local_app_data {
         paths.push(root.join("Microsoft/WinGet/Links"));
+        // The Cursor CLI installer's fixed home; covers a wiped user PATH.
+        paths.push(root.join("cursor-agent"));
     }
     if let Some(root) = program_files {
         paths.push(root.join("WinGet/Links"));
     }
     if let Some(root) = program_files_x86 {
         paths.push(root.join("WinGet/Links"));
+    }
+    if let Some(root) = user_profile {
+        // The Grok CLI installer's fixed bin directory; covers a wiped user PATH.
+        paths.push(root.join(".grok/bin"));
     }
     paths
 }
@@ -203,10 +216,17 @@ fn resolve_windows_program_from_paths(
         });
     }
 
-    if program != AllowedProgram::Codex {
-        return None;
+    // .cmd shims cannot be spawned as direct children, so shim-distributed programs
+    // resolve to the real executable (or node plus script) behind their wrapper.
+    match program {
+        AllowedProgram::Codex => resolve_codex_npm_shim(path_entries),
+        AllowedProgram::CursorAgent => resolve_cursor_agent_shim(path_entries),
+        _ => None,
     }
+}
 
+#[cfg(windows)]
+fn resolve_codex_npm_shim(path_entries: &[PathBuf]) -> Option<ProgramLaunch> {
     if let Some(executable) = path_entries.iter().find_map(|directory| {
         let shim = directory.join("codex.cmd");
         if !shim.is_file() {
@@ -251,6 +271,55 @@ fn resolve_windows_program_from_paths(
     Some(ProgramLaunch {
         executable: node,
         prefix_args: vec![script.into_os_string()],
+    })
+}
+
+// The Cursor CLI ships no executable: cursor-agent.cmd wraps node.exe plus a
+// versioned index.js under <shim dir>/versions/<version>/. Version directories are
+// date-stamped (for example 2026.08.31-4057e58), so the lexicographically greatest
+// name is the newest payload; a partially downloaded update leaves no index.js and
+// therefore cannot win.
+#[cfg(windows)]
+fn resolve_cursor_agent_shim(path_entries: &[PathBuf]) -> Option<ProgramLaunch> {
+    path_entries.iter().find_map(|directory| {
+        let shim = directory.join("cursor-agent.cmd");
+        if !shim.is_file() {
+            return None;
+        }
+
+        let mut newest: Option<(std::ffi::OsString, PathBuf)> = None;
+        for entry in std::fs::read_dir(directory.join("versions"))
+            .ok()?
+            .flatten()
+        {
+            let version_dir = entry.path();
+            if !version_dir.join("index.js").is_file() {
+                continue;
+            }
+            let name = entry.file_name();
+            if newest
+                .as_ref()
+                .is_none_or(|(newest_name, _)| name > *newest_name)
+            {
+                newest = Some((name, version_dir));
+            }
+        }
+        let (_, version_dir) = newest?;
+
+        let node = [version_dir.join("node.exe"), directory.join("node.exe")]
+            .into_iter()
+            .find(|candidate| candidate.is_file())
+            .or_else(|| {
+                path_entries
+                    .iter()
+                    .map(|entry| entry.join("node.exe"))
+                    .find(|candidate| candidate.is_file())
+            })?;
+
+        Some(ProgramLaunch {
+            executable: node,
+            prefix_args: vec![version_dir.join("index.js").into_os_string()],
+        })
     })
 }
 
@@ -733,6 +802,8 @@ mod tests {
         assert_eq!(AllowedProgram::Gh.executable(), "gh");
         assert_eq!(AllowedProgram::Codex.executable(), "codex");
         assert_eq!(AllowedProgram::Claude.executable(), "claude");
+        assert_eq!(AllowedProgram::Grok.executable(), "grok");
+        assert_eq!(AllowedProgram::CursorAgent.executable(), "cursor-agent");
         assert_eq!(AllowedProgram::Winget.executable(), "winget");
     }
 
@@ -786,8 +857,15 @@ mod tests {
         std::fs::create_dir_all(&installed_path).unwrap();
         let startup_path_value = std::env::join_paths([&startup_path]).unwrap();
 
-        let before =
-            windows_program_search_paths(Some(&startup_path_value), None, None, None, None, None);
+        let before = windows_program_search_paths(
+            Some(&startup_path_value),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(
             resolve_windows_program_from_paths(AllowedProgram::Gh, &before),
             None
@@ -799,6 +877,7 @@ mod tests {
         let after = windows_program_search_paths(
             Some(&startup_path_value),
             Some(&refreshed_user_path),
+            None,
             None,
             None,
             None,
@@ -830,11 +909,125 @@ mod tests {
         std::fs::write(&executable, "installed executable").unwrap();
 
         let paths =
-            windows_program_search_paths(None, None, None, Some(&local_app_data), None, None);
+            windows_program_search_paths(None, None, None, Some(&local_app_data), None, None, None);
         let launch = resolve_windows_program_from_paths(AllowedProgram::Claude, &paths).unwrap();
 
         assert_eq!(launch.executable, executable);
         assert!(launch.prefix_args.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn fixed_grok_and_cursor_homes_are_searched_even_when_user_path_is_wiped() {
+        let unique = format!(
+            "dashy-fixed-provider-homes-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let user_profile = root.join("user-profile");
+        let grok_bin = user_profile.join(".grok/bin");
+        let grok = grok_bin.join("grok.exe");
+        std::fs::create_dir_all(&grok_bin).unwrap();
+        std::fs::write(&grok, "grok executable").unwrap();
+
+        let local_app_data = root.join("local-app-data");
+        let cursor_home = local_app_data.join("cursor-agent");
+        let cursor_version = cursor_home.join("versions/2026.08.31-4057e58");
+        std::fs::create_dir_all(&cursor_version).unwrap();
+        std::fs::write(cursor_home.join("cursor-agent.cmd"), "wrapper").unwrap();
+        std::fs::write(cursor_version.join("index.js"), "payload").unwrap();
+        std::fs::write(cursor_version.join("node.exe"), "bundled node").unwrap();
+
+        let paths = windows_program_search_paths(
+            None,
+            None,
+            None,
+            Some(&local_app_data),
+            None,
+            None,
+            Some(&user_profile),
+        );
+
+        let grok_launch = resolve_windows_program_from_paths(AllowedProgram::Grok, &paths).unwrap();
+        assert_eq!(grok_launch.executable, grok);
+        assert!(grok_launch.prefix_args.is_empty());
+
+        let cursor_launch =
+            resolve_windows_program_from_paths(AllowedProgram::CursorAgent, &paths).unwrap();
+        assert_eq!(cursor_launch.executable, cursor_version.join("node.exe"));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cursor_agent_cmd_shim_resolves_to_bundled_node_and_newest_versioned_script() {
+        let unique = format!(
+            "dashy-cursor-resolver-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let home = root.join("cursor-agent");
+        let stale = home.join("versions/2026.01.01-aaaaaaa");
+        let current = home.join("versions/2026.08.31-4057e58");
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(home.join("cursor-agent.cmd"), "wrapper").unwrap();
+        std::fs::write(stale.join("index.js"), "stale payload").unwrap();
+        std::fs::write(current.join("index.js"), "current payload").unwrap();
+        std::fs::write(current.join("node.exe"), "bundled node").unwrap();
+
+        let launch = resolve_windows_program_from_paths(
+            AllowedProgram::CursorAgent,
+            std::slice::from_ref(&home),
+        )
+        .unwrap();
+
+        assert_eq!(launch.executable, current.join("node.exe"));
+        assert_eq!(launch.prefix_args.len(), 1);
+        // Compare as paths: the fixture literal mixes separators, the resolver's
+        // read_dir output does not, and only component equality matters.
+        assert_eq!(
+            PathBuf::from(&launch.prefix_args[0]),
+            current.join("index.js")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cursor_agent_shim_without_payload_or_node_does_not_resolve() {
+        let unique = format!(
+            "dashy-cursor-no-payload-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let root = std::env::temp_dir().join(unique);
+        let home = root.join("cursor-agent");
+        std::fs::create_dir_all(home.join("versions")).unwrap();
+        std::fs::write(home.join("cursor-agent.cmd"), "wrapper").unwrap();
+        // A stalled install: wrapper exists but versions/ holds no payload directory.
+        std::fs::write(home.join("versions/partial-download.zip"), "zip").unwrap();
+
+        assert_eq!(
+            resolve_windows_program_from_paths(
+                AllowedProgram::CursorAgent,
+                std::slice::from_ref(&home),
+            ),
+            None
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

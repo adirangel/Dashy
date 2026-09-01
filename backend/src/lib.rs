@@ -44,7 +44,10 @@ pub fn run() {
     use dashboard::{
         commands::{get_dashboard_snapshot, refresh_dashboard_provider},
         process::SystemProcessRunner,
-        providers::{claude::ClaudeProvider, codex::CodexProvider, github::GitHubProvider},
+        providers::{
+            claude::ClaudeProvider, codex::CodexProvider, cursor::CursorProvider,
+            github::GitHubProvider, grok::GrokProvider,
+        },
         service::{DashboardService, SystemClock},
     };
     use desktop::{
@@ -71,6 +74,8 @@ pub fn run() {
         Arc::new(GitHubProvider::new(process_runner)),
         Arc::new(CodexProvider::new(process_runner)),
         Arc::new(ClaudeProvider::new(process_runner)),
+        Arc::new(GrokProvider::new(process_runner)),
+        Arc::new(CursorProvider::new(process_runner)),
         Arc::new(SystemClock),
     ));
 
@@ -423,7 +428,9 @@ mod config_tests {
                     "allow": [
                         { "url": "https://code.claude.com/docs/en/setup" },
                         { "url": "https://learn.chatgpt.com/docs/codex/cli" },
-                        { "url": "https://cli.github.com/" }
+                        { "url": "https://cli.github.com/" },
+                        { "url": "https://docs.x.ai/build/overview" },
+                        { "url": "https://cursor.com/docs/cli/installation" }
                     ]
                 }
             ])
@@ -489,7 +496,9 @@ mod config_tests {
                     "allow": [
                         { "url": "https://code.claude.com/docs/en/setup" },
                         { "url": "https://learn.chatgpt.com/docs/codex/cli" },
-                        { "url": "https://cli.github.com/" }
+                        { "url": "https://cli.github.com/" },
+                        { "url": "https://docs.x.ai/build/overview" },
+                        { "url": "https://cursor.com/docs/cli/installation" }
                     ]
                 }
             ])

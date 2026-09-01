@@ -6,3 +6,5 @@ backend/gen/
 *.log
 *.tsbuildinfo
 .DS_Store
+
+.claude/

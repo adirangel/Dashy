@@ -14,14 +14,16 @@ const SETTINGS_STORE_FILE: &str = "settings.json";
 const SETTINGS_STORE_KEY: &str = "settings";
 const MAX_MONITOR_TEXT_LENGTH: usize = 256;
 /// Increment this when existing installations must review provider selection again.
-pub const CURRENT_PROVIDER_SETUP_VERSION: u16 = 2;
+pub const CURRENT_PROVIDER_SETUP_VERSION: u16 = 3;
 
 fn legacy_onboarding_completed() -> bool {
     true
 }
 
 fn legacy_enabled_providers() -> Vec<ProviderId> {
-    ProviderId::ALL.to_vec()
+    // Files predating the enabled-providers key were written when exactly these
+    // three providers existed; migration must not silently pre-enable newer ones.
+    vec![ProviderId::Claude, ProviderId::Codex, ProviderId::GitHub]
 }
 
 fn legacy_provider_setup_version() -> u16 {
@@ -526,7 +528,11 @@ mod tests {
         });
         let migrated: AppSettings = serde_json::from_value(legacy).unwrap();
         assert!(migrated.onboarding_completed);
-        assert_eq!(migrated.enabled_providers, ProviderId::ALL.to_vec());
+        // Legacy files predate grok/cursor; migration keeps exactly the era's trio.
+        assert_eq!(
+            migrated.enabled_providers,
+            vec![ProviderId::Claude, ProviderId::Codex, ProviderId::GitHub]
+        );
         assert_eq!(migrated.provider_setup_version, 0);
         assert!(migrated.requires_provider_setup());
     }

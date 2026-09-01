@@ -9,9 +9,8 @@
   "settingsControlExtent": 72,
   "cardWidth": 300,
   "cardHeight": 360,
-  "sideExpanded": { "width": 370, "height": 400 },
-  "topExpanded": { "width": 400, "height": 430 },
-  "maxProviders": 3,
+  "topCardMinWidth": 340,
+  "maxProviders": 5,
   "activationZonePx": 28,
   "tabOuterRadius": 32
 }

@@ -9,7 +9,7 @@ import {
 import { listenForDashboardCacheChanged } from "./window";
 
 const REFRESH_INTERVAL_MS = 300_000;
-const PROVIDERS: ProviderId[] = ["github", "codex", "claude"];
+const PROVIDERS: ProviderId[] = ["github", "codex", "claude", "grok", "cursor"];
 
 type ProviderVersions = Record<ProviderId, number>;
 
@@ -17,6 +17,8 @@ const initialProviderVersions = (): ProviderVersions => ({
   github: 0,
   codex: 0,
   claude: 0,
+  grok: 0,
+  cursor: 0,
 });
 
 function monotonicRefreshedAt(
@@ -44,14 +46,9 @@ function mergeSelectedProvider(
   const base = current ?? unavailableDashboardSnapshot();
   const refreshedAt = monotonicRefreshedAt(base.refreshedAt, incoming.refreshedAt);
 
-  switch (provider) {
-    case "github":
-      return { ...base, github: incoming.github, refreshedAt };
-    case "codex":
-      return { ...base, codex: incoming.codex, refreshedAt };
-    case "claude":
-      return { ...base, claude: incoming.claude, refreshedAt };
-  }
+  // TypeScript cannot correlate the computed key with its field type, but the
+  // runtime shape is exact: the value comes from the same field of `incoming`.
+  return { ...base, [provider]: incoming[provider], refreshedAt } as DashboardSnapshot;
 }
 
 export function useDashboardSnapshot() {
@@ -119,30 +116,30 @@ export function useDashboardSnapshot() {
       if (!active || inFlight) return;
 
       inFlight = true;
-      const requestVersions: ProviderVersions = {
-        github: ++providerVersions.current.github,
-        codex: ++providerVersions.current.codex,
-        claude: ++providerVersions.current.claude,
-      };
+      const requestVersions = Object.fromEntries(
+        PROVIDERS.map((provider) => [provider, ++providerVersions.current[provider]]),
+      ) as ProviderVersions;
       if (mounted.current) setRefreshing(true);
 
       try {
         const nextSnapshot = await getDashboardSnapshot(force);
         if (mounted.current) {
           setSnapshot((current) => {
-            const currentVersions = providerVersions.current;
-            const applyGitHub = currentVersions.github === requestVersions.github;
-            const applyCodex = currentVersions.codex === requestVersions.codex;
-            const applyClaude = currentVersions.claude === requestVersions.claude;
-            if (!applyGitHub && !applyCodex && !applyClaude) return current;
+            const applied = PROVIDERS.filter(
+              (provider) => providerVersions.current[provider] === requestVersions[provider],
+            );
+            if (applied.length === 0) return current;
 
             const base = current ?? unavailableDashboardSnapshot();
-            return {
-              github: applyGitHub ? nextSnapshot.github : base.github,
-              codex: applyCodex ? nextSnapshot.codex : base.codex,
-              claude: applyClaude ? nextSnapshot.claude : base.claude,
+            const next: DashboardSnapshot = {
+              ...base,
               refreshedAt: monotonicRefreshedAt(base.refreshedAt, nextSnapshot.refreshedAt),
             };
+            for (const provider of applied) {
+              // Same computed-key cast as mergeSelectedProvider; shapes match by field.
+              (next as Record<ProviderId, unknown>)[provider] = nextSnapshot[provider];
+            }
+            return next;
           });
           setRefreshFailures((current) => {
             let next: Set<ProviderId> | null = null;

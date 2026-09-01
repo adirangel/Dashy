@@ -1,10 +1,12 @@
 # Dashy
 
-Dashy is a local-first Windows side-notch for three real, CLI-backed signals:
+Dashy is a local-first Windows side-notch for real, CLI-backed signals:
 
 - Claude general usage windows
 - Codex general usage windows
 - GitHub contribution activity and current streak
+- Grok monthly credit-pool usage
+- Cursor account and plan status (Cursor's CLI exposes no usage percentages)
 
 Dashy does not use demo metrics. It reads the authenticated command-line tools already
 installed on the computer and renders only the bounded status and usage fields needed
@@ -19,10 +21,10 @@ provider the user asks to inspect. The rail is a solid tab that blends into the
 screen edge with concave fillets, so it reads as part of the display frame rather
 than a floating window.
 
-Every provider is optional. A user can connect Claude, Codex, GitHub, any combination
-of them, or none during first-run setup. Dashy relies on each provider's existing,
-authenticated CLI session and never asks the user to paste subscription credentials
-or access tokens into the application.
+Every provider is optional. A user can connect Claude, Codex, GitHub, Grok, Cursor,
+any combination of them, or none during first-run setup. Dashy relies on each
+provider's existing, authenticated CLI session and never asks the user to paste
+subscription credentials or access tokens into the application.
 
 | Right-edge placement | Top-edge placement |
 | --- | --- |
@@ -39,7 +41,7 @@ does not reserve desktop space and its hidden window does not block edge clicks,
 scrollbars, or other applications.
 
 Move the pointer into the 28 px activation zone on the configured edge and hold it
-there briefly to reveal the compact rail. Hover or focus Claude, Codex, or GitHub to
+there briefly to reveal the compact rail. Hover or focus any enabled provider to
 open its detail card. The rail and card form one safe pointer region; when the pointer
 leaves it, the Rust desktop controller owns the short dismissal grace period.
 
@@ -120,6 +122,15 @@ non-interactive JSON output. Dashy retains the current-session and all-models ge
 windows and excludes model-specific preview limits. This path also avoids workspace
 trust prompts when Dashy starts from the Windows Start menu.
 
+Grok usage comes from the Grok Build CLI's `agent stdio` JSON-RPC surface as a
+single monthly credit-pool window. Builds that do not expose billing over stdio
+degrade to an unavailable state, and a signed-out CLI reads as sign-in required.
+
+Cursor state comes from `cursor-agent status` and `about` in their JSON output
+modes. Cursor's CLI reports the connection and plan tier but no usage numbers, so
+its tile and card show the account state and point to the Cursor dashboard for
+usage.
+
 The dashboard primes its local cache on startup and refreshes periodically. Each
 provider remains isolated: one unavailable or signed-out CLI does not prevent the
 other providers from working.
@@ -129,8 +140,8 @@ other providers from working.
 1. Open the [latest GitHub Release](https://github.com/adirangel/Dashy/releases/latest).
 2. Download the Windows x64 `.msi` asset.
 3. Run the installer and leave **Launch Dashy** selected on the final page.
-4. Dashy opens its setup window and asks which combination of Claude, Codex, and
-   GitHub you want to use.
+4. Dashy opens its setup window and asks which combination of Claude, Codex,
+   GitHub, Grok, and Cursor you want to use.
 5. Install or connect only the providers you selected, approving each visible
    command separately.
 
@@ -159,19 +170,11 @@ from this repository. They are not needed to install the Windows MSI above.
 | Microsoft C++ Build Tools | MSVC compiler and `link.exe` |
 | Microsoft Edge WebView2 Runtime | Tauri's Windows webview |
 | Tauri CLI 2 | Desktop development and packaging |
-| Claude Code and Codex CLI | Claude and Codex metrics |
+| Provider CLIs (Claude Code, Codex, Grok Build, Cursor) | Provider metrics during development |
 
-Official installation references:
-
-- [Node.js downloads](https://nodejs.org/en/download)
-- [Rust installation guide](https://doc.rust-lang.org/book/ch01-01-installation.html)
-- [rustup](https://rustup.rs/)
-- [Tauri v2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/)
-- [Tauri CLI documentation](https://v2.tauri.app/reference/cli/)
-- [Microsoft C++ Build Tools command-line guidance](https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=msvc-170)
-- [Microsoft WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
-- [GitHub CLI](https://cli.github.com/)
-- [WinGet documentation](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+See the [Tauri v2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/)
+for the platform toolchain details; each tool's official installer is the source of
+truth for its own setup.
 
 The included `install.ps1` contributor bootstrap script uses WinGet package IDs
 and requests the Visual Studio Build Tools C++ workload with recommended
@@ -211,6 +214,8 @@ only the provider CLI logins you need:
 gh auth login
 claude auth login
 codex login
+grok login
+cursor-agent login
 ```
 
 Check the existing CLI sessions with:
@@ -219,7 +224,11 @@ Check the existing CLI sessions with:
 gh auth status --active
 claude auth status --json
 codex login status
+cursor-agent status --format json
 ```
+
+Grok has no status command; Dashy detects its sign-in state through the same
+stdio handshake it uses for usage.
 
 On Windows, Dashy recognizes both a standalone Codex executable and the standard
 global npm installation (`codex.cmd`). It launches the native executable bundled
@@ -229,12 +238,6 @@ Restart Dashy after installing or updating a provider CLI so it inherits the lat
 
 Use each provider's own browser or terminal flow. Do not paste a token into Dashy,
 the installer, source files, or this README.
-
-Official authentication references:
-
-- [GitHub CLI login](https://cli.github.com/manual/gh_auth_login) and [status](https://cli.github.com/manual/gh_auth_status)
-- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference) and [commands](https://code.claude.com/docs/en/commands)
-- [Codex CLI guide](https://learn.chatgpt.com/docs/codex/cli) and [OpenAI authentication guide](https://learn.chatgpt.com/docs/auth)
 
 ## Run Dashy
 
@@ -274,9 +277,10 @@ autostart registration and remains off until explicitly enabled.
 
 ## Privacy
 
-Provider credentials remain owned by `gh`, `claude`, and `codex`. Dashy does not
-request, store, print, or inspect tokens, browser cookies, password-manager data, or
-credential files.
+Provider credentials remain owned by `gh`, `claude`, `codex`, `grok`, and
+`cursor-agent`. Dashy does not request, store, print, or inspect tokens, browser
+cookies, password-manager data, or credential files, and it makes no network
+requests of its own — every signal comes from a local CLI.
 
 The Rust backend invokes the installed CLIs with bounded timeouts, parses only the
 reviewed response fields, and sends the React UI sanitized provider states. Native
@@ -307,202 +311,9 @@ Bundle output is generated under `backend/target/release/bundle` and is not trac
 
 ### Create a Windows release
 
-Release tags are immutable. Start from an up-to-date `main` checkout and choose a
-new, unused semantic version such as `0.2.0`; never move, delete, or reuse an
-existing release tag.
-
-Before starting a release, require an active GitHub tag ruleset that targets the
-release-tag namespace (for example `refs/tags/v*`) and restricts both updates and
-deletions. Do not give the release workflow a bypass. The workflow resolves the
-exact fully qualified `refs/tags/<tag>` reference through GitHub's commits API,
-peeling either a lightweight or annotated tag, immediately before any draft
-mutation and checking it again after final asset/metadata verification. This avoids
-falling back to a same-named branch when the tag is missing, but that fail-closed
-check cannot by itself make a movable tag atomic with a Release API call. The
-enforced tag ruleset is the external control that closes that race.
-
-#### First release version
-
-`0.1.0` was used only for local, unsigned installer candidates and was never a
-GitHub Release. Do not create or reuse a `v0.1.0` tag. The first releasable build is
-`v0.1.1`, and it follows the same normal five-file version-bump process as every
-later release.
-
-1. Change the exact same `MAJOR.MINOR.PATCH` value in all three release manifests:
-   - `backend/tauri.conf.json`
-   - `backend/Cargo.toml`
-   - `frontend/package.json`
-
-   Edit only those three version manifests manually. Immediately after changing
-   `frontend/package.json`, update the two tracked root-version fields in the npm
-   lockfile without changing dependency versions:
-
-   ```powershell
-   npm --prefix frontend install --package-lock-only
-   ```
-
-   Review the generated `frontend/package-lock.json` change. The Cargo gate below
-   also regenerates the tracked `backend/Cargo.lock` package record. The release
-   commit therefore contains exactly five files: the three manually edited
-   manifests and those two generated lockfiles.
-2. Run one intentional unlocked Cargo command to update the tracked root package
-   record in `backend/Cargo.lock`, then run every final Cargo gate with the
-   lockfile enforced. Do not run another unlocked Cargo command during release
-   verification.
-
-   ```powershell
-   cargo check --manifest-path backend/Cargo.toml
-   npm --prefix frontend ci
-   npm run test:release
-   npm --prefix frontend run test
-   npm --prefix frontend run build
-   cargo fmt --manifest-path backend/Cargo.toml --check
-   cargo test --manifest-path backend/Cargo.toml --locked
-   cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
-   ```
-
-3. Validate, review, commit, tag, and push the release in one guarded flow.
-   Replace `v0.2.0` only
-   with the chosen new version; run this from a current local `main` branch.
-
-   ```powershell
-   $releaseTag = "v0.2.0"
-   & node infrastructure/release/verify-version.mjs $releaseTag
-   if ($LASTEXITCODE -ne 0) { throw "Release versions do not match $releaseTag." }
-
-   $expectedReleaseFiles = @(
-     "backend/Cargo.lock"
-     "backend/Cargo.toml"
-     "backend/tauri.conf.json"
-     "frontend/package-lock.json"
-     "frontend/package.json"
-   ) | Sort-Object
-
-   function Assert-ReleaseTagAvailable([string] $tag) {
-     & git show-ref --verify --quiet "refs/tags/$tag"
-     $localTagStatus = $LASTEXITCODE
-     if ($localTagStatus -eq 0) { throw "Local tag $tag already exists; never move, delete, or reuse it." }
-     if ($localTagStatus -ne 1) { throw "Could not determine whether local tag $tag exists." }
-
-     $remoteRef = "refs/tags/$tag"
-     $remoteTagLines = @(& git ls-remote --refs origin $remoteRef)
-     $remoteTagStatus = $LASTEXITCODE
-     if ($remoteTagStatus -ne 0) { throw "Could not query remote tag $tag; do not create it." }
-     if ($remoteTagLines.Count -ne 0) { throw "Remote tag $tag already exists; never move, delete, or reuse it." }
-   }
-
-   $branchOutput = & git branch --show-current
-   $branchStatus = $LASTEXITCODE
-   $branch = ([string] $branchOutput).Trim()
-   if ($branchStatus -ne 0 -or $branch -cne "main") { throw "Release from a current local main branch." }
-
-   Assert-ReleaseTagAvailable $releaseTag
-
-   & git diff --cached --quiet
-   $initialIndexStatus = $LASTEXITCODE
-   if ($initialIndexStatus -eq 1) { throw "Staged changes already exist; unstage and inspect them before a release." }
-   if ($initialIndexStatus -ne 0) { throw "Could not inspect the staged index." }
-
-   git diff --check
-   if ($LASTEXITCODE -ne 0) { throw "Release diff has whitespace errors." }
-   git diff --stat -- $expectedReleaseFiles
-   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the release diff stat." }
-   git diff -- $expectedReleaseFiles
-   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the release diff." }
-
-   git add -- $expectedReleaseFiles
-   if ($LASTEXITCODE -ne 0) { throw "Could not stage the five release files." }
-   git diff --cached --check
-   if ($LASTEXITCODE -ne 0) { throw "Staged release diff has whitespace errors." }
-   $stagedFileOutput = & git diff --cached --name-only
-   $stagedFileStatus = $LASTEXITCODE
-   if ($stagedFileStatus -ne 0) { throw "Could not enumerate staged release files." }
-   $stagedFiles = @($stagedFileOutput | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object)
-   $stagedDifference = @(Compare-Object -ReferenceObject $expectedReleaseFiles -DifferenceObject $stagedFiles)
-   if ($stagedDifference.Count -ne 0) { throw "Release commit must stage exactly both lockfiles and the three version manifests." }
-
-   & git diff --quiet
-   $unstagedStatus = $LASTEXITCODE
-   if ($unstagedStatus -eq 1) { throw "Unstaged tracked changes remain outside the release commit." }
-   if ($unstagedStatus -ne 0) { throw "Could not inspect unstaged tracked changes." }
-   $untrackedFiles = @(& git ls-files --others --exclude-standard)
-   if ($LASTEXITCODE -ne 0) { throw "Could not inspect untracked files." }
-   if ($untrackedFiles.Count -ne 0) { throw "Untracked files remain; release only from a clean worktree." }
-
-   git diff --cached --stat -- $expectedReleaseFiles
-   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the staged release diff stat." }
-   git diff --cached -- $expectedReleaseFiles
-   if ($LASTEXITCODE -ne 0) { throw "Could not inspect the staged release diff." }
-
-   git commit -m "release: $releaseTag"
-   if ($LASTEXITCODE -ne 0) { throw "Could not commit release versions." }
-
-   $worktreeState = @(& git status --porcelain)
-   if ($LASTEXITCODE -ne 0 -or $worktreeState.Count -ne 0) { throw "Commit must leave a clean worktree." }
-
-   & node infrastructure/release/verify-version.mjs $releaseTag
-   if ($LASTEXITCODE -ne 0) { throw "Release versions no longer match $releaseTag." }
-   Assert-ReleaseTagAvailable $releaseTag
-
-   & git tag $releaseTag
-   if ($LASTEXITCODE -ne 0) { throw "Could not create tag $releaseTag." }
-   $tagCommitOutput = & git rev-list -n 1 $releaseTag
-   $tagCommitStatus = $LASTEXITCODE
-   if ($tagCommitStatus -ne 0) { throw "Could not resolve tag $releaseTag." }
-   $tagCommit = ([string] $tagCommitOutput).Trim()
-   $headCommitOutput = & git rev-parse HEAD
-   $headCommitStatus = $LASTEXITCODE
-   if ($headCommitStatus -ne 0) { throw "Could not resolve HEAD." }
-   $headCommit = ([string] $headCommitOutput).Trim()
-   if (-not $tagCommit -or $tagCommit -cne $headCommit) { throw "Release tag must point to HEAD." }
-
-   & git push --atomic origin main $releaseTag
-   if ($LASTEXITCODE -ne 0) { throw "Atomic main-and-tag push failed." }
-   ```
-
-   Never create a tag for an uncommitted tree or retag a different commit. If the
-   workflow fails, fix the issue in a new commit and use a new patch version.
-
-4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. Its
-   read-only build job first fetches `origin/main` and rejects any tag whose commit
-   is not in that branch's history. It validates the three manifest versions and
-   both frontend lockfile version fields, builds and hashes the MSI, then transfers
-   only that MSI and its matching checksum through immutable-pinned official
-   artifact actions. A separate job with only `contents: write` downloads and
-   revalidates those exact files before creating or recovering the draft; it does
-   not check out or execute repository code. Before any create/upload operation and
-   again after final draft verification, it requires the exact live
-   `refs/tags/<tag>` reference's peeled commit to equal the triggering workflow SHA.
-   A draft can remain partial or blocked while that workflow is still running or
-   has failed; do not publish or manually complete it.
-5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
-   `.msi` and its matching `.msi.sha256` checksum:
-
-   ```powershell
-   $releaseTag = "v0.2.0"
-   $releaseDirectory = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "dashy-release-check-$([guid]::NewGuid())")
-   & gh release download $releaseTag --dir $releaseDirectory.FullName
-   if ($LASTEXITCODE -ne 0) { throw "Could not download draft release $releaseTag." }
-
-   $msi = @(Get-ChildItem -LiteralPath $releaseDirectory.FullName -File -Filter *.msi)
-   $checksums = @(Get-ChildItem -LiteralPath $releaseDirectory.FullName -File -Filter *.msi.sha256)
-   if ($msi.Count -ne 1 -or $checksums.Count -ne 1) { throw "Expected exactly one MSI and one checksum." }
-   if ($checksums[0].Name -cne "$($msi[0].Name).sha256") { throw "Checksum does not belong to the downloaded MSI." }
-
-   $expectedHash = ((Get-Content -Raw -LiteralPath $checksums[0].FullName) -split '\s+')[0]
-   $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $msi[0].FullName).Hash
-   if (-not [string]::Equals($actualHash, $expectedHash, [StringComparison]::OrdinalIgnoreCase)) {
-     throw "Downloaded MSI checksum mismatch."
-   }
-   ```
-
-6. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
-   a clean Windows x64 machine. Publish the draft only when every automated and
-   clean-machine gate passes.
-
-Private-test MSI releases are unsigned. Windows may show an **Unknown publisher**
-or SmartScreen warning; do not describe an unsigned build as suitable for public
-distribution.
+Releases follow an immutable-tag, five-file version-bump process with a
+read-only build job and a draft-first publish. The full guarded procedure lives
+in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## Troubleshooting
 
@@ -521,9 +332,3 @@ distribution.
 - **A saved monitor is disconnected:** Dashy falls back to the primary monitor; reconnect
   it or choose a new monitor in Settings.
 - **The tray is not visible:** check the Windows hidden-icons area.
-
-## Tasks backlog
-
-Todo and task management are intentionally absent from this release. There is no
-partially available task surface or hidden task state. A possible optional fourth
-metric is tracked only in [docs/BACKLOG.md](docs/BACKLOG.md).

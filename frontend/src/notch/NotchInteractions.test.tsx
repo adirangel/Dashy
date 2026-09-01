@@ -43,8 +43,18 @@ const usage = {
 };
 const snapshot: DashboardSnapshot = {
   github: { status: "connected", accountLogin: "fixture-user", contributionDays: [], currentStreakDays: 4, lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null },
-  codex: { ...usage, remainingPercent: 68 }, claude: usage, refreshedAt: "2026-08-29T09:00:00Z",
+  codex: { ...usage, remainingPercent: 68 }, claude: usage,
+  grok: {
+    ...usage, remainingPercent: 61, shortWindow: null,
+    weeklyWindow: { labelKey: "monthly", remainingPercent: 61, resetsAt: null },
+  },
+  cursor: {
+    status: "connected", subscriptionTier: "pro", accountEmail: "fixture@cursor.com",
+    lastSuccessfulRefresh: "2026-08-29T09:00:00Z", errorKind: null,
+  },
+  refreshedAt: "2026-08-29T09:00:00Z",
 };
+const ALL_PROVIDERS = ["claude", "codex", "github", "grok", "cursor"] as const;
 let edgeHandler: ((view: EdgeViewState) => void) | undefined;
 let settingsHandler: ((settings: Awaited<ReturnType<typeof mocks.getSettings>>) => void) | undefined;
 let exitTokenSequence = 0;
@@ -100,6 +110,10 @@ describe("native notch interaction bridge", () => {
     [["claude", "github"], "top", 2, "240", "312", "312x70"],
     [["claude", "codex", "github"], "right", 3, "328", "400", "70x400"],
     [["claude", "codex", "github"], "top", 3, "328", "400", "400x70"],
+    [["claude", "codex", "github", "grok"], "right", 4, "416", "488", "70x488"],
+    [["claude", "codex", "github", "grok"], "top", 4, "416", "488", "488x70"],
+    [ALL_PROVIDERS, "right", 5, "504", "576", "70x576"],
+    [ALL_PROVIDERS, "top", 5, "504", "576", "576x70"],
   ] as const)("renders and sizes only enabled providers %#", async (enabledProviders, placement, count, railExtent, controlExtent, logicalSize) => {
     mocks.getSettings.mockResolvedValue({
       placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
@@ -109,7 +123,7 @@ describe("native notch interaction bridge", () => {
     await renderNativeNotch();
     await emitEdgeView({ visibility: "rail", placement, provider: null });
 
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /Claude|Codex|GitHub/ })).toHaveLength(count));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /Claude|Codex|GitHub|Grok|Cursor/ })).toHaveLength(count));
     expect(screen.getByTestId("notch-surface")).toHaveStyle({
       "--rail-extent": `${railExtent}px`,
       "--control-extent": `${controlExtent}px`,
@@ -256,6 +270,36 @@ describe("native notch interaction bridge", () => {
 
     expect(screen.getByTestId("notch-surface")).toHaveClass("is-expanded");
     expect(screen.getByTestId("notch-surface")).toHaveAttribute("data-logical-size", size);
+  });
+
+  it.each([
+    ["right", "370x576"], ["top", "576x430"],
+  ] as const)("grows the expanded %s contract with five enabled providers", async (placement, size) => {
+    mocks.getSettings.mockResolvedValue({
+      placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+      onboardingCompleted: true, enabledProviders: [...ALL_PROVIDERS],
+    });
+
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "card", placement, provider: "cursor" });
+
+    expect(screen.getByTestId("notch-surface")).toHaveAttribute("data-logical-size", size);
+    expect(screen.getByRole("heading", { name: "Cursor" })).toBeInTheDocument();
+  });
+
+  it("pins cursor and starts only its scoped refresh with all five providers enabled", async () => {
+    mocks.getSettings.mockResolvedValue({
+      placement: "right", monitor: null, locale: "en", alwaysShowOverFullscreen: false,
+      onboardingCompleted: true, enabledProviders: [...ALL_PROVIDERS],
+    });
+
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "card", placement: "right", provider: "cursor" });
+    mocks.setNotchInteraction.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /Cursor/i }));
+    await waitFor(() => expect(mocks.setNotchInteraction)
+      .toHaveBeenCalledExactlyOnceWith({ kind: "togglePin", provider: "cursor" }));
+    expect(mocks.refreshProvider).toHaveBeenCalledExactlyOnceWith("cursor");
   });
 
   it.each([
