@@ -17,7 +17,7 @@ const fr = {
     publisher: "Éditeur", packageId: "Paquet", command: "Commande", manualHelp: "Ouvrir le guide d’installation officiel", manualHelpFailure: "Dashy n’a pas pu ouvrir le guide d’installation officiel.", finish: "Terminer la configuration",
     finishFailure: "Dashy n’a pas pu enregistrer la sélection des fournisseurs.", actionFailure: "La configuration du fournisseur nécessite votre attention.", loading: "Vérification des outils installés",
   },
-  settings: { title: "Paramètres", placement: "Position", right: "Droite", left: "Gauche", top: "Haut", monitor: "Écran", language: "Langue", fullscreen: "Toujours afficher au-dessus des applications en plein écran", startup: "Lancer au démarrage", providerStatus: "État des services" },
+  settings: { title: "Paramètres", placement: "Position", right: "Droite", left: "Gauche", top: "Haut", monitor: "Écran", language: "Langue", fullscreen: "Toujours afficher au-dessus des applications en plein écran", startup: "Lancer au démarrage", display: "Affichage", providers: "Services" },
   menu: { show: "Afficher Dashy", refreshAll: "Actualiser tous les services", placement: "Position", monitor: "Écran", primaryMonitor: "Écran principal", settings: "Paramètres", quit: "Quitter Dashy" },
   actions: { refreshAll: "Tout actualiser" },
 } satisfies Messages;

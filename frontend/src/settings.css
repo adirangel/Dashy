@@ -1,39 +1,398 @@
 :root {
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  color: #f4f7f5;
-  background: #0b0f11;
+  color: var(--text-primary);
+  background: var(--notch-bg);
 }
 
 html, body, #root { height: 100%; }
 body { margin: 0; overflow: hidden; }
+
 .settings-app {
+  --settings-panel: rgba(255, 255, 255, .035);
+  --settings-hairline: rgba(255, 255, 255, .07);
+  --settings-well: rgba(0, 0, 0, .35);
+  --settings-accent: var(--codex);
   box-sizing: border-box;
   height: 100vh;
   min-height: 0;
-  padding: 28px 28px 52px;
+  padding: 18px 20px 24px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
   touch-action: pan-y;
-  background: linear-gradient(145deg, #111719, #080b0d);
+  color: var(--text-primary);
+  background: var(--notch-bg);
+  font-size: 13px;
+  line-height: 1.3;
 }
-.settings-app:focus-visible { outline: 2px solid #62e6a7; outline-offset: -4px; }
-.settings-app header p { margin: 0; color: #62e6a7; font-weight: 700; letter-spacing: .08em; }
-.settings-app h1 { margin: 4px 0 24px; font-size: 28px; }
-.settings-panel { display: grid; gap: 14px; padding: 18px; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; background: rgba(255,255,255,.045); }
-.settings-panel label:not(.settings-toggle) { display: grid; gap: 7px; color: #b7c1bc; font-size: 13px; }
-.settings-panel select { width: 100%; padding: 10px 12px; color: #f4f7f5; background: #151b1e; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; font: inherit; }
-.settings-toggle { display: flex; align-items: center; gap: 10px; min-height: 36px; }
-.provider-settings {
-  --setup-panel: rgba(255,255,255,.045);
-  --setup-border: rgba(255,255,255,.12);
-  margin-top: 16px;
+
+.settings-app:focus-visible { outline: 2px solid var(--settings-accent); outline-offset: -4px; }
+
+.settings-app > p[role="status"]:only-child {
+  margin: 0;
+  color: var(--text-secondary);
 }
-.provider-settings-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.provider-settings-header h2 { margin: 0; font-size: 17px; }
-.provider-settings-header button { padding: 8px 12px; border: 0; border-radius: 12px; color: #07100c; background: #62e6a7; font-weight: 700; }
-.settings-message { min-height: 20px; color: #ffc56e; }
+
+/* Header: eyebrow + title on one side, the build version on the other. */
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.settings-eyebrow {
+  margin: 0;
+  color: var(--settings-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.settings-header h1 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+
+.settings-version {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  padding: 2px 8px;
+  border: 1px solid var(--settings-hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+
+/* Section labels sit above each grouped panel. */
+.settings-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-section-label {
+  margin: 14px 0 6px 2px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.settings-section-head .settings-section-label { margin-bottom: 6px; }
+
+/* Letter-spacing breaks cursive joining and uppercase is meaningless in RTL scripts. */
+[dir="rtl"] .settings-section-label,
+[dir="rtl"] .settings-eyebrow {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.settings-group {
+  display: grid;
+  padding: 0 12px;
+  border: 1px solid var(--settings-hairline);
+  border-radius: 14px;
+  background: var(--settings-panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+
+.settings-group[aria-busy="true"] { opacity: .8; }
+
+/* One setting per row: label first, control at the far end. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  padding: 6px 2px;
+  border-top: 1px solid var(--settings-hairline);
+}
+
+.settings-row:first-child { border-top: 0; }
+
+.settings-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+}
+
+label.settings-row { cursor: pointer; }
+label.settings-row:has(input:disabled) { cursor: default; }
+
+/* Segmented placement control. */
+.settings-segmented {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid var(--settings-hairline);
+  border-radius: 9px;
+  background: var(--settings-well);
+}
+
+.settings-segmented button {
+  min-width: 48px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.settings-segmented button:hover { color: var(--text-primary); }
+
+.settings-segmented button[aria-checked="true"] {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, .1);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .4);
+}
+
+.settings-segmented button:disabled { cursor: default; opacity: .6; }
+
+/* Compact native selects with a custom chevron. */
+.settings-row select {
+  flex: 0 1 auto;
+  max-width: 200px;
+  padding: 5px 28px 5px 10px;
+  border: 1px solid var(--settings-hairline);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%2398a39d' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 8px center / 14px 14px,
+    var(--settings-well);
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+}
+
+[dir="rtl"] .settings-row select {
+  padding: 5px 10px 5px 28px;
+  background-position: left 8px center;
+}
+
+.settings-row select:disabled { cursor: default; opacity: .6; }
+
+/* Switch: a native checkbox drawn as a pill; the accent is the app green here
+   and the provider color inside provider rows. */
+.settings-switch {
+  --switch-accent: var(--settings-accent);
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  appearance: none;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.settings-switch::after {
+  position: absolute;
+  top: 2px;
+  inset-inline-start: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e9eef0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .5);
+  content: "";
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.settings-switch:checked { background: var(--switch-accent); }
+.settings-switch:checked::after { background: var(--notch-bg); transform: translateX(14px); }
+[dir="rtl"] .settings-switch:checked::after { transform: translateX(-14px); }
+.settings-switch:indeterminate::after { background: var(--text-secondary); transform: translateX(7px); }
+[dir="rtl"] .settings-switch:indeterminate::after { transform: translateX(-7px); }
+.settings-switch:disabled { cursor: default; opacity: .55; }
+
+/* Small bordered button used for section actions. */
+.settings-ghost-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--settings-hairline);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, .05);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.settings-ghost-button svg { width: 14px; height: 14px; }
+.settings-ghost-button:hover { border-color: rgba(255, 255, 255, .18); background: rgba(255, 255, 255, .09); }
+.settings-ghost-button:disabled { cursor: default; opacity: .55; }
+
+/* Provider rows inside the providers group. */
+.settings-group--providers { padding-inline: 12px; }
+
+.provider-setup-list { display: grid; }
+
+.provider-setup-row {
+  --provider-accent: var(--codex);
+  display: grid;
+  gap: 10px;
+  padding: 8px 2px;
+  border-top: 1px solid var(--settings-hairline);
+}
+
+.provider-setup-row:first-child { border-top: 0; }
+.provider-setup-row[data-provider="claude"] { --provider-accent: var(--claude); }
+.provider-setup-row[data-provider="codex"] { --provider-accent: var(--codex); }
+.provider-setup-row[data-provider="github"] { --provider-accent: var(--github); }
+.provider-setup-row[data-provider="grok"] { --provider-accent: var(--grok); }
+.provider-setup-row[data-provider="cursor"] { --provider-accent: var(--cursor); }
+.provider-setup-row[aria-busy="true"] { opacity: .76; }
+
+.provider-setup-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+
+.provider-setup-disc {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--notch-inner-circle);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+
+.provider-setup-disc .provider-glyph { width: 16px; height: 16px; color: var(--provider-accent); }
+
+.provider-setup-row-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.provider-setup-row .provider-setup-name {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.provider-setup-row .provider-setup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.provider-setup-status-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.provider-setup-row[data-status="connected"] .provider-setup-status,
+.provider-setup-row[data-status="stale"] .provider-setup-status { color: #9fd9bd; }
+.provider-setup-row[data-status="connected"] .provider-setup-status-dot,
+.provider-setup-row[data-status="stale"] .provider-setup-status-dot { background: var(--codex); }
+.provider-setup-row[data-status="notAuthenticated"] .provider-setup-status { color: var(--warning); }
+.provider-setup-row[data-status="unavailable"] .provider-setup-status { color: var(--error); }
+.provider-setup-row[aria-busy="true"] .provider-setup-status { color: var(--text-secondary); }
+
+.provider-setup-row[data-enabled="false"] .provider-setup-disc,
+.provider-setup-row[data-enabled="false"] .provider-setup-row-text { opacity: .55; }
+
+.provider-setup-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.provider-setup-row button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--provider-accent) 45%, var(--settings-hairline));
+  border-radius: 8px;
+  color: var(--provider-accent);
+  background: rgba(255, 255, 255, .04);
+  font-size: 12px;
+}
+
+.provider-setup-row button:hover {
+  border-color: color-mix(in srgb, var(--provider-accent) 70%, var(--settings-hairline));
+  background: rgba(255, 255, 255, .08);
+}
+
+.provider-setup-row .provider-setup-confirmation-primary {
+  border-color: transparent;
+  color: #07100b;
+  background: var(--provider-accent);
+}
+
+.provider-setup-row .provider-setup-confirmation-cancel {
+  border-color: var(--settings-hairline);
+  color: var(--text-primary);
+}
+
+.provider-setup-row .settings-switch { --switch-accent: var(--provider-accent); }
+
+.provider-setup-row .provider-setup-confirmation {
+  padding: 12px;
+  border-radius: 10px;
+}
+
+.provider-setup-row .provider-setup-confirmation code { font-size: 12px; }
+
+.provider-setup-row .provider-setup-error { margin-top: 2px; }
+
+.provider-setup-row .provider-setup-manual-help {
+  justify-self: start;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-decoration: underline;
+}
+
+.settings-message { min-height: 20px; margin: 10px 2px 0; color: var(--warning); font-size: 12px; }
+
 [dir="rtl"] .settings-app { text-align: right; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }

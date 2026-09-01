@@ -15,7 +15,7 @@ export type Messages = {
     publisher: string; packageId: string; command: string; manualHelp: string; manualHelpFailure: string;
     finish: string; finishFailure: string; actionFailure: string; loading: string;
   };
-  settings: { title: string; placement: string; right: string; left: string; top: string; monitor: string; language: string; fullscreen: string; startup: string; providerStatus: string };
+  settings: { title: string; placement: string; right: string; left: string; top: string; monitor: string; language: string; fullscreen: string; startup: string; display: string; providers: string };
   menu: { show: string; refreshAll: string; placement: string; monitor: string; primaryMonitor: string; settings: string; quit: string };
   actions: { refreshAll: string };
 };
@@ -37,7 +37,7 @@ const en = {
     publisher: "Publisher", packageId: "Package", command: "Command", manualHelp: "Open official installation guide", manualHelpFailure: "Dashy could not open the official installation guide.", finish: "Finish setup",
     finishFailure: "Dashy could not save your provider selection.", actionFailure: "Provider setup needs attention.", loading: "Checking installed tools",
   },
-  settings: { title: "Settings", placement: "Placement", right: "Right", left: "Left", top: "Top", monitor: "Monitor", language: "Language", fullscreen: "Always show over fullscreen apps", startup: "Launch at startup", providerStatus: "Provider status" },
+  settings: { title: "Settings", placement: "Placement", right: "Right", left: "Left", top: "Top", monitor: "Monitor", language: "Language", fullscreen: "Always show over fullscreen apps", startup: "Launch at startup", display: "Display", providers: "Providers" },
   menu: { show: "Show Dashy", refreshAll: "Refresh all providers", placement: "Placement", monitor: "Monitor", primaryMonitor: "Primary monitor", settings: "Settings", quit: "Quit Dashy" },
   actions: { refreshAll: "Refresh all" },
 } satisfies Messages;

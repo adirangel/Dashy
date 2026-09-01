@@ -17,7 +17,7 @@ const he = {
     publisher: "מפרסם", packageId: "חבילה", command: "פקודה", manualHelp: "פתיחת מדריך ההתקנה הרשמי", manualHelpFailure: "Dashy לא הצליח לפתוח את מדריך ההתקנה הרשמי.", finish: "סיום ההגדרה",
     finishFailure: "Dashy לא הצליח לשמור את בחירת הספקים.", actionFailure: "הגדרת הספק דורשת טיפול.", loading: "בודק כלים מותקנים",
   },
-  settings: { title: "הגדרות", placement: "מיקום", right: "ימין", left: "שמאל", top: "למעלה", monitor: "צג", language: "שפה", fullscreen: "הצג תמיד מעל יישומים במסך מלא", startup: "הפעל בעת האתחול", providerStatus: "מצב ספקים" },
+  settings: { title: "הגדרות", placement: "מיקום", right: "ימין", left: "שמאל", top: "למעלה", monitor: "צג", language: "שפה", fullscreen: "הצג תמיד מעל יישומים במסך מלא", startup: "הפעל בעת האתחול", display: "תצוגה", providers: "ספקים" },
   menu: { show: "הצג את Dashy", refreshAll: "רענן את כל הספקים", placement: "מיקום", monitor: "צג", primaryMonitor: "צג ראשי", settings: "הגדרות", quit: "צא מ־Dashy" },
   actions: { refreshAll: "רענן הכול" },
 } satisfies Messages;

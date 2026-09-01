@@ -17,7 +17,7 @@ const ja = {
     publisher: "発行元", packageId: "パッケージ", command: "コマンド", manualHelp: "公式インストールガイドを開く", manualHelpFailure: "Dashy は公式インストールガイドを開けませんでした。", finish: "セットアップを完了",
     finishFailure: "Dashy はプロバイダーの選択を保存できませんでした。", actionFailure: "プロバイダーのセットアップを確認してください。", loading: "インストール済みツールを確認中",
   },
-  settings: { title: "設定", placement: "配置", right: "右", left: "左", top: "上", monitor: "モニター", language: "言語", fullscreen: "全画面アプリの上にも常に表示", startup: "起動時に開く", providerStatus: "プロバイダーの状態" },
+  settings: { title: "設定", placement: "配置", right: "右", left: "左", top: "上", monitor: "モニター", language: "言語", fullscreen: "全画面アプリの上にも常に表示", startup: "起動時に開く", display: "表示", providers: "プロバイダー" },
   menu: { show: "Dashy を表示", refreshAll: "すべてのプロバイダーを更新", placement: "配置", monitor: "モニター", primaryMonitor: "メインモニター", settings: "設定", quit: "Dashy を終了" },
   actions: { refreshAll: "すべて更新" },
 } satisfies Messages;

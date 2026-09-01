@@ -17,7 +17,7 @@ const ru = {
     publisher: "Издатель", packageId: "Пакет", command: "Команда", manualHelp: "Открыть официальное руководство по установке", manualHelpFailure: "Dashy не удалось открыть официальное руководство по установке.", finish: "Завершить настройку",
     finishFailure: "Dashy не удалось сохранить выбор провайдеров.", actionFailure: "Настройка провайдера требует внимания.", loading: "Проверка установленных инструментов",
   },
-  settings: { title: "Настройки", placement: "Положение", right: "Справа", left: "Слева", top: "Сверху", monitor: "Монитор", language: "Язык", fullscreen: "Всегда показывать поверх полноэкранных приложений", startup: "Запускать при входе", providerStatus: "Состояние сервисов" },
+  settings: { title: "Настройки", placement: "Положение", right: "Справа", left: "Слева", top: "Сверху", monitor: "Монитор", language: "Язык", fullscreen: "Всегда показывать поверх полноэкранных приложений", startup: "Запускать при входе", display: "Экран", providers: "Сервисы" },
   menu: { show: "Показать Dashy", refreshAll: "Обновить все сервисы", placement: "Положение", monitor: "Монитор", primaryMonitor: "Основной монитор", settings: "Настройки", quit: "Выйти из Dashy" },
   actions: { refreshAll: "Обновить всё" },
 } satisfies Messages;

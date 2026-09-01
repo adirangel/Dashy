@@ -96,7 +96,7 @@ describe("native notch interaction bridge", () => {
   it("renders a backend rail view without mounting a provider card", async () => {
     await renderNativeNotch();
     await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
-    expect(screen.getByRole("toolbar", { name: /provider status/i })).toBeInTheDocument();
+    expect(screen.getByRole("toolbar", { name: /^providers$/i })).toBeInTheDocument();
     expect(screen.queryByRole("article")).not.toBeInTheDocument();
     expect(screen.getByTestId("notch-surface"))
       .toHaveAttribute("data-logical-size", "70x400");

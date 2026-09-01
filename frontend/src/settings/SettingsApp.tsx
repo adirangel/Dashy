@@ -39,12 +39,21 @@ function StartupCheckbox({
 
   return <input
     ref={checkbox}
+    className="settings-switch"
     type="checkbox"
     checked={state === true}
     aria-checked={state === null ? "mixed" : state}
     disabled={disabled || state === null}
     onChange={onChange}
   />;
+}
+
+const PLACEMENTS: EdgePlacement[] = ["left", "right", "top"];
+
+function RefreshIcon() {
+  return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <path d="M13 8a5 5 0 1 1-1.5-3.6M13 3v3h-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
 }
 
 export function SettingsApp() {
@@ -254,33 +263,62 @@ export function SettingsApp() {
     data-scroll-owner="settings"
     tabIndex={0}
   >
-    <header><p>Dashy</p><h1>{t("settings.title")}</h1></header>
-    <section className="settings-panel" aria-busy={busy}>
-      <label>{t("settings.placement")}
-        <select value={settings.placement} disabled={busy} onChange={(event) => savePlacement(event.target.value as EdgePlacement)}>
-          <option value="right">{t("settings.right")}</option><option value="left">{t("settings.left")}</option><option value="top">{t("settings.top")}</option>
-        </select>
-      </label>
-      <label>{t("settings.monitor")}
-        <select value={selectedMonitor} disabled={busy} onChange={(event) => saveMonitor(event.target.value)}>
+    <header className="settings-header">
+      <div>
+        <p className="settings-eyebrow">Dashy</p>
+        <h1>{t("settings.title")}</h1>
+      </div>
+      <span className="settings-version" dir="ltr">v{__APP_VERSION__}</span>
+    </header>
+
+    <h2 className="settings-section-label" id="settings-display-title">{t("settings.display")}</h2>
+    <section className="settings-group" aria-labelledby="settings-display-title" aria-busy={busy}>
+      <div className="settings-row">
+        <span className="settings-row-label" id="settings-placement-label">{t("settings.placement")}</span>
+        <div className="settings-segmented" role="radiogroup" aria-labelledby="settings-placement-label">
+          {PLACEMENTS.map((placement) => <button
+            key={placement}
+            type="button"
+            role="radio"
+            aria-checked={settings.placement === placement}
+            disabled={busy}
+            onClick={() => savePlacement(placement)}
+          >{t(`settings.${placement}`)}</button>)}
+        </div>
+      </div>
+      <div className="settings-row">
+        <label className="settings-row-label" htmlFor="settings-monitor">{t("settings.monitor")}</label>
+        <select id="settings-monitor" value={selectedMonitor} disabled={busy} onChange={(event) => saveMonitor(event.target.value)}>
           <option value="">{t("menu.primaryMonitor")}</option>
           {monitorOptions.map((monitor) => <option key={monitor.id} value={monitor.id}>{monitor.name}</option>)}
         </select>
-      </label>
-      <label>{t("settings.language")}
-        <select value={settings.locale} disabled={busy} onChange={(event) => { void saveLanguage(resolveLocale(event.target.value)); }}>
+      </div>
+      <div className="settings-row">
+        <label className="settings-row-label" htmlFor="settings-language">{t("settings.language")}</label>
+        <select id="settings-language" value={settings.locale} disabled={busy} onChange={(event) => { void saveLanguage(resolveLocale(event.target.value)); }}>
           {SUPPORTED_LOCALES.map((locale) => <option key={locale} value={locale}>{languageName(locale)}</option>)}
         </select>
-      </label>
-      <label className="settings-toggle"><input type="checkbox" checked={settings.alwaysShowOverFullscreen} disabled={busy} onChange={(event) => { void save({ alwaysShowOverFullscreen: event.target.checked }); }} />{t("settings.fullscreen")}</label>
-      <label className="settings-toggle"><StartupCheckbox state={startup} disabled={busy} onChange={() => { void toggleStartup(); }} />{t("settings.startup")}</label>
-    </section>
-    <section className="provider-settings" aria-labelledby="provider-status-title">
-      <div className="provider-settings-header">
-        <h2 id="provider-status-title">{t("settings.providerStatus")}</h2>
-        <button type="button" disabled={busy} onClick={() => { void refreshAll(); }}>{t("actions.refreshAll")}</button>
       </div>
+      <label className="settings-row">
+        <span className="settings-row-label">{t("settings.fullscreen")}</span>
+        <input className="settings-switch" type="checkbox" checked={settings.alwaysShowOverFullscreen} disabled={busy} onChange={(event) => { void save({ alwaysShowOverFullscreen: event.target.checked }); }} />
+      </label>
+      <label className="settings-row">
+        <span className="settings-row-label">{t("settings.startup")}</span>
+        <StartupCheckbox state={startup} disabled={busy} onChange={() => { void toggleStartup(); }} />
+      </label>
+    </section>
+
+    <div className="settings-section-head">
+      <h2 className="settings-section-label" id="provider-status-title">{t("settings.providers")}</h2>
+      <button className="settings-ghost-button" type="button" disabled={busy} onClick={() => { void refreshAll(); }}>
+        <RefreshIcon />
+        {t("actions.refreshAll")}
+      </button>
+    </div>
+    <section className="settings-group settings-group--providers" aria-labelledby="provider-status-title">
       <ProviderManager
+        variant="row"
         controller={providerSetup}
         enabledProviders={settings.enabledProviders}
         onEnabledChange={(enabledProviders) => { void saveProviders(enabledProviders); }}

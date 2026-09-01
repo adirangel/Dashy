@@ -575,6 +575,45 @@ describe("ProviderManager", () => {
     expect(within(confirmation).getByRole("button", { name: "Open official login" }))
       .toHaveClass("provider-setup-confirmation-primary");
   });
+
+  it("renders the compact row variant with a glyph, status dot, labelled switch, and inline confirmation", () => {
+    render(<ProviderManager
+      variant="row"
+      controller={{
+        states: setupStates({ codex: "notAuthenticated", grok: "notInstalled" }),
+        busyProvider: null, busyAction: null, failureProvider: null, loadFailed: false,
+        install: mocks.install, login: mocks.login, reload: mocks.reload,
+      }}
+      enabledProviders={["claude", "codex", "github", "cursor"]}
+      onEnabledChange={mocks.onEnabledChange}
+    />);
+
+    const rows = screen.getAllByRole("article");
+    expect(rows).toHaveLength(5);
+    rows.forEach((row) => expect(row).toHaveClass("provider-setup-row"));
+    expect(rows.map((row) => within(row).getByRole("heading", { level: 3 }).textContent))
+      .toEqual(["Claude", "Codex", "GitHub", "Grok", "Cursor"]);
+
+    const codex = screen.getByRole("article", { name: "Codex" });
+    expect(within(codex).getByTestId("provider-glyph-codex")).toBeInTheDocument();
+    expect(within(codex).getByRole("status")).toHaveTextContent("Sign in required");
+    expect(codex.querySelector(".provider-setup-status-dot")).toHaveAttribute("aria-hidden", "true");
+    expect(codex).toHaveAttribute("data-enabled", "true");
+
+    const grok = screen.getByRole("article", { name: "Grok" });
+    expect(grok).toHaveAttribute("data-enabled", "false");
+    const grokSwitch = within(grok).getByRole("checkbox", { name: "Use Grok in Dashy" });
+    expect(grokSwitch).toHaveClass("settings-switch");
+    expect(grokSwitch).not.toBeChecked();
+    fireEvent.click(grokSwitch);
+    expect(mocks.onEnabledChange).toHaveBeenCalledWith(["claude", "codex", "github", "cursor", "grok"]);
+
+    fireEvent.click(within(codex).getByRole("button", { name: "Connect Codex" }));
+    const confirmation = within(codex).getByRole("group", { name: "Open official login" });
+    expect(confirmation).toHaveClass("provider-setup-confirmation");
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Open official login" }));
+    expect(mocks.login).toHaveBeenCalledWith("codex");
+  });
 });
 
 describe("useProviderSetup", () => {
