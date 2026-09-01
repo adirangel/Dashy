@@ -67,11 +67,7 @@ fn provider_snapshot_status(
     provider: ProviderId,
     snapshot: &DashboardSnapshot,
 ) -> crate::dashboard::models::ProviderStatus {
-    match provider {
-        ProviderId::Claude => snapshot.claude.status,
-        ProviderId::Codex => snapshot.codex.status,
-        ProviderId::GitHub => snapshot.github.status,
-    }
+    snapshot.provider_status_and_error(provider).0
 }
 
 #[tauri::command]
@@ -141,11 +137,7 @@ where
 }
 
 fn provider_setup_state(provider: ProviderId, snapshot: &DashboardSnapshot) -> ProviderSetupState {
-    let (status, error_kind) = match provider {
-        ProviderId::Claude => (snapshot.claude.status, snapshot.claude.error_kind),
-        ProviderId::Codex => (snapshot.codex.status, snapshot.codex.error_kind),
-        ProviderId::GitHub => (snapshot.github.status, snapshot.github.error_kind),
-    };
+    let (status, error_kind) = snapshot.provider_status_and_error(provider);
     ProviderSetupState {
         definition: ProviderSetupDefinition::for_provider(provider),
         status,
@@ -178,8 +170,8 @@ mod tests {
     use super::{provider_setup_state, run_provider_setup_action, ProviderSetupRequest};
     use crate::dashboard::{
         models::{
-            DashboardSnapshot, GitHubSnapshot, ProviderErrorKind, ProviderId, ProviderStatus,
-            UsageSnapshot,
+            AccountSnapshot, DashboardSnapshot, GitHubSnapshot, ProviderErrorKind, ProviderId,
+            ProviderStatus, UsageSnapshot,
         },
         process::{AllowedProgram, VisibleProcessError, VisibleRunner},
     };
@@ -221,6 +213,11 @@ mod tests {
             github: GitHubSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
             codex: UsageSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
             claude: UsageSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
+            grok: UsageSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
+            cursor: AccountSnapshot::failed(
+                ProviderStatus::Unavailable,
+                ProviderErrorKind::Process,
+            ),
             refreshed_at: now,
         };
         match provider {
@@ -232,6 +229,10 @@ mod tests {
             }
             ProviderId::Claude => {
                 snapshot.claude = UsageSnapshot::failed(ProviderStatus::Stale, cause)
+            }
+            ProviderId::Grok => snapshot.grok = UsageSnapshot::failed(ProviderStatus::Stale, cause),
+            ProviderId::Cursor => {
+                snapshot.cursor = AccountSnapshot::failed(ProviderStatus::Stale, cause)
             }
         }
         snapshot
@@ -249,12 +250,17 @@ mod tests {
                 ProviderStatus::NotAuthenticated,
                 ProviderErrorKind::Authentication,
             ),
+            grok: UsageSnapshot::failed(ProviderStatus::Stale, ProviderErrorKind::Timeout),
+            cursor: AccountSnapshot::failed(
+                ProviderStatus::NotInstalled,
+                ProviderErrorKind::MissingExecutable,
+            ),
             refreshed_at: chrono::Utc::now(),
         };
 
         assert_eq!(
             super::providers_needing_reprobe(&snapshot),
-            vec![ProviderId::Claude, ProviderId::GitHub],
+            vec![ProviderId::Claude, ProviderId::GitHub, ProviderId::Cursor],
             "stale keeps its cached last-good state; failed probes re-run"
         );
     }

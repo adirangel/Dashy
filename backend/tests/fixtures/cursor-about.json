@@ -1,0 +1,14 @@
+{
+  "cliVersion": "2026.08.31-4057e58",
+  "latestStatus": "up_to_date",
+  "latestVersion": "2026.08.31-4057e58",
+  "model": "Auto",
+  "subscriptionTier": "pro",
+  "osPlatform": "win32",
+  "osArch": "x64",
+  "userEmail": "fixture@example.com",
+  "terminalProgram": "unknown",
+  "shell": "cmd",
+  "lastRequestId": null,
+  "futureField": 7
+}

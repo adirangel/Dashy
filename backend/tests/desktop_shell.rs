@@ -452,6 +452,7 @@ fn provider_hover_expands_inward_without_requesting_native_focus() {
         MonitorWorkArea::new(0, 0, 1920, 1040).unwrap(),
         EdgeUiState::RailVisible,
         None,
+        5,
     );
 
     fixture
@@ -781,7 +782,7 @@ fn dpi_only_monitor_change_repositions_with_scaled_logical_bounds() {
     fixture.controller.step(Duration::from_millis(1));
 
     let scaled = last_layout(&fixture.window.actions());
-    assert_eq!((scaled.size.width, scaled.size.height), (105, 600));
+    assert_eq!((scaled.size.width, scaled.size.height), (105, 864));
     assert_eq!(
         scaled.position.x + i32::try_from(scaled.size.width).unwrap(),
         1920

@@ -1,0 +1,15 @@
+{
+  "billingCycle": {
+    "billingPeriodStart": "2026-09-01T00:00:00Z",
+    "billingPeriodEnd": "2026-10-01T00:00:00Z"
+  },
+  "monthlyLimit": { "val": 3000 },
+  "usage": {
+    "includedUsed": { "val": 450 },
+    "onDemandUsed": { "val": 0 },
+    "totalUsed": { "val": 450 }
+  },
+  "onDemandCap": { "val": 0 },
+  "on_demand_enabled": false,
+  "futureField": { "ignored": true }
+}

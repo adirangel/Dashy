@@ -9,10 +9,19 @@ pub enum ProviderId {
     GitHub,
     Codex,
     Claude,
+    Grok,
+    Cursor,
 }
 
 impl ProviderId {
-    pub const ALL: [Self; 3] = [Self::Claude, Self::Codex, Self::GitHub];
+    // Order drives the setup listing and the rail order fallback.
+    pub const ALL: [Self; 5] = [
+        Self::Claude,
+        Self::Codex,
+        Self::GitHub,
+        Self::Grok,
+        Self::Cursor,
+    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +81,7 @@ pub struct GitHubData {
 pub enum UsageWindowKind {
     Short,
     Weekly,
+    Monthly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -235,13 +245,84 @@ fn summary_remaining_percent(
         .min()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountData {
+    pub subscription_tier: Option<String>,
+    pub account_email: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSnapshot {
+    pub status: ProviderStatus,
+    pub subscription_tier: Option<String>,
+    pub account_email: Option<String>,
+    pub last_successful_refresh: Option<DateTime<Utc>>,
+    pub error_kind: Option<ProviderErrorKind>,
+}
+
+impl AccountSnapshot {
+    pub fn connected(data: AccountData, refreshed_at: DateTime<Utc>) -> Self {
+        Self {
+            status: ProviderStatus::Connected,
+            subscription_tier: data.subscription_tier,
+            account_email: data.account_email,
+            last_successful_refresh: Some(refreshed_at),
+            error_kind: None,
+        }
+    }
+
+    pub fn failed(status: ProviderStatus, error_kind: ProviderErrorKind) -> Self {
+        Self {
+            status,
+            subscription_tier: None,
+            account_email: None,
+            last_successful_refresh: None,
+            error_kind: Some(error_kind),
+        }
+    }
+
+    pub fn stale_from(
+        data: AccountData,
+        last_successful_refresh: DateTime<Utc>,
+        error_kind: ProviderErrorKind,
+    ) -> Self {
+        Self {
+            status: ProviderStatus::Stale,
+            subscription_tier: data.subscription_tier,
+            account_email: data.account_email,
+            last_successful_refresh: Some(last_successful_refresh),
+            error_kind: Some(error_kind),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSnapshot {
     pub github: GitHubSnapshot,
     pub codex: UsageSnapshot,
     pub claude: UsageSnapshot,
+    pub grok: UsageSnapshot,
+    pub cursor: AccountSnapshot,
     pub refreshed_at: DateTime<Utc>,
+}
+
+impl DashboardSnapshot {
+    // The one per-provider status match shared by the setup surface, so setup code
+    // does not grow its own matches for every new provider.
+    pub fn provider_status_and_error(
+        &self,
+        provider: ProviderId,
+    ) -> (ProviderStatus, Option<ProviderErrorKind>) {
+        match provider {
+            ProviderId::GitHub => (self.github.status, self.github.error_kind),
+            ProviderId::Codex => (self.codex.status, self.codex.error_kind),
+            ProviderId::Claude => (self.claude.status, self.claude.error_kind),
+            ProviderId::Grok => (self.grok.status, self.grok.error_kind),
+            ProviderId::Cursor => (self.cursor.status, self.cursor.error_kind),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -254,6 +335,62 @@ mod tests {
         assert_eq!(serde_json::to_value(ProviderId::GitHub).unwrap(), "github");
         assert_eq!(serde_json::to_value(ProviderId::Codex).unwrap(), "codex");
         assert_eq!(serde_json::to_value(ProviderId::Claude).unwrap(), "claude");
+        assert_eq!(serde_json::to_value(ProviderId::Grok).unwrap(), "grok");
+        assert_eq!(serde_json::to_value(ProviderId::Cursor).unwrap(), "cursor");
+    }
+
+    #[test]
+    fn provider_order_is_stable_for_setup_and_rail_listings() {
+        assert_eq!(
+            ProviderId::ALL,
+            [
+                ProviderId::Claude,
+                ProviderId::Codex,
+                ProviderId::GitHub,
+                ProviderId::Grok,
+                ProviderId::Cursor,
+            ]
+        );
+    }
+
+    #[test]
+    fn account_snapshot_serializes_tier_and_email_in_camel_case() {
+        let snapshot = AccountSnapshot::connected(
+            AccountData {
+                subscription_tier: Some("pro".to_owned()),
+                account_email: Some("user@example.com".to_owned()),
+            },
+            Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),
+        );
+        let json = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(json["status"], "connected");
+        assert_eq!(json["subscriptionTier"], "pro");
+        assert_eq!(json["accountEmail"], "user@example.com");
+        assert!(json["errorKind"].is_null());
+    }
+
+    #[test]
+    fn connected_account_snapshot_accepts_absent_tier_and_email() {
+        let snapshot = AccountSnapshot::connected(
+            AccountData {
+                subscription_tier: None,
+                account_email: None,
+            },
+            Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),
+        );
+        assert_eq!(snapshot.status, ProviderStatus::Connected);
+        assert!(snapshot.subscription_tier.is_none());
+        assert!(snapshot.account_email.is_none());
+    }
+
+    #[test]
+    fn monthly_usage_window_serializes_its_label_key() {
+        let window = UsageWindowData {
+            label_key: UsageWindowKind::Monthly,
+            remaining_percent: 61,
+            resets_at: None,
+        };
+        assert_eq!(serde_json::to_value(window).unwrap()["labelKey"], "monthly");
     }
 
     #[test]

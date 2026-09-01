@@ -103,6 +103,8 @@ fn parse_value(value: serde_json::Value) -> Result<UsageData, ProviderError> {
         let slot = match usage_window.label_key {
             UsageWindowKind::Short => &mut short_window,
             UsageWindowKind::Weekly => &mut weekly_window,
+            // classify_window_kind never produces Monthly for codex windows.
+            UsageWindowKind::Monthly => return Err(ProviderError::UnsupportedOutput),
         };
         if slot.replace(usage_window).is_some() {
             return Err(ProviderError::UnsupportedOutput);

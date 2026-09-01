@@ -8,19 +8,22 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::dashboard::{
     models::{
-        DashboardSnapshot, GitHubData, GitHubSnapshot, ProviderError, ProviderErrorKind,
-        ProviderId, ProviderStatus, UsageData, UsageSnapshot,
+        AccountData, AccountSnapshot, DashboardSnapshot, GitHubData, GitHubSnapshot, ProviderError,
+        ProviderErrorKind, ProviderId, ProviderStatus, UsageData, UsageSnapshot,
     },
     providers::DataProvider,
 };
 
 const CACHE_TTL: Duration = Duration::minutes(5);
+const PROVIDER_COUNT: usize = ProviderId::ALL.len();
 
 fn provider_index(provider: ProviderId) -> usize {
     match provider {
         ProviderId::Claude => 0,
         ProviderId::Codex => 1,
         ProviderId::GitHub => 2,
+        ProviderId::Grok => 3,
+        ProviderId::Cursor => 4,
     }
 }
 
@@ -37,42 +40,53 @@ impl Clock for SystemClock {
     }
 }
 
+struct ProviderSlot {
+    gate: Mutex<()>,
+    generation: AtomicU64,
+}
+
 pub struct DashboardService {
     github: Arc<dyn DataProvider<GitHubData>>,
     codex: Arc<dyn DataProvider<UsageData>>,
     claude: Arc<dyn DataProvider<UsageData>>,
+    grok: Arc<dyn DataProvider<UsageData>>,
+    cursor: Arc<dyn DataProvider<AccountData>>,
     clock: Arc<dyn Clock>,
     cache: RwLock<Option<DashboardSnapshot>>,
-    provider_refreshed_at: RwLock<[Option<DateTime<Utc>>; 3]>,
-    github_refresh_gate: Mutex<()>,
-    codex_refresh_gate: Mutex<()>,
-    claude_refresh_gate: Mutex<()>,
-    github_generation: AtomicU64,
-    codex_generation: AtomicU64,
-    claude_generation: AtomicU64,
+    provider_refreshed_at: RwLock<[Option<DateTime<Utc>>; PROVIDER_COUNT]>,
+    slots: [ProviderSlot; PROVIDER_COUNT],
 }
 
 impl DashboardService {
-    pub fn new<G, C, L, K>(github: Arc<G>, codex: Arc<C>, claude: Arc<L>, clock: Arc<K>) -> Self
+    pub fn new<G, C, L, X, U, K>(
+        github: Arc<G>,
+        codex: Arc<C>,
+        claude: Arc<L>,
+        grok: Arc<X>,
+        cursor: Arc<U>,
+        clock: Arc<K>,
+    ) -> Self
     where
         G: DataProvider<GitHubData> + 'static,
         C: DataProvider<UsageData> + 'static,
         L: DataProvider<UsageData> + 'static,
+        X: DataProvider<UsageData> + 'static,
+        U: DataProvider<AccountData> + 'static,
         K: Clock + 'static,
     {
         Self {
             github,
             codex,
             claude,
+            grok,
+            cursor,
             clock,
             cache: RwLock::new(None),
-            provider_refreshed_at: RwLock::new([None, None, None]),
-            github_refresh_gate: Mutex::new(()),
-            codex_refresh_gate: Mutex::new(()),
-            claude_refresh_gate: Mutex::new(()),
-            github_generation: AtomicU64::new(0),
-            codex_generation: AtomicU64::new(0),
-            claude_generation: AtomicU64::new(0),
+            provider_refreshed_at: RwLock::new([None; PROVIDER_COUNT]),
+            slots: std::array::from_fn(|_| ProviderSlot {
+                gate: Mutex::new(()),
+                generation: AtomicU64::new(0),
+            }),
         }
     }
 
@@ -90,46 +104,45 @@ impl DashboardService {
         }
         let now = self.clock.now();
         let freshness = self.provider_refreshed_at.read().await;
-        let needs_refresh = |provider| {
-            force
-                || freshness[provider_index(provider)]
-                    .is_none_or(|at| now.signed_duration_since(at) >= CACHE_TTL)
-        };
-        let github = providers.contains(&ProviderId::GitHub) && needs_refresh(ProviderId::GitHub);
-        let codex = providers.contains(&ProviderId::Codex) && needs_refresh(ProviderId::Codex);
-        let claude = providers.contains(&ProviderId::Claude) && needs_refresh(ProviderId::Claude);
+        let mut wanted = [false; PROVIDER_COUNT];
+        for provider in ProviderId::ALL {
+            let index = provider_index(provider);
+            wanted[index] = providers.contains(&provider)
+                && (force
+                    || freshness[index]
+                        .is_none_or(|at| now.signed_duration_since(at) >= CACHE_TTL));
+        }
         drop(freshness);
 
-        let github_generation = self.github_generation.load(Ordering::Acquire);
-        let codex_generation = self.codex_generation.load(Ordering::Acquire);
-        let claude_generation = self.claude_generation.load(Ordering::Acquire);
+        let observed: [u64; PROVIDER_COUNT] =
+            std::array::from_fn(|index| self.slots[index].generation.load(Ordering::Acquire));
         tokio::join!(
-            async {
-                if github {
-                    self.refresh_github(github_generation).await
-                }
-            },
-            async {
-                if codex {
-                    self.refresh_codex(codex_generation).await
-                }
-            },
-            async {
-                if claude {
-                    self.refresh_claude(claude_generation).await
-                }
-            },
+            self.refresh_when_wanted(ProviderId::Claude, &wanted, &observed),
+            self.refresh_when_wanted(ProviderId::Codex, &wanted, &observed),
+            self.refresh_when_wanted(ProviderId::GitHub, &wanted, &observed),
+            self.refresh_when_wanted(ProviderId::Grok, &wanted, &observed),
+            self.refresh_when_wanted(ProviderId::Cursor, &wanted, &observed),
         );
         self.cached_snapshot_or_empty().await
     }
 
-    pub async fn refresh_provider(&self, provider: ProviderId) -> DashboardSnapshot {
-        let observed_generation = self.provider_generation(provider).load(Ordering::Acquire);
-        match provider {
-            ProviderId::GitHub => self.refresh_github(observed_generation).await,
-            ProviderId::Codex => self.refresh_codex(observed_generation).await,
-            ProviderId::Claude => self.refresh_claude(observed_generation).await,
+    async fn refresh_when_wanted(
+        &self,
+        provider: ProviderId,
+        wanted: &[bool; PROVIDER_COUNT],
+        observed: &[u64; PROVIDER_COUNT],
+    ) {
+        let index = provider_index(provider);
+        if wanted[index] {
+            self.refresh_slot(provider, Some(observed[index])).await;
         }
+    }
+
+    pub async fn refresh_provider(&self, provider: ProviderId) -> DashboardSnapshot {
+        let observed_generation = self.slots[provider_index(provider)]
+            .generation
+            .load(Ordering::Acquire);
+        self.refresh_slot(provider, Some(observed_generation)).await;
         self.cached_snapshot_or_empty().await
     }
 
@@ -140,101 +153,91 @@ impl DashboardService {
     /// once that older request releases the gate, we fetch the post-mutation
     /// state ourselves.
     pub async fn refresh_provider_after_mutation(&self, provider: ProviderId) -> DashboardSnapshot {
-        match provider {
-            ProviderId::GitHub => self.refresh_github_after_mutation().await,
-            ProviderId::Codex => self.refresh_codex_after_mutation().await,
-            ProviderId::Claude => self.refresh_claude_after_mutation().await,
-        }
+        self.refresh_slot(provider, None).await;
         self.cached_snapshot_or_empty().await
     }
 
-    fn provider_generation(&self, provider: ProviderId) -> &AtomicU64 {
+    async fn refresh_slot(&self, provider: ProviderId, observed_generation: Option<u64>) {
+        let slot = &self.slots[provider_index(provider)];
+        let _provider_guard = slot.gate.lock().await;
+        if let Some(observed) = observed_generation {
+            if slot.generation.load(Ordering::Acquire) > observed {
+                return;
+            }
+        }
+
+        self.fetch_and_publish(provider).await;
+    }
+
+    async fn fetch_and_publish(&self, provider: ProviderId) {
         match provider {
-            ProviderId::GitHub => &self.github_generation,
-            ProviderId::Codex => &self.codex_generation,
-            ProviderId::Claude => &self.claude_generation,
+            ProviderId::GitHub => {
+                let result = self.github.fetch().await;
+                self.publish_with(
+                    provider,
+                    |snapshot| &mut snapshot.github,
+                    |previous, at| merge_github(result, previous, at),
+                )
+                .await;
+            }
+            ProviderId::Codex => {
+                let result = self.codex.fetch().await;
+                self.publish_with(
+                    provider,
+                    |snapshot| &mut snapshot.codex,
+                    |previous, at| merge_usage(result, previous, at),
+                )
+                .await;
+            }
+            ProviderId::Claude => {
+                let result = self.claude.fetch().await;
+                self.publish_with(
+                    provider,
+                    |snapshot| &mut snapshot.claude,
+                    |previous, at| merge_usage(result, previous, at),
+                )
+                .await;
+            }
+            ProviderId::Grok => {
+                let result = self.grok.fetch().await;
+                self.publish_with(
+                    provider,
+                    |snapshot| &mut snapshot.grok,
+                    |previous, at| merge_usage(result, previous, at),
+                )
+                .await;
+            }
+            ProviderId::Cursor => {
+                let result = self.cursor.fetch().await;
+                self.publish_with(
+                    provider,
+                    |snapshot| &mut snapshot.cursor,
+                    |previous, at| merge_account(result, previous, at),
+                )
+                .await;
+            }
         }
     }
 
-    async fn refresh_github(&self, observed_generation: u64) {
-        let _provider_guard = self.github_refresh_gate.lock().await;
-        if self.github_generation.load(Ordering::Acquire) > observed_generation {
-            return;
-        }
-
-        self.fetch_github_and_publish().await;
-    }
-
-    async fn refresh_github_after_mutation(&self) {
-        let _provider_guard = self.github_refresh_gate.lock().await;
-        self.fetch_github_and_publish().await;
-    }
-
-    async fn fetch_github_and_publish(&self) {
-        let result = self.github.fetch().await;
+    // The empty snapshot's field stands in for "no previous data" on first load;
+    // every stale_* helper bails on its `last_successful_refresh: None`, so this is
+    // behavior-identical to the pre-slot code that passed `None` there.
+    async fn publish_with<S: Clone>(
+        &self,
+        provider: ProviderId,
+        field: impl Fn(&mut DashboardSnapshot) -> &mut S,
+        merge: impl FnOnce(Option<&S>, DateTime<Utc>) -> S,
+    ) {
         let refreshed_at = self.clock.now();
         let mut cache = self.cache.write().await;
-        let previous = cache.as_ref().map(|snapshot| snapshot.github.clone());
         let snapshot = cache.get_or_insert_with(|| empty_snapshot(refreshed_at));
-        snapshot.github = merge_github(result, previous.as_ref(), refreshed_at);
+        let previous = field(snapshot).clone();
+        *field(snapshot) = merge(Some(&previous), refreshed_at);
         snapshot.refreshed_at = snapshot.refreshed_at.max(refreshed_at);
-        self.provider_refreshed_at.write().await[provider_index(ProviderId::GitHub)] =
-            Some(refreshed_at);
-        self.github_generation.fetch_add(1, Ordering::Release);
-    }
-
-    async fn refresh_codex(&self, observed_generation: u64) {
-        let _provider_guard = self.codex_refresh_gate.lock().await;
-        if self.codex_generation.load(Ordering::Acquire) > observed_generation {
-            return;
-        }
-
-        self.fetch_codex_and_publish().await;
-    }
-
-    async fn refresh_codex_after_mutation(&self) {
-        let _provider_guard = self.codex_refresh_gate.lock().await;
-        self.fetch_codex_and_publish().await;
-    }
-
-    async fn fetch_codex_and_publish(&self) {
-        let result = self.codex.fetch().await;
-        let refreshed_at = self.clock.now();
-        let mut cache = self.cache.write().await;
-        let previous = cache.as_ref().map(|snapshot| snapshot.codex.clone());
-        let snapshot = cache.get_or_insert_with(|| empty_snapshot(refreshed_at));
-        snapshot.codex = merge_usage(result, previous.as_ref(), refreshed_at);
-        snapshot.refreshed_at = snapshot.refreshed_at.max(refreshed_at);
-        self.provider_refreshed_at.write().await[provider_index(ProviderId::Codex)] =
-            Some(refreshed_at);
-        self.codex_generation.fetch_add(1, Ordering::Release);
-    }
-
-    async fn refresh_claude(&self, observed_generation: u64) {
-        let _provider_guard = self.claude_refresh_gate.lock().await;
-        if self.claude_generation.load(Ordering::Acquire) > observed_generation {
-            return;
-        }
-
-        self.fetch_claude_and_publish().await;
-    }
-
-    async fn refresh_claude_after_mutation(&self) {
-        let _provider_guard = self.claude_refresh_gate.lock().await;
-        self.fetch_claude_and_publish().await;
-    }
-
-    async fn fetch_claude_and_publish(&self) {
-        let result = self.claude.fetch().await;
-        let refreshed_at = self.clock.now();
-        let mut cache = self.cache.write().await;
-        let previous = cache.as_ref().map(|snapshot| snapshot.claude.clone());
-        let snapshot = cache.get_or_insert_with(|| empty_snapshot(refreshed_at));
-        snapshot.claude = merge_usage(result, previous.as_ref(), refreshed_at);
-        snapshot.refreshed_at = snapshot.refreshed_at.max(refreshed_at);
-        self.provider_refreshed_at.write().await[provider_index(ProviderId::Claude)] =
-            Some(refreshed_at);
-        self.claude_generation.fetch_add(1, Ordering::Release);
+        self.provider_refreshed_at.write().await[provider_index(provider)] = Some(refreshed_at);
+        self.slots[provider_index(provider)]
+            .generation
+            .fetch_add(1, Ordering::Release);
     }
 
     async fn cached_snapshot_or_empty(&self) -> DashboardSnapshot {
@@ -258,7 +261,19 @@ fn empty_snapshot(refreshed_at: DateTime<Utc>) -> DashboardSnapshot {
         },
         codex: empty_usage_snapshot(),
         claude: empty_usage_snapshot(),
+        grok: empty_usage_snapshot(),
+        cursor: empty_account_snapshot(),
         refreshed_at,
+    }
+}
+
+fn empty_account_snapshot() -> AccountSnapshot {
+    AccountSnapshot {
+        status: ProviderStatus::Unavailable,
+        subscription_tier: None,
+        account_email: None,
+        last_successful_refresh: None,
+        error_kind: None,
     }
 }
 
@@ -328,6 +343,35 @@ fn stale_usage(previous: Option<&UsageSnapshot>, error: &ProviderError) -> Optio
     Some(stale)
 }
 
+fn merge_account(
+    result: Result<AccountData, ProviderError>,
+    previous: Option<&AccountSnapshot>,
+    refreshed_at: DateTime<Utc>,
+) -> AccountSnapshot {
+    match result {
+        Ok(data) => AccountSnapshot::connected(data, refreshed_at),
+        Err(error) => stale_account(previous, &error).unwrap_or_else(|| {
+            let (status, error_kind) = map_error(&error);
+            AccountSnapshot::failed(status, error_kind)
+        }),
+    }
+}
+
+// Unlike stale_usage, only a prior successful refresh gates staleness: tier and
+// email are legitimately absent while connected, so they cannot be required here.
+fn stale_account(
+    previous: Option<&AccountSnapshot>,
+    error: &ProviderError,
+) -> Option<AccountSnapshot> {
+    let previous = previous?;
+    previous.last_successful_refresh?;
+    let (_, error_kind) = map_error(error);
+    let mut stale = previous.clone();
+    stale.status = ProviderStatus::Stale;
+    stale.error_kind = Some(error_kind);
+    Some(stale)
+}
+
 fn map_error(error: &ProviderError) -> (ProviderStatus, ProviderErrorKind) {
     match error {
         ProviderError::NotInstalled => (
@@ -364,7 +408,7 @@ mod tests {
 
     use crate::dashboard::{
         models::{
-            ContributionDay, GitHubData, ProviderError, ProviderErrorKind, ProviderId,
+            AccountData, ContributionDay, GitHubData, ProviderError, ProviderErrorKind, ProviderId,
             ProviderStatus, UsageData, UsageWindowData, UsageWindowKind,
         },
         providers::DataProvider,
@@ -499,6 +543,8 @@ mod tests {
         github: Arc<FakeProvider<GitHubData>>,
         codex: Arc<FakeProvider<UsageData>>,
         claude: Arc<FakeProvider<UsageData>>,
+        grok: Arc<FakeProvider<UsageData>>,
+        cursor: Arc<FakeProvider<AccountData>>,
     }
 
     impl ServiceFixture {
@@ -532,10 +578,24 @@ mod tests {
                 }),
                 weekly_window: None,
             }));
+            let grok = Arc::new(FakeProvider::new(UsageData {
+                short_window: None,
+                weekly_window: Some(UsageWindowData {
+                    label_key: UsageWindowKind::Monthly,
+                    remaining_percent: 85,
+                    resets_at: None,
+                }),
+            }));
+            let cursor = Arc::new(FakeProvider::new(AccountData {
+                subscription_tier: Some("pro".to_owned()),
+                account_email: Some("fixture@example.com".to_owned()),
+            }));
             let service = Arc::new(DashboardService::new(
                 github.clone(),
                 codex.clone(),
                 claude.clone(),
+                grok.clone(),
+                cursor.clone(),
                 clock.clone(),
             ));
             Self {
@@ -544,6 +604,8 @@ mod tests {
                 github,
                 codex,
                 claude,
+                grok,
+                cursor,
             }
         }
     }
@@ -589,12 +651,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provider_discovery_fetches_all_three_providers_from_an_empty_cache() {
+    async fn provider_discovery_fetches_all_five_providers_from_an_empty_cache() {
         let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
-        fixture.service.get_snapshot(true).await;
+        let snapshot = fixture.service.get_snapshot(true).await;
         assert_eq!(fixture.claude.calls(), 1);
         assert_eq!(fixture.codex.calls(), 1);
         assert_eq!(fixture.github.calls(), 1);
+        assert_eq!(fixture.grok.calls(), 1);
+        assert_eq!(fixture.cursor.calls(), 1);
+        let grok_window = snapshot.grok.weekly_window.unwrap();
+        assert_eq!(grok_window.label_key, UsageWindowKind::Monthly);
+        assert_eq!(snapshot.grok.remaining_percent, Some(85));
+        assert_eq!(snapshot.cursor.status, ProviderStatus::Connected);
+        assert_eq!(snapshot.cursor.subscription_tier.as_deref(), Some("pro"));
+    }
+
+    #[tokio::test]
+    async fn cursor_failure_after_success_retains_the_stale_account() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture
+            .service
+            .get_snapshot_for(true, &[ProviderId::Cursor])
+            .await;
+        fixture.cursor.fail_with(ProviderError::Timeout);
+        let snapshot = fixture
+            .service
+            .get_snapshot_for(true, &[ProviderId::Cursor])
+            .await;
+
+        assert_eq!(snapshot.cursor.status, ProviderStatus::Stale);
+        assert_eq!(snapshot.cursor.subscription_tier.as_deref(), Some("pro"));
+        assert_eq!(
+            snapshot.cursor.account_email.as_deref(),
+            Some("fixture@example.com")
+        );
+        assert_eq!(snapshot.cursor.error_kind, Some(ProviderErrorKind::Timeout));
+    }
+
+    #[tokio::test]
+    async fn cursor_failure_without_prior_success_reports_the_failure() {
+        let fixture = ServiceFixture::successful_at("2026-08-29T09:00:00Z");
+        fixture.cursor.fail_with(ProviderError::NotAuthenticated);
+        let snapshot = fixture
+            .service
+            .get_snapshot_for(true, &[ProviderId::Cursor])
+            .await;
+
+        assert_eq!(snapshot.cursor.status, ProviderStatus::NotAuthenticated);
+        assert!(snapshot.cursor.subscription_tier.is_none());
+        assert_eq!(
+            snapshot.cursor.error_kind,
+            Some(ProviderErrorKind::Authentication)
+        );
     }
 
     #[tokio::test]
