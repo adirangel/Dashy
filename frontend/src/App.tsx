@@ -4,6 +4,7 @@ import { SettingsApp } from "./settings/SettingsApp";
 import { OnboardingApp } from "./onboarding/OnboardingApp";
 import { NotchApp } from "./notch/NotchApp";
 import "./settings.css";
+import "./setup.css";
 import "./onboarding.css";
 import { currentWindowLabel, getSettings, isTauriRuntime, listenForLocaleChanges } from "./window";
 

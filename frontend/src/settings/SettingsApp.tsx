@@ -323,7 +323,6 @@ export function SettingsApp() {
     </div>
     <section className="settings-group settings-group--providers" aria-labelledby="provider-status-title">
       <ProviderManager
-        variant="row"
         controller={providerSetup}
         enabledProviders={settings.enabledProviders}
         onEnabledChange={(enabledProviders) => { void saveProviders(enabledProviders); }}

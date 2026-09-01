@@ -6,17 +6,12 @@ import { ProviderGlyph } from "../notch/ProviderGlyph";
 import type { ProviderSetupDefinition } from "./api";
 import type { ProviderSetupController } from "./useProviderSetup";
 
-// "card" is the onboarding grid of large cards; "row" is the compact Settings
-// list where each provider is one line with a glyph, status, and switch.
-type ProviderManagerVariant = "card" | "row";
-
 type ProviderManagerProps = {
   controller: ProviderSetupController;
   enabledProviders: ProviderId[];
   onEnabledChange: (providers: ProviderId[]) => void;
   selectionDisabled?: boolean;
   actionsRequireSelection?: boolean;
-  variant?: ProviderManagerVariant;
 };
 
 type PendingAction = {
@@ -109,30 +104,29 @@ function Confirmation({
   </div>;
 }
 
+// One row per provider: glyph, name, status line, an inline action only when
+// something needs doing, and the switch that enables it in the rail. Used by
+// both onboarding and Settings so they look identical.
 export function ProviderManager({
   controller,
   enabledProviders,
   onEnabledChange,
   selectionDisabled = false,
   actionsRequireSelection = false,
-  variant = "card",
 }: ProviderManagerProps) {
   const { t } = useTranslation();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [restoreFocusProvider, setRestoreFocusProvider] = useState<ProviderId | null>(null);
   const [manualHelpFailureProvider, setManualHelpFailureProvider] = useState<ProviderId | null>(null);
   const selectionRefs = useRef<Partial<Record<ProviderId, HTMLInputElement | null>>>({});
-  const cardRefs = useRef<Partial<Record<ProviderId, HTMLElement | null>>>({});
-  const isRow = variant === "row";
-  const containerClass = isRow ? "provider-setup-list" : "provider-setup-grid";
-  const itemClass = isRow ? "provider-setup-row" : "provider-setup-card";
+  const rowRefs = useRef<Partial<Record<ProviderId, HTMLElement | null>>>({});
 
   useEffect(() => {
     if (!restoreFocusProvider || pendingAction !== null) return;
     const selection = selectionRefs.current[restoreFocusProvider];
     const target = selection && !selection.disabled
       ? selection
-      : cardRefs.current[restoreFocusProvider];
+      : rowRefs.current[restoreFocusProvider];
     target?.focus();
     setRestoreFocusProvider(null);
   }, [pendingAction, restoreFocusProvider]);
@@ -152,12 +146,12 @@ export function ProviderManager({
   }, [actionsRequireSelection, enabledProviders, manualHelpFailureProvider]);
 
   if (controller.states === null) {
-    return <div className={containerClass}>
-      <div className={itemClass} data-status={controller.loadFailed ? "unavailable" : "loading"}>
+    return <div className="provider-setup-list">
+      <div className="provider-setup-row" data-status={controller.loadFailed ? "unavailable" : "loading"}>
         {controller.loadFailed
           ? <>
             <p className="provider-setup-error" role="alert">{t("setup.actionFailure")}</p>
-            <div className="provider-setup-actions">
+            <div className="provider-setup-row-actions">
               <button
                 type="button"
                 disabled={controller.busyProvider !== null}
@@ -175,7 +169,7 @@ export function ProviderManager({
   );
   const setupActionActive = controller.busyProvider !== null;
 
-  return <div className={containerClass}>
+  return <div className="provider-setup-list">
     {providerOrder.map((provider) => {
       const state = statesByProvider.get(provider);
       if (!state) return null;
@@ -218,120 +212,83 @@ export function ProviderManager({
           .catch(() => setManualHelpFailureProvider(provider));
       };
 
-      const statusText = busyStatus ?? t(statusKey(state.status));
-      const selection = <input
-        ref={(element) => { selectionRefs.current[provider] = element; }}
-        className={isRow ? "settings-switch" : undefined}
-        type="checkbox"
-        aria-label={isRow ? t("setup.useProvider", { provider: name }) : undefined}
-        checked={isEnabled}
-        disabled={selectionDisabled}
-        onChange={(event) => onEnabledChange(event.target.checked
-          ? [...enabledProviders, provider]
-          : enabledProviders.filter((enabled) => enabled !== provider))}
-      />;
-      const actions = <>
-        {actionsAvailable && state.repairAction === "install" && <button
-          type="button"
-          disabled={setupActionActive}
-          onClick={() => beginAction("install")}
-        >{t("setup.install", { provider: name })}</button>}
-        {actionsAvailable && state.repairAction === "login" && <button
-          type="button"
-          disabled={setupActionActive}
-          onClick={() => beginAction("login")}
-        >{t("setup.connect", { provider: name })}</button>}
-        {actionsAvailable && (state.status === "stale" || state.status === "unavailable")
-          && state.repairAction === null && <button
-          type="button"
-          disabled={setupActionActive}
-          onClick={() => {
-            setManualHelpFailureProvider(null);
-            void controller.reload();
-          }}
-        >{t("setup.retry")}</button>}
-      </>;
-      const confirmation = actionsAvailable && pending && <Confirmation
-        definition={state.definition}
-        action={pending.action}
-        disabled={setupActionActive}
-        onCancel={cancel}
-        onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
-      />;
-      const failure = showFailure && <>
-        <p className="provider-setup-error" role="alert">
-          {t(manualHelpFailureProvider === provider
-            ? "setup.manualHelpFailure"
-            : "setup.actionFailure")}
-        </p>
-        <button
-          className="provider-setup-manual-help"
-          type="button"
-          disabled={setupActionActive}
-          onClick={openManualHelp}
-        >{t("setup.manualHelp")}</button>
-      </>;
-
-      if (isRow) {
-        return <article
-          ref={(element) => { cardRefs.current[provider] = element; }}
-          aria-labelledby={headingId}
-          aria-busy={isBusy || undefined}
-          className={itemClass}
-          data-provider={provider}
-          data-status={state.status}
-          data-enabled={isEnabled}
-          key={provider}
-          tabIndex={-1}
-        >
-          <div className="provider-setup-row-main">
-            <span className="provider-setup-disc"><ProviderGlyph provider={provider} /></span>
-            <div className="provider-setup-row-text">
-              <h3 className="provider-setup-name" id={headingId}>{name}</h3>
-              <span
-                className="provider-setup-status"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-              ><i className="provider-setup-status-dot" aria-hidden="true" />{statusText}</span>
-            </div>
-            <div className="provider-setup-row-actions">{actions}</div>
-            {selection}
-          </div>
-          {confirmation}
-          {failure}
-        </article>;
-      }
-
       return <article
-        ref={(element) => { cardRefs.current[provider] = element; }}
+        ref={(element) => { rowRefs.current[provider] = element; }}
         aria-labelledby={headingId}
         aria-busy={isBusy || undefined}
-        className={itemClass}
+        className="provider-setup-row"
         data-provider={provider}
         data-status={state.status}
+        data-enabled={isEnabled}
         key={provider}
         tabIndex={-1}
       >
-        <header className="provider-setup-card-header">
-          <h2 className="provider-setup-name" id={headingId}>{name}</h2>
-          <span
-            className="provider-setup-status"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          >{statusText}</span>
-        </header>
+        <div className="provider-setup-row-main">
+          <span className="provider-setup-disc"><ProviderGlyph provider={provider} /></span>
+          <div className="provider-setup-row-text">
+            <h3 className="provider-setup-name" id={headingId}>{name}</h3>
+            <span
+              className="provider-setup-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            ><i className="provider-setup-status-dot" aria-hidden="true" />{busyStatus ?? t(statusKey(state.status))}</span>
+          </div>
+          <div className="provider-setup-row-actions">
+            {actionsAvailable && state.repairAction === "install" && <button
+              type="button"
+              disabled={setupActionActive}
+              onClick={() => beginAction("install")}
+            >{t("setup.install", { provider: name })}</button>}
+            {actionsAvailable && state.repairAction === "login" && <button
+              type="button"
+              disabled={setupActionActive}
+              onClick={() => beginAction("login")}
+            >{t("setup.connect", { provider: name })}</button>}
+            {actionsAvailable && (state.status === "stale" || state.status === "unavailable")
+              && state.repairAction === null && <button
+              type="button"
+              disabled={setupActionActive}
+              onClick={() => {
+                setManualHelpFailureProvider(null);
+                void controller.reload();
+              }}
+            >{t("setup.retry")}</button>}
+          </div>
+          <input
+            ref={(element) => { selectionRefs.current[provider] = element; }}
+            className="settings-switch"
+            type="checkbox"
+            aria-label={t("setup.useProvider", { provider: name })}
+            checked={isEnabled}
+            disabled={selectionDisabled}
+            onChange={(event) => onEnabledChange(event.target.checked
+              ? [...enabledProviders, provider]
+              : enabledProviders.filter((enabled) => enabled !== provider))}
+          />
+        </div>
 
-        <label className="provider-setup-selection">
-          {selection}
-          <span>{t("setup.useProvider", { provider: name })}</span>
-        </label>
+        {actionsAvailable && pending && <Confirmation
+          definition={state.definition}
+          action={pending.action}
+          disabled={setupActionActive}
+          onCancel={cancel}
+          onConfirm={(restoreKeyboardFocus) => confirm(pending.action, restoreKeyboardFocus)}
+        />}
 
-        <div className="provider-setup-actions">{actions}</div>
-
-        {confirmation}
-        {failure}
+        {showFailure && <>
+          <p className="provider-setup-error" role="alert">
+            {t(manualHelpFailureProvider === provider
+              ? "setup.manualHelpFailure"
+              : "setup.actionFailure")}
+          </p>
+          <button
+            className="provider-setup-manual-help"
+            type="button"
+            disabled={setupActionActive}
+            onClick={openManualHelp}
+          >{t("setup.manualHelp")}</button>
+        </>}
       </article>;
     })}
   </div>;

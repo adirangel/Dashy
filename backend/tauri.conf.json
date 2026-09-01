@@ -34,7 +34,7 @@
         "label": "settings",
         "title": "Dashy Settings",
         "width": 460,
-        "height": 620,
+        "height": 700,
         "visible": false,
         "center": true,
         "resizable": true,
