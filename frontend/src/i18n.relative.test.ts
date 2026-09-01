@@ -14,9 +14,13 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime(at(8 * 24 * 60 + 5 * 60), now, "en")).toBe("in 8 days");
   });
 
-  it("localizes the phrase without any hand-written unit strings", () => {
-    expect(formatRelativeTime(at(120), now, "he")).toBe("בעוד שעתיים");
-    expect(formatRelativeTime(at(3 * 24 * 60), now, "fr")).toBe("dans 3 jours");
+  it("localizes the phrase through Intl instead of hand-written unit strings", () => {
+    // Compare against Intl itself: the exact wording differs between ICU builds.
+    const relative = (locale: string, value: number, unit: Intl.RelativeTimeFormatUnit) =>
+      new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "long" }).format(value, unit);
+    expect(formatRelativeTime(at(120), now, "he")).toBe(relative("he", 2, "hour"));
+    expect(formatRelativeTime(at(3 * 24 * 60), now, "fr")).toBe(relative("fr", 3, "day"));
+    expect(formatRelativeTime(at(45), now, "ja")).toBe(relative("ja", 45, "minute"));
   });
 
   it("falls back to the absolute time once the moment has passed", () => {
