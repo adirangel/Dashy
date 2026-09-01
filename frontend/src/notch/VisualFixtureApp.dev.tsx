@@ -4,7 +4,7 @@ import { NotchApp } from "./NotchApp";
 import { markVisualFixtureReady, readVisualFixture } from "./visualFixture.dev";
 import "./visualFixture.dev.css";
 
-export function VisualFixtureApp() {
+function VisualFixtureApp() {
   const [fixture] = useState(() => readVisualFixture());
   const [localeReady, setLocaleReady] = useState(fixture === null);
 
