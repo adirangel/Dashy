@@ -896,7 +896,7 @@ mod tests {
         assert_eq!(contract["activationZonePx"], ACTIVATION_ZONE_PX);
 
         // tauri.conf.json is the fourth copy of this geometry: the main window must be
-        // created at the collapsed three-provider rail size.
+        // created at the collapsed rail size for the maximum provider count.
         let config: serde_json::Value =
             serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
         let main = config["app"]["windows"]

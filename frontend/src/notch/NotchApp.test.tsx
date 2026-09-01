@@ -123,6 +123,19 @@ describe("compact metric rail", () => {
     expect(screen.getByText("pro")).toHaveClass("metric-value--text");
   });
 
+  it("announces a connected cursor account without a tier as connected", () => {
+    render(<NotchApp
+      placement="right"
+      snapshot={{
+        ...connected,
+        cursor: { ...connected.cursor, subscriptionTier: null, accountEmail: null },
+      }}
+      selectedProvider="claude"
+    />);
+
+    expect(screen.getByRole("button", { name: "Cursor: Connected" })).toBeInTheDocument();
+  });
+
   it.each([
     ["connected", "59%", "metric-value"],
     ["loading", "Loading", "metric-status"],

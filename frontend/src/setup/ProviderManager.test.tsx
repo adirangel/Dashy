@@ -39,7 +39,7 @@ const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = 
   codex: { publisher: "OpenAI", packageId: "OpenAI.Codex", installKind: "winget", installCommand: "winget install --id OpenAI.Codex --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://learn.chatgpt.com/docs/codex/cli", loginCommand: "codex login" },
   github: { publisher: "GitHub", packageId: "GitHub.cli", installKind: "winget", installCommand: "winget install --id GitHub.cli --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://cli.github.com/", loginCommand: "gh auth login --web" },
   grok: { publisher: "xAI", packageId: "xAI.GrokBuild", installKind: "winget", installCommand: "winget install --id xAI.GrokBuild --exact --source winget --interactive --accept-source-agreements --accept-package-agreements", installUrl: "https://docs.x.ai/build/overview", loginCommand: "grok login" },
-  cursor: { publisher: "Anysphere", packageId: null, installKind: "manualUrl", installCommand: "irm 'https://cursor.com/install?win32=true' | iex", installUrl: "https://cursor.com/docs/cli/installation", loginCommand: "cursor-agent login" },
+  cursor: { publisher: "Anysphere", packageId: null, installKind: "manualUrl", installCommand: null, installUrl: "https://cursor.com/docs/cli/installation", loginCommand: "cursor-agent login" },
 };
 
 function setupStates(

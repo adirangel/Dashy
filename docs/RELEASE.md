@@ -182,7 +182,7 @@ enforced tag ruleset is the external control that closes that race.
    }
    ```
 
-6. Complete [the Windows release checklist](docs/WINDOWS_RELEASE_CHECKLIST.md) on
+6. Complete [the Windows release checklist](WINDOWS_RELEASE_CHECKLIST.md) on
    a clean Windows x64 machine. Publish the draft only when every automated and
    clean-machine gate passes.
 

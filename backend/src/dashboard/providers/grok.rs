@@ -7,14 +7,14 @@ use serde::Deserialize;
 use crate::dashboard::{
     models::{ProviderError, UsageData, UsageWindowData, UsageWindowKind},
     process::{AllowedProgram, JsonRpcRunner, ProcessError},
-    providers::DataProvider,
+    providers::{remaining_timeout, DataProvider},
 };
 
-// One JSON-RPC host spawn per interaction; the auth probe below spawns a second
-// host only when the billing method is missing, so the total budget mirrors codex.
+// One shared deadline for the whole fetch: the billing spawn plus, only when the
+// billing method is missing, one read-only initialize probe spawn.
 const GROK_TIMEOUT: Duration = Duration::from_secs(30);
-// Captured live from grok 1.0.13 `agent stdio`: session/new (and other authenticated
-// methods) reject with exactly this pair while no account is signed in.
+// Captured live from grok 1.0.13 `agent stdio`: authenticated methods reject with
+// exactly this pair while no account is signed in.
 const AUTHENTICATION_ERROR_CODE: i64 = -32000;
 const AUTHENTICATION_ERROR_MESSAGE: &str = "Authentication required";
 const METHOD_NOT_FOUND_CODE: i64 = -32601;
@@ -48,6 +48,7 @@ fn initialize_request() -> serde_json::Value {
 #[async_trait]
 impl<R: JsonRpcRunner> DataProvider<UsageData> for GrokProvider<R> {
     async fn fetch(&self) -> Result<UsageData, ProviderError> {
+        let deadline = tokio::time::Instant::now() + GROK_TIMEOUT;
         let billing = self
             .runner
             .request(
@@ -63,53 +64,60 @@ impl<R: JsonRpcRunner> DataProvider<UsageData> for GrokProvider<R> {
                     }),
                 ],
                 2,
-                GROK_TIMEOUT,
+                remaining_timeout(deadline)?,
             )
             .await;
 
         match billing {
             Ok(value) => parse_billing(value),
             // Builds without stdio billing wiring answer -32601. Distinguish a
-            // signed-out user from a billing-less build with a session probe:
-            // session/new demands authentication before doing anything else.
+            // signed-out user from a billing-less build by re-reading initialize:
+            // its _meta.defaultAuthMethodId is null until an account signs in.
+            // (Live-probed alternatives all fail: session/new persists an abandoned
+            // session on disk even when it rejects, and session/list answers without
+            // authentication, so neither is a safe probe.)
             Err(ProcessError::JsonRpc {
                 code: METHOD_NOT_FOUND_CODE,
                 ..
-            }) => match self.probe_authentication().await {
-                Ok(()) => Err(ProviderError::UnsupportedOutput),
-                Err(error) => Err(error),
-            },
+            }) => {
+                if self.probe_authentication(deadline).await? {
+                    Err(ProviderError::UnsupportedOutput)
+                } else {
+                    Err(ProviderError::NotAuthenticated)
+                }
+            }
             Err(error) => Err(map_process_error(error)),
         }
     }
 }
 
 impl<R: JsonRpcRunner> GrokProvider<R> {
-    async fn probe_authentication(&self) -> Result<(), ProviderError> {
+    async fn probe_authentication(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> Result<bool, ProviderError> {
         let probe = self
             .runner
             .request(
                 AllowedProgram::Grok,
                 vec!["agent".to_owned(), "stdio".to_owned()],
-                vec![
-                    initialize_request(),
-                    serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "method": "session/new",
-                        "params": {"cwd": "/", "mcpServers": []}
-                    }),
-                ],
-                2,
-                GROK_TIMEOUT,
+                vec![initialize_request()],
+                1,
+                remaining_timeout(deadline)?,
             )
             .await;
 
         match probe {
-            Ok(_) => Ok(()),
+            Ok(value) => Ok(parse_default_auth_method(&value)),
             Err(error) => Err(map_process_error(error)),
         }
     }
+}
+
+// The initialize result is upstream-owned; read only the auth signal and treat
+// anything unexpected as signed out, which keeps the actionable state.
+fn parse_default_auth_method(value: &serde_json::Value) -> bool {
+    !value["_meta"]["defaultAuthMethodId"].is_null()
 }
 
 fn map_process_error(error: ProcessError) -> ProviderError {
@@ -276,6 +284,19 @@ mod tests {
         }
     }
 
+    fn initialize_result(default_auth_method: Option<&str>) -> serde_json::Value {
+        json!({
+            "protocolVersion": 1,
+            "agentCapabilities": {"loadSession": true},
+            "authMethods": [{"id": "grok.com", "name": "Grok"}],
+            "_meta": {
+                "grokShell": true,
+                "defaultAuthMethodId": default_auth_method,
+                "agentVersion": "1.0.13"
+            }
+        })
+    }
+
     fn authentication_required() -> ProcessError {
         ProcessError::JsonRpc {
             code: -32000,
@@ -283,7 +304,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn billing_success_uses_one_spawn_with_the_exact_handshake() {
         let runner = RecordingRunner::with_results(vec![Ok(billing_value())]);
         let provider = GrokProvider::new(&runner);
@@ -316,7 +337,7 @@ mod tests {
     async fn missing_billing_method_on_an_authenticated_build_degrades_to_unsupported() {
         let runner = RecordingRunner::with_results(vec![
             Err(method_not_found()),
-            Ok(json!({"sessionId": "abc"})),
+            Ok(initialize_result(Some("grok.com"))),
         ]);
         let provider = GrokProvider::new(&runner);
 
@@ -325,21 +346,49 @@ mod tests {
             Err(ProviderError::UnsupportedOutput)
         );
 
+        // The probe must be a read-only initialize: session/new persists an
+        // abandoned session on disk even when it rejects (live-probed on 1.0.13).
         let calls = runner.calls.lock().unwrap();
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[1].2[1]["method"], "session/new");
-        assert_eq!(calls[1].2[1]["params"]["mcpServers"], json!([]));
+        assert_eq!(calls[1].2.len(), 1);
+        assert_eq!(calls[1].2[0]["method"], "initialize");
+        assert_eq!(calls[1].3, 1);
     }
 
     #[tokio::test]
     async fn missing_billing_method_while_signed_out_maps_to_not_authenticated() {
         let runner = RecordingRunner::with_results(vec![
             Err(method_not_found()),
-            Err(authentication_required()),
+            Ok(initialize_result(None)),
         ]);
         let provider = GrokProvider::new(&runner);
 
         assert_eq!(provider.fetch().await, Err(ProviderError::NotAuthenticated));
+    }
+
+    #[tokio::test]
+    async fn probe_stage_runner_failures_keep_their_own_mapping() {
+        for (probe_error, expected) in [
+            (ProcessError::Timeout, ProviderError::Timeout),
+            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::NonZero(3), ProviderError::Process),
+            (authentication_required(), ProviderError::NotAuthenticated),
+        ] {
+            let runner =
+                RecordingRunner::with_results(vec![Err(method_not_found()), Err(probe_error)]);
+            let provider = GrokProvider::new(&runner);
+            assert_eq!(provider.fetch().await, Err(expected));
+        }
+    }
+
+    #[test]
+    fn unexpected_initialize_shapes_read_as_signed_out() {
+        assert!(!parse_default_auth_method(&json!({})));
+        assert!(!parse_default_auth_method(&json!({"_meta": {}})));
+        assert!(!parse_default_auth_method(&json!([1, 2])));
+        assert!(parse_default_auth_method(&initialize_result(Some(
+            "grok.com"
+        ))));
     }
 
     #[tokio::test]

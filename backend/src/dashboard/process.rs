@@ -935,12 +935,32 @@ mod tests {
         std::fs::create_dir_all(&grok_bin).unwrap();
         std::fs::write(&grok, "grok executable").unwrap();
 
-        let paths =
-            windows_program_search_paths(None, None, None, None, None, None, Some(&user_profile));
-        let launch = resolve_windows_program_from_paths(AllowedProgram::Grok, &paths).unwrap();
+        let local_app_data = root.join("local-app-data");
+        let cursor_home = local_app_data.join("cursor-agent");
+        let cursor_version = cursor_home.join("versions/2026.08.31-4057e58");
+        std::fs::create_dir_all(&cursor_version).unwrap();
+        std::fs::write(cursor_home.join("cursor-agent.cmd"), "wrapper").unwrap();
+        std::fs::write(cursor_version.join("index.js"), "payload").unwrap();
+        std::fs::write(cursor_version.join("node.exe"), "bundled node").unwrap();
 
-        assert_eq!(launch.executable, grok);
-        assert!(launch.prefix_args.is_empty());
+        let paths = windows_program_search_paths(
+            None,
+            None,
+            None,
+            Some(&local_app_data),
+            None,
+            None,
+            Some(&user_profile),
+        );
+
+        let grok_launch = resolve_windows_program_from_paths(AllowedProgram::Grok, &paths).unwrap();
+        assert_eq!(grok_launch.executable, grok);
+        assert!(grok_launch.prefix_args.is_empty());
+
+        let cursor_launch =
+            resolve_windows_program_from_paths(AllowedProgram::CursorAgent, &paths).unwrap();
+        assert_eq!(cursor_launch.executable, cursor_version.join("node.exe"));
+
         std::fs::remove_dir_all(root).unwrap();
     }
 

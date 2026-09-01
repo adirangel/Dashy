@@ -16,7 +16,7 @@ pub struct ProviderSetupDefinition {
     pub publisher: &'static str,
     pub package_id: Option<&'static str>,
     pub install_kind: ProviderInstallKind,
-    pub install_command: String,
+    pub install_command: Option<String>,
     pub install_url: &'static str,
     pub login_command: &'static str,
 }
@@ -61,13 +61,13 @@ impl ProviderSetupDefinition {
             Some(_) => ProviderInstallKind::Winget,
             None => ProviderInstallKind::ManualUrl,
         };
-        let install_command = match package_id {
-            Some(package_id) => format!(
+        // Manual-URL providers install through the official guide, so their
+        // consent card shows no command at all.
+        let install_command = package_id.map(|package_id| {
+            format!(
                 "winget install --id {package_id} --exact --source winget --interactive --accept-source-agreements --accept-package-agreements"
-            ),
-            // Display-only reference for the consent card; Dashy never executes it.
-            None => "irm 'https://cursor.com/install?win32=true' | iex".to_owned(),
-        };
+            )
+        });
         Self {
             provider,
             publisher,

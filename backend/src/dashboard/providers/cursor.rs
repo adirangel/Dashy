@@ -102,7 +102,12 @@ fn parse_about(response: &str) -> Result<AccountData, ProviderError> {
 
 fn safe_display_value(value: String, max_chars: usize) -> Result<String, ProviderError> {
     let chars = value.chars().count();
-    if chars == 0 || chars > max_chars || value.chars().any(char::is_control) {
+    if chars == 0
+        || chars > max_chars
+        || value
+            .chars()
+            .any(|character| character.is_control() || is_invisible_format_character(character))
+    {
         return Err(ProviderError::UnsupportedOutput);
     }
     Ok(value)
@@ -112,13 +117,24 @@ fn safe_email(value: String) -> Result<String, ProviderError> {
     let chars = value.chars().count();
     if !(3..=MAX_EMAIL_CHARS).contains(&chars)
         || !value.contains('@')
-        || value
-            .chars()
-            .any(|character| character.is_control() || character.is_whitespace())
+        || value.chars().any(|character| {
+            character.is_control()
+                || character.is_whitespace()
+                || is_invisible_format_character(character)
+        })
     {
         return Err(ProviderError::UnsupportedOutput);
     }
     Ok(value)
+}
+
+// Zero-width and bidirectional format characters render invisibly or reorder
+// surrounding text, so a hostile CLI payload could disguise what the tile shows.
+fn is_invisible_format_character(character: char) -> bool {
+    matches!(
+        character,
+        '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
+    )
 }
 
 #[derive(Deserialize)]
@@ -335,6 +351,19 @@ mod tests {
             "{\"subscriptionTier\":\"bad\ttier\"}",
             r#"{"userEmail":"no-at-sign"}"#,
             r#"{"userEmail":"two words@example.com"}"#,
+        ] {
+            assert_eq!(parse_about(about), Err(ProviderError::UnsupportedOutput));
+        }
+    }
+
+    #[test]
+    fn invisible_format_characters_are_rejected() {
+        for about in [
+            "{\"subscriptionTier\":\"pro\u{200B}\"}",
+            "{\"subscriptionTier\":\"\u{202E}orp\"}",
+            "{\"subscriptionTier\":\"\u{FEFF}pro\"}",
+            "{\"userEmail\":\"user\u{200D}@example.com\"}",
+            "{\"userEmail\":\"user@\u{2066}example.com\u{2069}\"}",
         ] {
             assert_eq!(parse_about(about), Err(ProviderError::UnsupportedOutput));
         }

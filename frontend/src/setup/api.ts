@@ -8,7 +8,7 @@ export type ProviderSetupDefinition = {
   publisher: string;
   packageId: string | null;
   installKind: ProviderInstallKind;
-  installCommand: string;
+  installCommand: string | null;
   installUrl: string;
   loginCommand: string;
 };
@@ -51,7 +51,10 @@ function isProviderSetupDefinition(value: unknown): value is ProviderSetupDefini
     && (candidate.installKind === "winget" || candidate.installKind === "manualUrl")
     // A winget install needs a package id; a manual install must not claim one.
     && (candidate.installKind === "winget") === (typeof candidate.packageId === "string")
-    && typeof candidate.installCommand === "string"
+    // Same coherence for the command: winget shows one, manual installs have none.
+    && (candidate.installKind === "winget"
+      ? typeof candidate.installCommand === "string"
+      : candidate.installCommand === null)
     && candidate.installUrl === approvedInstallUrls[candidate.provider as ProviderId]
     && typeof candidate.loginCommand === "string";
 }

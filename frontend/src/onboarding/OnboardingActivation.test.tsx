@@ -56,9 +56,7 @@ const providerStates: ProviderSetupState[] = [
     publisher: publisher as string,
     packageId: packageId as string | null,
     installKind: packageId === null ? "manualUrl" as const : "winget" as const,
-    installCommand: packageId === null
-      ? "irm 'https://cursor.com/install?win32=true' | iex"
-      : `winget install --id ${packageId}`,
+    installCommand: packageId === null ? null : `winget install --id ${packageId}`,
     installUrl: installUrl as string,
     loginCommand: loginCommand as string,
   },

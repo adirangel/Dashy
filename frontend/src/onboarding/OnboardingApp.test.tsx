@@ -66,7 +66,7 @@ const metadata: Record<ProviderId, Omit<ProviderSetupDefinition, "provider">> = 
     publisher: "Anysphere",
     packageId: null,
     installKind: "manualUrl",
-    installCommand: "irm 'https://cursor.com/install?win32=true' | iex",
+    installCommand: null,
     installUrl: "https://cursor.com/docs/cli/installation",
     loginCommand: "cursor-agent login",
   },

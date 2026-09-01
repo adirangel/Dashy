@@ -21,7 +21,7 @@ const cursor = {
   definition: {
     provider: "cursor", publisher: "Anysphere", packageId: null,
     installKind: "manualUrl",
-    installCommand: "irm 'https://cursor.com/install?win32=true' | iex",
+    installCommand: null,
     installUrl: "https://cursor.com/docs/cli/installation",
     loginCommand: "cursor-agent login",
   },
@@ -43,6 +43,13 @@ describe("provider setup IPC", () => {
     ["a winget kind without a package id", (definition: Record<string, unknown>) => { definition.packageId = null; }],
     ["a manual kind claiming a package id", (definition: Record<string, unknown>) => {
       definition.installKind = "manualUrl";
+    }],
+    ["a winget kind without an install command", (definition: Record<string, unknown>) => {
+      definition.installCommand = null;
+    }],
+    ["a manual kind claiming an install command", (definition: Record<string, unknown>) => {
+      definition.installKind = "manualUrl";
+      definition.packageId = null;
     }],
   ] as const)("rejects %s before it reaches the UI", async (_case, mutate) => {
     const definition = { ...codex.definition } as Record<string, unknown>;

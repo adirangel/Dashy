@@ -88,7 +88,9 @@ export function MetricRail({
       const accessibleState = kind === "activity"
         ? statusText ? `${statusText}; ${githubState}` : githubState
         : kind === "account"
-          ? statusText ?? (tier ? `${t("cursor.plan")}: ${tier}` : t("status.unavailable"))
+          // A connected account without a reported tier is still connected, not
+          // unavailable — the tile just has no plan name to read out.
+          ? statusText ?? (tier ? `${t("cursor.plan")}: ${tier}` : t("setup.connected"))
           : statusText ?? (hasUsage ? t("usage.remaining", { value: formatNumber(usageValue, locale) }) : t("status.unavailable"));
 
       return <button

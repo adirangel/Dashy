@@ -147,21 +147,6 @@ impl GitHubSnapshot {
             error_kind: Some(error_kind),
         }
     }
-
-    pub fn stale_from(
-        data: GitHubData,
-        last_successful_refresh: DateTime<Utc>,
-        error_kind: ProviderErrorKind,
-    ) -> Self {
-        Self {
-            status: ProviderStatus::Stale,
-            account_login: Some(data.account_login),
-            contribution_days: Some(data.contribution_days),
-            current_streak_days: Some(data.current_streak_days),
-            last_successful_refresh: Some(last_successful_refresh),
-            error_kind: Some(error_kind),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,25 +183,6 @@ impl UsageSnapshot {
             short_window: None,
             weekly_window: None,
             last_successful_refresh: None,
-            error_kind: Some(error_kind),
-        }
-    }
-
-    pub fn stale_from(
-        data: UsageData,
-        last_successful_refresh: DateTime<Utc>,
-        error_kind: ProviderErrorKind,
-    ) -> Self {
-        let (short_window, weekly_window) = clamped_windows(data);
-        Self {
-            status: ProviderStatus::Stale,
-            remaining_percent: summary_remaining_percent(
-                short_window.as_ref(),
-                weekly_window.as_ref(),
-            ),
-            short_window,
-            weekly_window,
-            last_successful_refresh: Some(last_successful_refresh),
             error_kind: Some(error_kind),
         }
     }
@@ -278,20 +244,6 @@ impl AccountSnapshot {
             subscription_tier: None,
             account_email: None,
             last_successful_refresh: None,
-            error_kind: Some(error_kind),
-        }
-    }
-
-    pub fn stale_from(
-        data: AccountData,
-        last_successful_refresh: DateTime<Utc>,
-        error_kind: ProviderErrorKind,
-    ) -> Self {
-        Self {
-            status: ProviderStatus::Stale,
-            subscription_tier: data.subscription_tier,
-            account_email: data.account_email,
-            last_successful_refresh: Some(last_successful_refresh),
             error_kind: Some(error_kind),
         }
     }
@@ -489,8 +441,8 @@ mod tests {
     }
 
     #[test]
-    fn stale_snapshot_retains_both_windows_and_summarizes_them() {
-        let snapshot = UsageSnapshot::stale_from(
+    fn connected_snapshot_summarizes_the_lowest_window() {
+        let snapshot = UsageSnapshot::connected(
             UsageData {
                 short_window: Some(UsageWindowData {
                     label_key: UsageWindowKind::Short,
@@ -504,46 +456,35 @@ mod tests {
                 }),
             },
             Utc.with_ymd_and_hms(2026, 8, 29, 8, 0, 0).unwrap(),
-            ProviderErrorKind::Timeout,
         );
 
-        assert_eq!(snapshot.status, ProviderStatus::Stale);
+        assert_eq!(snapshot.status, ProviderStatus::Connected);
         assert_eq!(snapshot.remaining_percent, Some(37));
         assert!(snapshot.short_window.is_some());
         assert!(snapshot.weekly_window.is_some());
     }
 
     #[test]
-    fn connected_and_stale_windows_clamp_values_above_hundred() {
-        let data = UsageData {
-            short_window: Some(UsageWindowData {
-                label_key: UsageWindowKind::Short,
-                remaining_percent: 101,
-                resets_at: None,
-            }),
-            weekly_window: Some(UsageWindowData {
-                label_key: UsageWindowKind::Weekly,
-                remaining_percent: 255,
-                resets_at: None,
-            }),
-        };
-
+    fn connected_windows_clamp_values_above_hundred() {
         let connected = UsageSnapshot::connected(
-            data.clone(),
+            UsageData {
+                short_window: Some(UsageWindowData {
+                    label_key: UsageWindowKind::Short,
+                    remaining_percent: 101,
+                    resets_at: None,
+                }),
+                weekly_window: Some(UsageWindowData {
+                    label_key: UsageWindowKind::Weekly,
+                    remaining_percent: 255,
+                    resets_at: None,
+                }),
+            },
             Utc.with_ymd_and_hms(2026, 8, 29, 9, 0, 0).unwrap(),
-        );
-        let stale = UsageSnapshot::stale_from(
-            data,
-            Utc.with_ymd_and_hms(2026, 8, 29, 8, 0, 0).unwrap(),
-            ProviderErrorKind::Timeout,
         );
 
         assert_eq!(connected.remaining_percent, Some(100));
         assert_eq!(connected.short_window.unwrap().remaining_percent, 100);
         assert_eq!(connected.weekly_window.unwrap().remaining_percent, 100);
-        assert_eq!(stale.remaining_percent, Some(100));
-        assert_eq!(stale.short_window.unwrap().remaining_percent, 100);
-        assert_eq!(stale.weekly_window.unwrap().remaining_percent, 100);
     }
 
     fn serialized_remaining_percent(value: u8) -> u8 {
