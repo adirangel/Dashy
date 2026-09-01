@@ -2,8 +2,8 @@
 
 Dashy is a local-first Windows side-notch for real, CLI-backed signals:
 
-- Claude general usage windows
-- Codex general usage windows
+- Claude session and weekly usage windows
+- Codex session and weekly usage windows
 - GitHub contribution activity and current streak
 - Grok monthly credit-pool usage
 - Cursor account and plan status (Cursor's CLI exposes no usage percentages)
@@ -12,27 +12,35 @@ Dashy does not use demo metrics. It reads the authenticated command-line tools a
 installed on the computer and renders only the bounded status and usage fields needed
 by the interface.
 
+![Dashy revealing Claude usage from the right edge](docs/images/dashy-right-edge.png)
+
 ## The experience
 
-Dashy is designed to keep useful account activity one deliberate pointer movement
-away without becoming another dashboard that occupies the desktop. The compact rail
-rests just outside the selected screen edge, reveals on hover, and expands only the
-provider the user asks to inspect. The rail is a solid tab that blends into the
-screen edge with concave fillets, so it reads as part of the display frame rather
-than a floating window.
+Dashy keeps useful account activity one deliberate pointer movement away without
+becoming another dashboard that occupies the desktop. The compact rail rests just
+outside the selected screen edge, reveals on hover, and expands only the provider
+the user asks to inspect. The rail is a solid tab that blends into the screen edge
+with concave fillets, so it reads as part of the display frame rather than a
+floating window.
+
+Each provider is a ring tile: its glyph inside a dark disc, the ring filled with the
+provider's color, and one bold value below it. Hovering a tile opens its card
+centered on that tile. The card shares the same language: the provider glyph in a
+disc, a connected line, the last refresh time, and inset boxes with large numbers
+for usage windows, streaks, or the account plan.
+
+| GitHub card on the left edge | Codex card on the top edge |
+| --- | --- |
+| ![GitHub activity card opening from the left edge](docs/images/dashy-left-edge.png) | ![Codex usage card opening from the top edge](docs/images/dashy-top-edge.png) |
 
 Every provider is optional. A user can connect Claude, Codex, GitHub, Grok, Cursor,
 any combination of them, or none during first-run setup. Dashy relies on each
 provider's existing, authenticated CLI session and never asks the user to paste
 subscription credentials or access tokens into the application.
 
-| Right-edge placement | Top-edge placement |
-| --- | --- |
-| ![Dashy revealing Claude usage from the right edge](docs/images/dashy-right-edge.png) | ![Dashy revealing GitHub activity from the top edge](docs/images/dashy-top-edge.png) |
-
-The screenshots above are deterministic UI fixtures rendered from the same React
-components used by the desktop application. Values are illustrative; the installed
-application displays only locally retrieved provider data.
+The screenshots in this README are deterministic UI fixtures rendered from the same
+React components used by the desktop application. Values are illustrative; the
+installed application displays only locally retrieved provider data.
 
 ## How the side notch works
 
@@ -64,13 +72,31 @@ Keyboard behavior:
 - Escape closes a pinned or expanded card to the rail; a second Escape hides the rail.
 
 Right-click the visible notch for its compact native menu.
-A small curled tail at the end of the metric rail marks the Settings control; hovering
-or keyboard-focusing it grows a round gear button that opens Settings directly. It
-remains available in the right, left, and top placements.
+
+A small tapered tail curls out of the end of the rail. Hovering or keyboard-focusing
+it grows a round gear bubble, attached to the rail, that opens Settings directly.
+It works in the right, left, and top placements.
+
+![The settings gear bubble hanging from the rail](docs/images/dashy-settings-gear.png)
+
+## Settings
+
+Open Settings from the rail's gear, the tray, or the notch context menu.
+
+![The Settings window](docs/images/dashy-settings.png)
+
+- **Display:** placement (Left, Right, Top), monitor, language, the fullscreen
+  override, and launch at startup.
+- **Providers:** one row per provider with its status, an inline install or connect
+  action only when something needs attention, and a switch to enable it in the rail.
+  **Refresh all** re-reads every enabled provider.
+
+Settings are stored locally. The startup option uses the operating system's normal
+autostart registration and remains off until explicitly enabled.
 
 ## Placement, monitors, and fullscreen
 
-Settings supports three physical placements:
+Dashy supports three physical placements:
 
 - Right edge, with cards opening left
 - Left edge, with cards opening right
@@ -88,23 +114,14 @@ behavior.
 
 The system tray remains available while the notch is hidden or fullscreen-suppressed.
 Its menu provides Show Dashy, Refresh all providers, placement and monitor choices,
-Settings, and Quit Dashy. **Launch at startup** is opt-in and disabled by default.
+Settings, and Quit Dashy.
 
 ## Languages
 
-Dashy supports:
-
-- English
-- Hebrew
-- Arabic
-- Spanish
-- Russian
-- French
-- Simplified Chinese
-- Japanese
-
-English is the first-run default. Hebrew and Arabic mirror the content layout for RTL
-reading, but language direction never changes the user's physical screen placement.
+Dashy supports English, Hebrew, Arabic, Spanish, Russian, French, Simplified
+Chinese, and Japanese. English is the first-run default. Hebrew and Arabic mirror
+the content layout for RTL reading, but language direction never changes the user's
+physical screen placement.
 
 ## Provider data
 
@@ -119,8 +136,8 @@ special-program buckets.
 
 Claude usage comes from the documented Claude Code `/usage` interface through its
 non-interactive JSON output. Dashy retains the current-session and all-models general
-windows and excludes model-specific preview limits. This path also avoids workspace
-trust prompts when Dashy starts from the Windows Start menu.
+windows and excludes model-specific preview limits. A window that has no reset time
+yet (nothing consumed) is shown without one.
 
 Grok usage comes from the Grok Build CLI's `agent stdio` JSON-RPC surface as a
 single monthly credit-pool window. Builds that do not expose billing over stdio
@@ -140,14 +157,14 @@ other providers from working.
 1. Open the [latest GitHub Release](https://github.com/adirangel/Dashy/releases/latest).
 2. Download the Windows x64 `.msi` asset.
 3. Run the installer and leave **Launch Dashy** selected on the final page.
-4. Dashy opens its setup window and asks which combination of Claude, Codex,
-   GitHub, Grok, and Cursor you want to use.
+4. Dashy opens its setup window: choose a language, then pick any combination of
+   Claude, Codex, GitHub, Grok, and Cursor.
 5. Install or connect only the providers you selected, approving each visible
    command separately.
 
-Upgrades from a pre-release build reopen this provider chooser once, with the
-existing choices preselected. Completing it records the current setup version so
-later upgrades preserve the selection without prompting again.
+Upgrades from an older build reopen the provider chooser once, with the existing
+choices preselected. Completing it records the current setup version so later
+upgrades preserve the selection without prompting again.
 
 The current private-test MSI is not code-signed, so Windows may show an
 **Unknown publisher** or SmartScreen warning. Code signing is required before a
@@ -176,14 +193,10 @@ See the [Tauri v2 Windows prerequisites](https://v2.tauri.app/start/prerequisite
 for the platform toolchain details; each tool's official installer is the source of
 truth for its own setup.
 
-The included `install.ps1` contributor bootstrap script uses WinGet package IDs
-and requests the Visual Studio Build Tools C++ workload with recommended
-components. The official installer may request elevation.
-
 ## Contributor setup
 
-Open PowerShell in the repository. This contributor bootstrap script first lets you
-inspect the development machine without changing it:
+Open PowerShell in the repository. The bootstrap script first lets you inspect the
+development machine without changing it:
 
 ```powershell
 .\install.ps1 -CheckOnly
@@ -198,17 +211,16 @@ To install missing prerequisites and the locked frontend dependencies:
 .\install.ps1
 ```
 
-The installer skips available commands and packages, never removes or downgrades a
-tool, refreshes only the current PowerShell process's `PATH`, installs Tauri CLI 2
-only when needed, and runs `npm ci` in `frontend`. If a newly installed command is
-still unavailable, open a new PowerShell window and rerun the installer.
+The installer uses WinGet package IDs, skips available commands and packages, never
+removes or downgrades a tool, refreshes only the current PowerShell process's
+`PATH`, installs Tauri CLI 2 only when needed, and runs `npm ci` in `frontend`. The
+Visual Studio Build Tools installer may request elevation. If a newly installed
+command is still unavailable, open a new PowerShell window and rerun the installer.
 
 ## Provider CLI sign-in for contributors
 
-The contributor bootstrap script deliberately never signs in for you. The installed
-MSI instead presents provider onboarding on first run; use that flow to select the
-providers you want Dashy to display. When developing from this repository, complete
-only the provider CLI logins you need:
+The bootstrap script never signs in for you. When developing from this repository,
+complete only the provider CLI logins you need:
 
 ```powershell
 gh auth login
@@ -231,25 +243,25 @@ Grok has no status command; Dashy detects its sign-in state through the same
 stdio handshake it uses for usage.
 
 On Windows, Dashy recognizes both a standalone Codex executable and the standard
-global npm installation (`codex.cmd`). It launches the native executable bundled
-with the npm package, so a successful `codex login status` is enough for Dashy too.
-Restart Dashy after installing or updating a provider CLI so it inherits the latest
-`PATH`.
+global npm installation (`codex.cmd`), and the Cursor CLI's `cursor-agent.cmd`
+wrapper. Restart Dashy after installing or updating a provider CLI so it inherits
+the latest `PATH`.
 
 Use each provider's own browser or terminal flow. Do not paste a token into Dashy,
 the installer, source files, or this README.
 
 ## Run Dashy
 
-For a browser-only visual preview:
+For a browser-only visual preview of the notch:
 
 ```powershell
 Set-Location frontend
 npm run dev
 ```
 
-Provider calls and native edge behavior are intentionally unavailable in a normal
-browser preview.
+Open `http://localhost:5173/?fixture=1&placement=right&provider=claude&background=bright`
+to render the deterministic fixture used for the screenshots above. Provider calls
+and native edge behavior are intentionally unavailable in a browser preview.
 
 For the Windows desktop application:
 
@@ -261,31 +273,17 @@ cargo tauri dev --no-watch
 The first run can take several minutes while Cargo builds dependencies. Dashy starts
 hidden; move the pointer to the configured edge or use **Show Dashy** from the tray.
 
-## Settings
-
-Open Settings from the rail's gear, the tray, or the notch context menu to configure:
-
-- Placement
-- Monitor
-- Language
-- Fullscreen override
-- Launch at startup
-- Providers: enable each one with its switch, install or connect it inline, and refresh all
-
-Settings are stored locally. The startup option uses the operating system's normal
-autostart registration and remains off until explicitly enabled.
-
 ## Privacy
 
 Provider credentials remain owned by `gh`, `claude`, `codex`, `grok`, and
 `cursor-agent`. Dashy does not request, store, print, or inspect tokens, browser
 cookies, password-manager data, or credential files, and it makes no network
-requests of its own — every signal comes from a local CLI.
+requests of its own: every signal comes from a local CLI.
 
 The Rust backend invokes the installed CLIs with bounded timeouts, parses only the
 reviewed response fields, and sends the React UI sanitized provider states. Native
-edge events contain only visibility, placement, and provider identifiers—never cursor
-coordinates, monitor metadata, raw CLI output, account identity, or errors.
+edge events contain only visibility, placement, and provider identifiers, never
+cursor coordinates, monitor metadata, raw CLI output, account identity, or errors.
 
 ## Test and build
 
@@ -297,7 +295,7 @@ npm run build
 Set-Location ..\backend
 cargo fmt --check
 cargo test --locked
-cargo check --locked
+cargo clippy --all-targets --locked -- -D warnings
 ```
 
 To build Windows bundles:
@@ -309,11 +307,9 @@ cargo tauri build -- --locked
 
 Bundle output is generated under `backend/target/release/bundle` and is not tracked.
 
-### Create a Windows release
-
-Releases follow an immutable-tag, five-file version-bump process with a
-read-only build job and a draft-first publish. The full guarded procedure lives
-in [docs/RELEASE.md](docs/RELEASE.md).
+Releases follow an immutable-tag, five-file version-bump process with a read-only
+build job and a draft-first publish. The full guarded procedure lives in
+[docs/RELEASE.md](docs/RELEASE.md).
 
 ## Troubleshooting
 
@@ -323,8 +319,8 @@ in [docs/RELEASE.md](docs/RELEASE.md).
   check-only command again.
 - **`link.exe` is missing:** install the Visual Studio Build Tools **Desktop
   development with C++** workload, then open a new shell.
-- **A provider says “Not installed”:** install that provider's CLI and restart Dashy.
-- **A provider says “Sign in required”:** complete its CLI login flow outside Dashy.
+- **A provider says "Not installed":** install that provider's CLI and restart Dashy.
+- **A provider says "Sign in required":** complete its CLI login flow outside Dashy.
 - **A provider is unavailable or stale:** the CLI may have timed out, lost network
   access, or changed its supported output. Dashy keeps the last verified local value.
 - **The notch does not reveal:** check the selected placement and monitor, then use

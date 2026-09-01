@@ -186,9 +186,7 @@
   opacity: .76;
 }
 
-.provider-setup-heading,
 .provider-setup-card-header,
-.provider-setup-title-row,
 .provider-setup-selection {
   display: flex;
   align-items: center;
@@ -196,9 +194,7 @@
   gap: 10px;
 }
 
-.provider-setup-heading,
-.provider-setup-card-header,
-.provider-setup-title-row {
+.provider-setup-card-header {
   justify-content: space-between;
 }
 
@@ -212,8 +208,7 @@
   line-height: 1.2;
 }
 
-.provider-setup-card .provider-glyph,
-.provider-setup-glyph {
+.provider-setup-card .provider-glyph {
   flex: 0 0 auto;
   inline-size: 20px;
   block-size: 20px;

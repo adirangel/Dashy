@@ -10,7 +10,7 @@ import { MetricRail } from "./MetricRail";
 import { NotchApp } from "./NotchApp";
 import { ProgressRing } from "./ProgressRing";
 import { UsageProviderCard } from "./UsageProviderCard";
-import { VisualFixtureApp } from "./VisualFixtureApp.dev";
+import VisualFixtureApp from "./VisualFixtureApp.dev";
 
 const days = Array.from({ length: 84 }, (_, index) => {
   const date = new Date(Date.UTC(2026, 5, 4 + index));
