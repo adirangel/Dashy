@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a change or a new provider.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like Dashy to do
+    validations:
+      required: true
+  - type: checkboxes
+    id: contract
+    attributes:
+      label: Dashy's contract
+      description: Every signal must come from a local, authenticated CLI. Dashy never reads credential files and never makes its own network requests.
+      options:
+        - label: This can be done through an official CLI without reading credentials or calling an API directly.
+          required: true
+  - type: textarea
+    id: cli
+    attributes:
+      label: For a new provider, which CLI command exposes the data
+      description: The exact command and a sample of its output, with any account details removed.

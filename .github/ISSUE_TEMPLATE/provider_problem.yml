@@ -1,0 +1,47 @@
+name: Provider problem
+description: A provider shows Unavailable, Sign in required, Not installed, or wrong numbers.
+labels: [provider]
+body:
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options: [Claude, Codex, GitHub, Grok, Cursor]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Dashy version
+      placeholder: v0.4.1
+    validations:
+      required: true
+  - type: input
+    id: cli
+    attributes:
+      label: Provider CLI version
+      description: e.g. `claude --version`, `codex --version`, `gh --version`, `grok --version`, `cursor-agent --version`
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What the tile and card show
+      description: The status text and any guidance line, and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Diagnostics log
+      description: |
+        Settings → Diagnostics → **Open log folder**, then paste the last lines of `dashy.log`.
+        It contains only timestamps, provider names, outcomes, and durations. Never paste CLI output that includes account details or tokens.
+      render: text
+  - type: checkboxes
+    id: cli_works
+    attributes:
+      label: The CLI itself
+      options:
+        - label: The provider CLI works when I run it in a terminal myself.
+        - label: I restarted Dashy after installing or updating the CLI.

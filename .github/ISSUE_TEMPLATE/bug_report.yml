@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in Dashy behaves wrongly.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Dashy version
+      description: Shown at the top of the Settings window.
+      placeholder: v0.4.1
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Dashy did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Settings
+        2. ...
+  - type: dropdown
+    id: placement
+    attributes:
+      label: Placement
+      options: [Right, Left, Top]
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and display setup
+      placeholder: Windows 11 24H2, two monitors, 150% scaling
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else
