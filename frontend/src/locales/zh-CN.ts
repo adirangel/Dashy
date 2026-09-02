@@ -13,7 +13,7 @@ const zhCN = {
     useProvider: "在 Dashy 中使用 {{provider}}", connected: "已连接", notInstalled: "未安装", signInRequired: "需要登录", needsAttention: "需要处理",
     installing: "正在安装", connecting: "正在连接",
     install: "安装 {{provider}}", connect: "连接 {{provider}}", retry: "重试", cancel: "取消", confirmInstall: "确认安装", confirmLogin: "打开官方登录",
-    installDisclosure: "Dashy 将打开可见终端并运行此 WinGet 命令。", installManualDisclosure: "Dashy 将在浏览器中打开官方安装指南。", loginDisclosure: "Dashy 将在可见终端和浏览器中打开服务商的官方登录流程。",
+    installDisclosure: "Dashy 将打开可见终端并运行此命令。", installManualDisclosure: "Dashy 将在浏览器中打开官方安装指南。", loginDisclosure: "Dashy 将在可见终端和浏览器中打开服务商的官方登录流程。",
     publisher: "发布者", packageId: "软件包", command: "命令", manualHelp: "打开官方安装指南", manualHelpFailure: "Dashy 无法打开官方安装指南。", finish: "完成设置",
     finishFailure: "Dashy 无法保存服务商选择。", actionFailure: "服务商设置需要处理。", loading: "正在检查已安装的工具",
   },

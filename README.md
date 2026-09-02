@@ -1,6 +1,7 @@
 # Dashy
 
-Dashy is a local-first Windows side-notch for real, CLI-backed signals:
+Dashy is a local-first side-notch for Windows, macOS, and Linux that shows real,
+CLI-backed signals:
 
 - Claude session and weekly usage windows
 - Codex session and weekly usage windows
@@ -107,16 +108,35 @@ Dashy supports three physical placements:
 Choose the primary monitor or a specific connected monitor. Dashy persists a stable
 monitor preference with recovery metadata. If that monitor is missing, Dashy safely
 falls back to the primary monitor without deleting the saved preference. Work-area
-positioning respects the Windows taskbar, and display or DPI changes trigger
-repositioning.
+positioning respects the Windows taskbar, the macOS menu bar and Dock, and Linux
+panels, and display or DPI changes trigger repositioning.
 
 Dashy hides when another application is fullscreen on the selected monitor by
 default. Enable **Always show over fullscreen apps** in Settings to override that
 behavior.
 
-The system tray remains available while the notch is hidden or fullscreen-suppressed.
-Its menu provides Show Dashy, Refresh all providers, placement and monitor choices,
-Settings, and Quit Dashy.
+The system tray (the menu bar on macOS) remains available while the notch is hidden
+or fullscreen-suppressed. Its menu provides Show Dashy, Refresh all providers,
+placement and monitor choices, Settings, and Quit Dashy.
+
+## Platform notes
+
+Dashy shares one Rust edge controller and one React interface on every platform;
+only the thin desktop probe differs.
+
+- **Windows:** Win32 monitor and DPI enumeration, foreground-window fullscreen
+  detection, and a notch window that never activates when it reveals.
+- **macOS:** Dashy runs as a menu-bar utility with no Dock icon. The notch joins
+  every Space, hides beside fullscreen apps unless overridden, and the tray lives
+  in the menu bar. Provider CLIs are resolved through the login shell's `PATH`
+  and the Homebrew directories, so a `brew`, `npm`, or native install works even
+  though Finder-launched apps see a minimal `PATH`.
+- **Linux:** X11 sessions get the full edge reveal and fullscreen detection
+  through GDK. Wayland compositors do not expose the global pointer or other
+  clients' windows, so under Wayland the notch does not reveal from the edge and
+  never hides for fullscreen apps; use **Show Dashy** from the tray instead. The
+  tray needs an AppIndicator-capable panel (GNOME users install the AppIndicator
+  extension).
 
 ## Languages
 
@@ -154,25 +174,57 @@ The dashboard primes its local cache on startup and refreshes periodically. Each
 provider remains isolated: one unavailable or signed-out CLI does not prevent the
 other providers from working.
 
-## Install Dashy on Windows
+## Install Dashy
 
-1. Open the [latest GitHub Release](https://github.com/adirangel/Dashy/releases/latest).
-2. Download the Windows x64 `.msi` asset.
-3. Run the installer and leave **Launch Dashy** selected on the final page.
-4. Dashy opens its setup window: choose a language, then pick any combination of
+Open the [latest GitHub Release](https://github.com/adirangel/Dashy/releases/latest)
+and download the asset for your platform. Every asset ships with a `.sha256`
+checksum beside it.
+
+### Windows
+
+1. Download the Windows x64 `.msi` asset.
+2. Run the installer and leave **Launch Dashy** selected on the final page.
+3. Dashy opens its setup window: choose a language, then pick any combination of
    Claude, Codex, GitHub, Grok, and Cursor.
-5. Install or connect only the providers you selected, approving each visible
+4. Install or connect only the providers you selected, approving each visible
    command separately.
+
+### macOS
+
+1. Download the universal `.dmg` asset (Apple silicon and Intel).
+2. Open it and drag **Dashy** into **Applications**.
+3. Start Dashy from Applications. It appears only in the menu bar; move the
+   pointer to the configured screen edge or use **Show Dashy** from the menu bar.
+4. Complete the same setup window. Installs run through Homebrew where an official
+   package exists (Claude Code, Codex, GitHub CLI); the others open their official
+   guide.
+
+Private-test builds are not signed or notarized, so macOS reports that the app
+cannot be verified. Allow it under **System Settings → Privacy & Security → Open
+Anyway** after the first launch attempt.
+
+### Linux
+
+1. Download the `.deb` (Debian, Ubuntu), `.rpm` (Fedora, openSUSE), or `.AppImage`
+   asset for x86_64.
+2. Install the package with your distribution's tool, or mark the AppImage
+   executable and run it.
+3. Start Dashy from your application menu. Provider installs on Linux open each
+   provider's official guide because distributions package the CLIs differently;
+   sign-ins run in your terminal application.
+
+Dashy needs WebKitGTK 4.1 and an AppIndicator-capable tray; the deb and rpm
+declare those dependencies.
 
 Upgrades from an older build reopen the provider chooser once, with the existing
 choices preselected. Completing it records the current setup version so later
 upgrades preserve the selection without prompting again.
 
 The current private-test MSI is not code-signed, so Windows may show an
-**Unknown publisher** or SmartScreen warning. Code signing is required before a
-public release.
+**Unknown publisher** or SmartScreen warning, and the macOS build is not
+notarized. Code signing is required before a public release.
 
-Node.js, Rust, Cargo, Tauri, and Visual Studio Build Tools are development
+Node.js, Rust, Cargo, Tauri, and the platform build tools are development
 requirements only. End users do not install them.
 
 ## Contributing
@@ -182,7 +234,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers the rules that never be
 ## Contributor prerequisites
 
 The requirements in this section apply only when developing or packaging Dashy
-from this repository. They are not needed to install the Windows MSI above.
+from this repository. They are not needed to install the packages above.
 
 | Tool | Purpose |
 |---|---|
@@ -190,45 +242,54 @@ from this repository. They are not needed to install the Windows MSI above.
 | GitHub CLI (`gh`) | GitHub contribution data and sign-in |
 | Node.js LTS and npm | Frontend dependencies and Vite |
 | Rust and Cargo | Rust backend and Tauri compilation |
-| Microsoft C++ Build Tools | MSVC compiler and `link.exe` |
-| Microsoft Edge WebView2 Runtime | Tauri's Windows webview |
 | Tauri CLI 2 | Desktop development and packaging |
 | Provider CLIs (Claude Code, Codex, Grok Build, Cursor) | Provider metrics during development |
+| Windows: Microsoft C++ Build Tools and the Edge WebView2 Runtime | MSVC compiler, `link.exe`, and Tauri's Windows webview |
+| macOS: Xcode Command Line Tools and Homebrew | Apple toolchain and package installs |
+| Linux: `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `patchelf` | WebKitGTK, the tray, icons, and AppImage packaging |
 
-See the [Tauri v2 Windows prerequisites](https://v2.tauri.app/start/prerequisites/)
-for the platform toolchain details; each tool's official installer is the source of
+See the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for
+the platform toolchain details; each tool's official installer is the source of
 truth for its own setup.
 
 ## Contributor setup
 
-Open PowerShell in the repository. The bootstrap script first lets you inspect the
-development machine without changing it:
+Each platform has a bootstrap script that first lets you inspect the development
+machine without changing it. Check-only mode does not install software, change
+`PATH`, request administrator access, or start a provider login.
+
+Windows, in PowerShell:
 
 ```powershell
 .\install.ps1 -CheckOnly
-```
-
-`-CheckOnly` does not install software, change `PATH`, request administrator
-access, or start a provider login.
-
-To install missing prerequisites and the locked frontend dependencies:
-
-```powershell
 .\install.ps1
 ```
 
-The installer uses WinGet package IDs, skips available commands and packages, never
-removes or downgrades a tool, refreshes only the current PowerShell process's
-`PATH`, installs Tauri CLI 2 only when needed, and runs `npm ci` in `frontend`. The
-Visual Studio Build Tools installer may request elevation. If a newly installed
-command is still unavailable, open a new PowerShell window and rerun the installer.
+macOS and Linux, in a terminal:
+
+```bash
+./install.sh --check-only
+./install.sh
+```
+
+The Windows installer uses WinGet package IDs, skips available commands and
+packages, never removes or downgrades a tool, refreshes only the current PowerShell
+process's `PATH`, installs Tauri CLI 2 only when needed, and runs `npm ci` in
+`frontend`. The Visual Studio Build Tools installer may request elevation.
+
+The macOS script installs missing tools with Homebrew (including the Claude Code
+and Codex casks); the Linux script installs the WebKitGTK, tray, and packaging
+development packages with `apt-get` on Debian-family distributions and prints the
+package names for other distributions. Neither pipes a download into a shell.
+If a newly installed command is still unavailable, open a new shell and rerun the
+script.
 
 ## Provider CLI sign-in for contributors
 
 The bootstrap script never signs in for you. When developing from this repository,
 complete only the provider CLI logins you need:
 
-```powershell
+```sh
 gh auth login
 claude auth login
 codex login
@@ -238,7 +299,7 @@ cursor-agent login
 
 Check the existing CLI sessions with:
 
-```powershell
+```sh
 gh auth status --active
 claude auth status --json
 codex login status
@@ -250,8 +311,10 @@ stdio handshake it uses for usage.
 
 On Windows, Dashy recognizes both a standalone Codex executable and the standard
 global npm installation (`codex.cmd`), and the Cursor CLI's `cursor-agent.cmd`
-wrapper. Restart Dashy after installing or updating a provider CLI so it inherits
-the latest `PATH`.
+wrapper. On macOS and Linux, Dashy searches the process `PATH`, the login shell's
+`PATH`, and the directories the official installers use (`~/.local/bin`,
+`~/.grok/bin`, Homebrew, nvm and fnm versions, and so on). Restart Dashy after
+installing or updating a provider CLI so it inherits the latest `PATH`.
 
 Use each provider's own browser or terminal flow. Do not paste a token into Dashy,
 the installer, source files, or this README.
@@ -260,8 +323,8 @@ the installer, source files, or this README.
 
 For a browser-only visual preview of the notch:
 
-```powershell
-Set-Location frontend
+```sh
+cd frontend
 npm run dev
 ```
 
@@ -269,10 +332,10 @@ Open `http://localhost:5173/?fixture=1&placement=right&provider=claude&backgroun
 to render the deterministic fixture used for the screenshots above. Provider calls
 and native edge behavior are intentionally unavailable in a browser preview.
 
-For the Windows desktop application:
+For the desktop application on any platform:
 
-```powershell
-Set-Location backend
+```sh
+cd backend
 cargo tauri dev --no-watch
 ```
 
@@ -293,29 +356,33 @@ cursor coordinates, monitor metadata, raw CLI output, account identity, or error
 
 ## Test and build
 
-```powershell
-Set-Location frontend
+The same gates run in CI on Windows, macOS, and Linux:
+
+```sh
+cd frontend
 npm test
 npm run build
 
-Set-Location ..\backend
+cd ../backend
 cargo fmt --check
 cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 ```
 
-To build Windows bundles:
+To build the bundles for the current platform (MSI on Windows, DMG on macOS,
+deb, rpm, and AppImage on Linux):
 
-```powershell
-Set-Location backend
+```sh
+cd backend
 cargo tauri build -- --locked
 ```
 
 Bundle output is generated under `backend/target/release/bundle` and is not tracked.
 
-Releases follow an immutable-tag, five-file version-bump process with a read-only
-build job and a draft-first publish. The full guarded procedure lives in
-[docs/RELEASE.md](docs/RELEASE.md).
+Releases follow an immutable-tag, five-file version-bump process with read-only
+build jobs and a draft-first publish. The Windows workflow creates the draft with
+the MSI; the macOS and Linux workflow then adds the DMG and Linux packages to the
+same draft. The full guarded procedure lives in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## Troubleshooting
 
@@ -333,14 +400,23 @@ build job and a draft-first publish. The full guarded procedure lives in
   Show Dashy from the tray. A fullscreen application may be suppressing it.
 - **A saved monitor is disconnected:** Dashy falls back to the primary monitor; reconnect
   it or choose a new monitor in Settings.
-- **The tray is not visible:** check the Windows hidden-icons area.
+- **The tray is not visible:** on Windows check the hidden-icons area; on GNOME
+  install an AppIndicator extension; on macOS look in the menu bar.
+- **macOS says the app cannot be verified:** the private build is unsigned; use
+  **System Settings → Privacy & Security → Open Anyway**.
+- **The notch never reveals on Linux:** a Wayland session does not report the
+  global pointer; use **Show Dashy** from the tray or log into an X11 session.
+- **A provider is installed but Dashy says "Not installed" on macOS or Linux:**
+  the CLI is outside the login shell's `PATH`; add its directory to your shell
+  profile and restart Dashy.
 
 ## Support Dashy
 
-Dashy is free and will stay free. Its one real cost is the Windows code-signing
-certificate: without it, every download shows a SmartScreen warning, and the
-automatic updater cannot ship. Sponsorship goes there first, and the README will
-say so the day the installer is signed.
+Dashy is free and will stay free. Its real costs are code signing: the Windows
+certificate and Apple notarization. Without them every download shows a
+SmartScreen or Gatekeeper warning, and the automatic updater cannot ship.
+Sponsorship goes there first, and the README will say so the day the installers
+are signed.
 
 <a href="https://github.com/sponsors/adirangel"><img src="docs/images/sponsor-button.svg" width="300" height="56" alt="Sponsor Dashy"></a>
 

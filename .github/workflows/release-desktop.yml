@@ -1,0 +1,337 @@
+name: Release macOS and Linux packages
+
+# Runs after "Release Windows MSI" has built the MSI and created the draft
+# release for a version tag. It never creates a release of its own: it adds the
+# macOS DMG and the Linux deb, rpm, and AppImage packages, each with a SHA-256
+# checksum, to that existing draft and refuses to touch anything else.
+
+on:
+  workflow_run:
+    workflows: ["Release Windows MSI"]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Verify the release tag
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      sha: ${{ steps.tag.outputs.sha }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Resolve the release tag from the triggering run
+        id: tag
+        env:
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$HEAD_BRANCH" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The triggering run was not a vMAJOR.MINOR.PATCH tag push." >&2
+            exit 1
+          fi
+          if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The triggering commit is unavailable or malformed." >&2
+            exit 1
+          fi
+          {
+            echo "tag=$HEAD_BRANCH"
+            echo "sha=$HEAD_SHA"
+            echo "version=${HEAD_BRANCH#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.tag.outputs.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Require the live tag, origin/main ancestry, and matching versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_SHA: ${{ steps.tag.outputs.sha }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          live_sha="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$RELEASE_REPOSITORY/commits/refs/tags/$RELEASE_TAG" --jq .sha)"
+          if [[ "$live_sha" != "$RELEASE_SHA" ]]; then
+            echo "The release tag no longer points to the triggering commit." >&2
+            exit 1
+          fi
+          git fetch --no-tags --force origin "+refs/heads/main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main; then
+            echo "The release tag commit is not an ancestor of origin/main." >&2
+            exit 1
+          fi
+          node infrastructure/release/verify-version.mjs "$RELEASE_TAG"
+
+  build-macos:
+    name: Build the macOS DMG
+    needs: gate
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.14.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.98.0"
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Restore frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Verify the backend on macOS
+        run: |
+          cargo fmt --manifest-path backend/Cargo.toml --check
+          cargo test --manifest-path backend/Cargo.toml --locked
+
+      - name: Install pinned Tauri CLI
+        run: cargo install tauri-cli --version 2.11.4 --locked
+
+      - name: Build the universal DMG
+        id: tauri
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        with:
+          projectPath: backend
+          tauriScript: cargo tauri
+          uploadPlainBinary: false
+          uploadWorkflowArtifacts: false
+          args: --bundles dmg --target universal-apple-darwin -- --locked
+
+      - name: Create checksums and the release payload
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          RELEASE_VERSION: ${{ needs.gate.outputs.version }}
+          EXPECTED_PATTERN: '^Dashy_[0-9.]+_universal\.dmg$'
+          EXPECTED_COUNT: "1"
+        run: bash infrastructure/release/stage-assets.sh
+
+      - name: Transfer the verified release payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dashy-macos-${{ needs.gate.outputs.sha }}
+          path: ${{ runner.temp }}/dashy-release-assets
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+
+  build-linux:
+    name: Build the Linux packages
+    needs: gate
+    # The oldest supported Ubuntu keeps the AppImage and deb usable on older glibc.
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.14.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: "1.98.0"
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Restore frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Verify the backend on Linux
+        run: |
+          cargo fmt --manifest-path backend/Cargo.toml --check
+          cargo test --manifest-path backend/Cargo.toml --locked
+
+      - name: Install pinned Tauri CLI
+        run: cargo install tauri-cli --version 2.11.4 --locked
+
+      - name: Build the deb, rpm, and AppImage packages
+        id: tauri
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        with:
+          projectPath: backend
+          tauriScript: cargo tauri
+          uploadPlainBinary: false
+          uploadWorkflowArtifacts: false
+          args: --bundles deb,rpm,appimage --target x86_64-unknown-linux-gnu -- --locked
+
+      - name: Create checksums and the release payload
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+          RELEASE_VERSION: ${{ needs.gate.outputs.version }}
+          EXPECTED_PATTERN: '^Dashy[_-][0-9.]+(-1)?[_.](amd64\.deb|x86_64\.rpm|amd64\.AppImage)$'
+          EXPECTED_COUNT: "3"
+        run: bash infrastructure/release/stage-assets.sh
+
+      - name: Transfer the verified release payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dashy-linux-${{ needs.gate.outputs.sha }}
+          path: ${{ runner.temp }}/dashy-release-assets
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+
+  release-packages:
+    name: Add the packages to the draft release
+    needs: [gate, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the macOS payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dashy-macos-${{ needs.gate.outputs.sha }}
+          path: ${{ runner.temp }}/dashy-release-assets
+
+      - name: Download the Linux payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dashy-linux-${{ needs.gate.outputs.sha }}
+          path: ${{ runner.temp }}/dashy-release-assets
+
+      - name: Upload the packages to the existing draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.gate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.gate.outputs.version }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          EXPECTED_RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+          RELEASE_ASSET_DIRECTORY: ${{ runner.temp }}/dashy-release-assets
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Refusing non-semantic release tag." >&2; exit 1
+          fi
+          if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The release commit is unavailable or malformed." >&2; exit 1
+          fi
+          if [[ ! -d "$RELEASE_ASSET_DIRECTORY" ]]; then
+            echo "The downloaded release payload is unavailable." >&2; exit 1
+          fi
+
+          assert_live_tag() {
+            local live_sha
+            live_sha="$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/$RELEASE_REPOSITORY/commits/refs/tags/$RELEASE_TAG" --jq .sha)"
+            if [[ "$live_sha" != "$EXPECTED_RELEASE_SHA" ]]; then
+              echo "The release tag no longer points to the triggering commit." >&2
+              exit 1
+            fi
+          }
+
+          # Every payload file is an asset plus its .sha256; each checksum must
+          # describe the file beside it and every file name must carry the version.
+          cd "$RELEASE_ASSET_DIRECTORY"
+          mapfile -t assets < <(find . -maxdepth 1 -type f ! -name '*.sha256' -printf '%f\n' | sort)
+          if [[ "${#assets[@]}" -ne 4 ]]; then
+            echo "Expected the DMG and three Linux packages, found ${#assets[@]}." >&2; exit 1
+          fi
+          for asset in "${assets[@]}"; do
+            case "$asset" in
+              Dashy_"$RELEASE_VERSION"_universal.dmg|Dashy_"$RELEASE_VERSION"_amd64.deb|Dashy-"$RELEASE_VERSION"-1.x86_64.rpm|Dashy_"$RELEASE_VERSION"_amd64.AppImage) ;;
+              *) echo "Unexpected release asset: $asset" >&2; exit 1 ;;
+            esac
+            [[ -f "$asset.sha256" ]] || { echo "Missing checksum for $asset." >&2; exit 1; }
+            sha256sum --check --strict --quiet "$asset.sha256"
+          done
+          mapfile -t stray < <(find . -maxdepth 1 -type f -name '*.sha256' -printf '%f\n' | sed 's/\.sha256$//' | sort | comm -23 - <(printf '%s\n' "${assets[@]}"))
+          if [[ "${#stray[@]}" -ne 0 ]]; then
+            echo "Checksums without an asset: ${stray[*]}" >&2; exit 1
+          fi
+
+          assert_live_tag
+
+          release_json="$(gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json isDraft,isPrerelease,assets)" || {
+            echo "The Windows release workflow has not created the draft for $RELEASE_TAG." >&2
+            exit 1
+          }
+          if [[ "$(jq -r .isDraft <<<"$release_json")" != "true" ]]; then
+            echo "Refusing to modify a non-draft release." >&2; exit 1
+          fi
+          if [[ "$(jq -r .isPrerelease <<<"$release_json")" != "false" ]]; then
+            echo "Refusing an unexpected prerelease." >&2; exit 1
+          fi
+
+          # Assets already on the draft must be byte-identical to the local
+          # payload; anything else on the draft belongs to the Windows workflow.
+          to_upload=()
+          for file in "${assets[@]}" "${assets[@]/%/.sha256}"; do
+            remote_digest="$(jq -r --arg name "$file" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")"
+            local_digest="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+            if [[ -z "$remote_digest" ]]; then
+              to_upload+=("$file")
+            elif [[ "$remote_digest" != "$local_digest" ]]; then
+              echo "Existing release asset digest does not match $file." >&2; exit 1
+            fi
+          done
+
+          if [[ "${#to_upload[@]}" -ne 0 ]]; then
+            assert_live_tag
+            gh release upload "$RELEASE_TAG" "${to_upload[@]}" --repo "$RELEASE_REPOSITORY"
+          fi
+
+          final_json="$(gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json isDraft,assets)"
+          [[ "$(jq -r .isDraft <<<"$final_json")" == "true" ]] || { echo "The release is no longer a draft." >&2; exit 1; }
+          for file in "${assets[@]}" "${assets[@]/%/.sha256}"; do
+            remote_digest="$(jq -r --arg name "$file" '.assets[] | select(.name == $name) | .digest' <<<"$final_json")"
+            local_digest="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+            [[ "$remote_digest" == "$local_digest" ]] || { echo "Draft release is missing or altered $file." >&2; exit 1; }
+          done
+          assert_live_tag

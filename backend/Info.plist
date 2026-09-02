@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Dashy is a menu-bar utility: no Dock icon and no application menu. -->
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>

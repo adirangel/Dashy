@@ -13,7 +13,7 @@ const ru = {
     useProvider: "Использовать {{provider}} в Dashy", connected: "Подключено", notInstalled: "Не установлено", signInRequired: "Требуется вход", needsAttention: "Требует внимания",
     installing: "Установка", connecting: "Подключение",
     install: "Установить {{provider}}", connect: "Подключить {{provider}}", retry: "Повторить", cancel: "Отмена", confirmInstall: "Подтвердить установку", confirmLogin: "Открыть официальный вход",
-    installDisclosure: "Dashy откроет видимый терминал и выполнит эту команду WinGet.", installManualDisclosure: "Dashy откроет официальное руководство по установке в браузере.", loginDisclosure: "Dashy откроет официальный вход провайдера в видимом терминале и браузере.",
+    installDisclosure: "Dashy откроет видимый терминал и выполнит эту команду.", installManualDisclosure: "Dashy откроет официальное руководство по установке в браузере.", loginDisclosure: "Dashy откроет официальный вход провайдера в видимом терминале и браузере.",
     publisher: "Издатель", packageId: "Пакет", command: "Команда", manualHelp: "Открыть официальное руководство по установке", manualHelpFailure: "Dashy не удалось открыть официальное руководство по установке.", finish: "Завершить настройку",
     finishFailure: "Dashy не удалось сохранить выбор провайдеров.", actionFailure: "Настройка провайдера требует внимания.", loading: "Проверка установленных инструментов",
   },

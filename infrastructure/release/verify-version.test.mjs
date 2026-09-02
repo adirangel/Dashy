@@ -682,6 +682,21 @@ test("release step mutates only a verified draft with the exact transferred payl
   assert.match(digestMismatch.result.stderr, /asset digest does not match/);
   assert.doesNotMatch(digestMismatch.log, /^release\|(create|upload)\|/m);
 
+  const companionAssets = await runReleaseScenario(script, "companion-assets", {
+    initialRelease: releaseRecord({
+      assets: [
+        ...created.fullAssets,
+        { name: "Dashy_0.1.0_universal.dmg", size: 5, digest: `sha256:${"d".repeat(64)}` },
+        { name: "Dashy_0.1.0_universal.dmg.sha256", size: 5, digest: `sha256:${"d".repeat(64)}` },
+        { name: "Dashy_0.1.0_amd64.deb", size: 5, digest: `sha256:${"d".repeat(64)}` },
+        { name: "Dashy-0.1.0-1.x86_64.rpm", size: 5, digest: `sha256:${"d".repeat(64)}` },
+        { name: "Dashy_0.1.0_amd64.AppImage.sha256", size: 5, digest: `sha256:${"d".repeat(64)}` },
+      ],
+    }),
+  });
+  assert.equal(companionAssets.result.status, 0, companionAssets.result.stderr || companionAssets.result.stdout);
+  assert.doesNotMatch(companionAssets.log, /^release\|(create|upload)\|/m);
+
   const unexpectedAsset = await runReleaseScenario(script, "unexpected-asset", {
     initialRelease: releaseRecord({
       assets: [{ name: "extra.exe", size: 1, digest: `sha256:${"e".repeat(64)}` }],
@@ -722,4 +737,102 @@ test("release step mutates only a verified draft with the exact transferred payl
   assert.notEqual(corruptTransfer.result.status, 0);
   assert.match(corruptTransfer.result.stderr, /payload digests do not match/);
   assert.equal(corruptTransfer.log, "");
+});
+
+test("macOS and Linux release workflow only extends the draft the Windows workflow created", async () => {
+  const desktopPath = path.resolve(".github/workflows/release-desktop.yml");
+  const source = (await readFile(desktopPath, "utf8")).replace(/\r\n?/g, "\n");
+  const gate = extractJob(source, "gate");
+  const macos = extractJob(source, "build-macos");
+  const linux = extractJob(source, "build-linux");
+  const release = extractJob(source, "release-packages");
+
+  assert.match(source, /^permissions: \{\}$/m);
+  assert.match(source, /workflow_run:\n\s+workflows: \["Release Windows MSI"\]\n\s+types: \[completed\]/);
+  assert.match(gate, /github\.event\.workflow_run\.conclusion == 'success'/);
+  assert.match(gate, /^    permissions:\n      contents: read$/m);
+  assert.match(gate, /"repos\/\$RELEASE_REPOSITORY\/commits\/refs\/tags\/\$RELEASE_TAG"/);
+  assert.match(gate, /merge-base --is-ancestor/);
+  assert.match(gate, /verify-version\.mjs "\$RELEASE_TAG"/);
+  for (const build of [macos, linux]) {
+    assert.match(build, /^    needs: gate$/m);
+    assert.match(build, /^    permissions:\n      contents: read$/m);
+    assert.match(build, /ref: \$\{\{ needs\.gate\.outputs\.sha \}\}/);
+    assert.match(build, /persist-credentials: false/);
+    assert.match(build, /infrastructure\/release\/stage-assets\.sh/);
+    assert.match(build, /-- --locked/);
+    assert.doesNotMatch(build, /secrets\.|contents: write/);
+  }
+  assert.match(macos, /--bundles dmg --target universal-apple-darwin/);
+  assert.match(linux, /--bundles deb,rpm,appimage --target x86_64-unknown-linux-gnu/);
+  assert.match(release, /^    needs: \[gate, build-macos, build-linux\]$/m);
+  assert.match(release, /^    permissions:\n      contents: write$/m);
+  assert.match(release, /Refusing to modify a non-draft release/);
+  assert.match(release, /has not created the draft/);
+  assert.doesNotMatch(release, /actions\/checkout|setup-node|rust-toolchain|tauri-action/);
+  assert.doesNotMatch(release, /release\s+create|--clobber|release\s+delete|asset\s+delete/);
+  assert.equal((source.match(/secrets\.GITHUB_TOKEN/g) ?? []).length, 1);
+
+  const uses = [...source.matchAll(/^\s+uses:\s+([^\s#]+)(?:\s+#.*)?$/gm)]
+    .map((match) => match[1]);
+  assert.ok(uses.length >= 8);
+  for (const action of uses) {
+    assert.match(action, /^[^@]+@[0-9a-f]{40}$/, action);
+  }
+});
+
+test("asset staging script rejects unexpected bundles and stages one checksum per bundle", async () => {
+  const scriptPath = path.resolve("infrastructure/release/stage-assets.sh");
+  const root = await mkdtemp(path.join(tmpdir(), "dashy-release-stage-"));
+  const bundleDirectory = path.join(root, "bundle");
+  await mkdir(bundleDirectory);
+  const dmg = path.join(bundleDirectory, "Dashy_0.1.0_universal.dmg");
+  await writeFile(dmg, "verified-dmg");
+  await mkdir(path.join(bundleDirectory, "Dashy.app"));
+
+  const run = (runnerTemp, artifacts, extraEnv = {}) => spawnSync("bash", [scriptPath], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ARTIFACT_PATHS: JSON.stringify(artifacts),
+      RELEASE_VERSION: "0.1.0",
+      EXPECTED_PATTERN: String.raw`^Dashy_[0-9.]+_universal\.dmg$`,
+      EXPECTED_COUNT: "1",
+      RUNNER_TEMP: runnerTemp,
+      ...extraEnv,
+    },
+  });
+
+  if (process.platform === "win32") {
+    return; // the staging script runs on the macOS and Linux build runners only
+  }
+
+  const success = run(path.join(root, "ok"), [dmg, path.join(bundleDirectory, "Dashy.app")]);
+  assert.equal(success.status, 0, success.stderr || success.stdout);
+  const staged = await readdir(path.join(root, "ok", "dashy-release-assets"));
+  assert.deepEqual(staged.sort(), [
+    "Dashy_0.1.0_universal.dmg",
+    "Dashy_0.1.0_universal.dmg.sha256",
+  ]);
+  const checksum = await readFile(
+    path.join(root, "ok", "dashy-release-assets", "Dashy_0.1.0_universal.dmg.sha256"),
+    "utf8",
+  );
+  assert.equal(checksum, `${sha256("verified-dmg")}  Dashy_0.1.0_universal.dmg\n`);
+
+  const stray = path.join(bundleDirectory, "Dashy_0.1.0_x64.exe");
+  await writeFile(stray, "stray");
+  const rejected = run(path.join(root, "stray"), [dmg, stray]);
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /Unexpected bundle name: Dashy_0\.1\.0_x64\.exe/);
+
+  const wrongVersion = path.join(bundleDirectory, "Dashy_0.2.0_universal.dmg");
+  await writeFile(wrongVersion, "wrong");
+  const mismatch = run(path.join(root, "version"), [wrongVersion]);
+  assert.notEqual(mismatch.status, 0);
+  assert.match(mismatch.stderr, /does not carry version 0\.1\.0/);
+
+  const none = run(path.join(root, "none"), []);
+  assert.notEqual(none.status, 0);
+  assert.match(none.stderr, /Expected 1 bundles, staged 0/);
 });

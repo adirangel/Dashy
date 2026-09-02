@@ -13,7 +13,7 @@ const ar = {
     useProvider: "استخدام {{provider}} في Dashy", connected: "متصل", notInstalled: "غير مثبت", signInRequired: "يلزم تسجيل الدخول", needsAttention: "يحتاج إلى إجراء",
     installing: "جارٍ التثبيت", connecting: "جارٍ الاتصال",
     install: "تثبيت {{provider}}", connect: "ربط {{provider}}", retry: "إعادة المحاولة", cancel: "إلغاء", confirmInstall: "تأكيد التثبيت", confirmLogin: "فتح تسجيل الدخول الرسمي",
-    installDisclosure: "سيفتح Dashy طرفية ظاهرة وينفذ أمر WinGet هذا.", installManualDisclosure: "سيفتح Dashy دليل التثبيت الرسمي في المتصفح.", loginDisclosure: "سيفتح Dashy تسجيل الدخول الرسمي للموفر في طرفية ظاهرة والمتصفح.",
+    installDisclosure: "سيفتح Dashy طرفية ظاهرة وينفذ هذا الأمر.", installManualDisclosure: "سيفتح Dashy دليل التثبيت الرسمي في المتصفح.", loginDisclosure: "سيفتح Dashy تسجيل الدخول الرسمي للموفر في طرفية ظاهرة والمتصفح.",
     publisher: "الناشر", packageId: "الحزمة", command: "الأمر", manualHelp: "فتح دليل التثبيت الرسمي", manualHelpFailure: "تعذر على Dashy فتح دليل التثبيت الرسمي.", finish: "إنهاء الإعداد",
     finishFailure: "تعذر على Dashy حفظ اختيار الموفرين.", actionFailure: "يحتاج إعداد الموفر إلى إجراء.", loading: "جارٍ فحص الأدوات المثبتة",
   },

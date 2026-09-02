@@ -3,10 +3,11 @@
 ## Future product ideas
 
 - **Tasks as an additional side-notch metric:** Consider a tasks tile that opens a dedicated tasks card alongside the provider tiles.
-- **Signed Windows releases:** Sign the Dashy executable and MSI in CI before public distribution so Windows can verify the publisher and build reputation.
+- **Signed releases:** Sign the Dashy executable and MSI in CI, and sign and notarize the macOS app, before public distribution so Windows and macOS can verify the publisher.
 - **Automatic updates:** Add a signed in-app update path after the release and signing process is stable.
 - **Windows ARM64:** Add and verify a native ARM64 installer when demand justifies a second Windows artifact.
-- **macOS and Linux packages:** Preserve platform boundaries while the installer remains Windows-only, then design native distribution and provider setup for each operating system.
+- **Wayland edge reveal:** Wayland compositors hide the global pointer and other clients' windows, so the notch neither reveals from the edge nor hides for fullscreen apps there. Investigate compositor-specific protocols (layer-shell, GNOME and KDE extensions) once one is stable enough to depend on.
+- **Linux ARM64 and macOS Grok install:** Add aarch64 Linux packages when demand justifies them, and add a Homebrew install for Grok Build once an official package exists.
 - **Grok stdio billing follow-up:** Grok Build 1.0.x rejects `x.ai/billing` over `agent stdio` while signed out (`-32601`); Dashy degrades to an unavailable tile if a signed-in build behaves the same. Re-verify against newer Grok releases and pin the live handshake once billing is confirmed over stdio.
 
 ## Explicitly skipped

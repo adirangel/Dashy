@@ -17,6 +17,18 @@ const codex = {
   repairAction: "install",
 };
 
+const claudeOnMac = {
+  definition: {
+    provider: "claude", publisher: "Anthropic", packageId: "claude-code",
+    installKind: "homebrew",
+    installCommand: "brew install --cask claude-code",
+    installUrl: "https://code.claude.com/docs/en/setup",
+    loginCommand: "claude auth login --claudeai",
+  },
+  status: "notInstalled",
+  repairAction: "install",
+};
+
 const cursor = {
   definition: {
     provider: "cursor", publisher: "Anysphere", packageId: null,
@@ -33,8 +45,21 @@ describe("provider setup IPC", () => {
   beforeEach(() => mocks.invoke.mockReset());
 
   it("accepts the exact setup contract", async () => {
-    mocks.invoke.mockResolvedValue([codex, cursor]);
-    await expect(getProviderSetupStates()).resolves.toEqual([codex, cursor]);
+    mocks.invoke.mockResolvedValue([codex, claudeOnMac, cursor]);
+    await expect(getProviderSetupStates()).resolves.toEqual([codex, claudeOnMac, cursor]);
+  });
+
+  it.each([
+    ["a homebrew kind without a package id", (definition: Record<string, unknown>) => { definition.packageId = null; }],
+    ["a homebrew kind without an install command", (definition: Record<string, unknown>) => {
+      definition.installCommand = null;
+    }],
+  ] as const)("rejects %s before it reaches the UI", async (_case, mutate) => {
+    const definition = { ...claudeOnMac.definition } as Record<string, unknown>;
+    mutate(definition);
+    mocks.invoke.mockResolvedValue([{ ...claudeOnMac, definition }]);
+
+    await expect(getProviderSetupStates()).rejects.toThrow(/invalid provider setup response/i);
   });
 
   it.each([

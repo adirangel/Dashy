@@ -13,7 +13,7 @@ const he = {
     useProvider: "השתמשו ב־{{provider}} ב־Dashy", connected: "מחובר", notInstalled: "לא מותקן", signInRequired: "נדרשת התחברות", needsAttention: "דורש טיפול",
     installing: "מתבצעת התקנה", connecting: "מתבצע חיבור",
     install: "התקנת {{provider}}", connect: "חיבור {{provider}}", retry: "ניסיון חוזר", cancel: "ביטול", confirmInstall: "אישור ההתקנה", confirmLogin: "פתיחת ההתחברות הרשמית",
-    installDisclosure: "Dashy יפתח מסוף גלוי ויריץ את פקודת WinGet הזאת.", installManualDisclosure: "Dashy יפתח את מדריך ההתקנה הרשמי בדפדפן.", loginDisclosure: "Dashy יפתח את ההתחברות הרשמית של הספק במסוף גלוי ובדפדפן.",
+    installDisclosure: "Dashy יפתח מסוף גלוי ויריץ את הפקודה הזאת.", installManualDisclosure: "Dashy יפתח את מדריך ההתקנה הרשמי בדפדפן.", loginDisclosure: "Dashy יפתח את ההתחברות הרשמית של הספק במסוף גלוי ובדפדפן.",
     publisher: "מפרסם", packageId: "חבילה", command: "פקודה", manualHelp: "פתיחת מדריך ההתקנה הרשמי", manualHelpFailure: "Dashy לא הצליח לפתוח את מדריך ההתקנה הרשמי.", finish: "סיום ההגדרה",
     finishFailure: "Dashy לא הצליח לשמור את בחירת הספקים.", actionFailure: "הגדרת הספק דורשת טיפול.", loading: "בודק כלים מותקנים",
   },

@@ -22,11 +22,11 @@ use windows::{
 };
 
 use crate::desktop::{
-    edge::{MonitorScale, MonitorWorkArea, Point, Rect, WindowLayout},
+    edge::{MonitorScale, MonitorWorkArea, Point, WindowLayout},
+    fullscreen::{window_covers_monitor, RawRect},
     platform::{DesktopError, MonitorDescriptor, NativeWindowHandle},
 };
 
-const FULLSCREEN_EDGE_TOLERANCE_PX: i64 = 2;
 const MAX_DISPLAY_LABEL_SCALARS: usize = 80;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -121,41 +121,6 @@ fn apply_window_bounds_with(
         },
         no_activate: true,
     })
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct RawRect {
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
-}
-
-impl RawRect {
-    const fn new(left: i32, top: i32, right: i32, bottom: i32) -> Self {
-        Self {
-            left,
-            top,
-            right,
-            bottom,
-        }
-    }
-
-    fn from_rect(rect: Rect) -> Option<Self> {
-        if rect.width == 0 || rect.height == 0 {
-            return None;
-        }
-        Some(Self {
-            left: rect.x,
-            top: rect.y,
-            right: rect.x.checked_add_unsigned(rect.width)?,
-            bottom: rect.y.checked_add_unsigned(rect.height)?,
-        })
-    }
-
-    fn has_positive_extent(self) -> bool {
-        self.right > self.left && self.bottom > self.top
-    }
 }
 
 impl From<RECT> for RawRect {
@@ -422,20 +387,10 @@ fn classify_fullscreen(
 ) -> bool {
     if dashy_window_handles.contains(&foreground_handle)
         || foreground_monitor_id != selected_monitor_id
-        || !window_rect.has_positive_extent()
-        || !monitor_rect.has_positive_extent()
     {
         return false;
     }
-
-    (i64::from(window_rect.left) - i64::from(monitor_rect.left)).abs()
-        <= FULLSCREEN_EDGE_TOLERANCE_PX
-        && (i64::from(window_rect.top) - i64::from(monitor_rect.top)).abs()
-            <= FULLSCREEN_EDGE_TOLERANCE_PX
-        && (i64::from(window_rect.right) - i64::from(monitor_rect.right)).abs()
-            <= FULLSCREEN_EDGE_TOLERANCE_PX
-        && (i64::from(window_rect.bottom) - i64::from(monitor_rect.bottom)).abs()
-            <= FULLSCREEN_EDGE_TOLERANCE_PX
+    window_covers_monitor(window_rect, monitor_rect)
 }
 
 #[cfg(test)]
@@ -448,7 +403,7 @@ mod tests {
     use crate::{
         dashboard::models::ProviderId,
         desktop::{
-            edge::{window_layout, EdgeUiState},
+            edge::{window_layout, EdgeUiState, Rect},
             settings::{
                 AppSettings, EdgePlacement, MonitorPreference, SettingsPatch, SettingsPersistence,
                 SettingsService,
@@ -747,66 +702,6 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, DesktopError::InvalidMonitorGeometry);
-    }
-
-    #[test]
-    fn exact_monitor_coverage_is_fullscreen() {
-        assert!(classify_fullscreen(
-            41,
-            &[],
-            "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(0, 0, 1920, 1080),
-            RawRect::new(0, 0, 1920, 1080),
-        ));
-    }
-
-    #[test]
-    fn two_pixel_inset_on_every_edge_is_tolerated() {
-        assert!(classify_fullscreen(
-            41,
-            &[],
-            "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(2, 2, 1918, 1078),
-            RawRect::new(0, 0, 1920, 1080),
-        ));
-    }
-
-    #[test]
-    fn a_three_pixel_gap_is_not_fullscreen() {
-        assert!(!classify_fullscreen(
-            41,
-            &[],
-            "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(0, 0, 1920, 1077),
-            RawRect::new(0, 0, 1920, 1080),
-        ));
-    }
-
-    #[test]
-    fn a_window_extending_far_beyond_a_monitor_is_not_fullscreen() {
-        assert!(!classify_fullscreen(
-            41,
-            &[],
-            "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(-100, 0, 1920, 1080),
-            RawRect::new(0, 0, 1920, 1080),
-        ));
-    }
-
-    #[test]
-    fn maximized_to_work_area_does_not_count_as_fullscreen() {
-        assert!(!classify_fullscreen(
-            41,
-            &[],
-            "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(0, 0, 1920, 1040),
-            RawRect::new(0, 0, 1920, 1080),
-        ));
     }
 
     #[test]

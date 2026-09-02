@@ -13,7 +13,7 @@ const ja = {
     useProvider: "Dashy で {{provider}} を使用", connected: "接続済み", notInstalled: "未インストール", signInRequired: "サインインが必要", needsAttention: "確認が必要",
     installing: "インストール中", connecting: "接続中",
     install: "{{provider}} をインストール", connect: "{{provider}} に接続", retry: "再試行", cancel: "キャンセル", confirmInstall: "インストールを確認", confirmLogin: "公式ログインを開く",
-    installDisclosure: "Dashy は表示されたターミナルを開き、この WinGet コマンドを実行します。", installManualDisclosure: "Dashy はブラウザーで公式インストールガイドを開きます。", loginDisclosure: "Dashy は表示されたターミナルとブラウザーでプロバイダーの公式ログインを開きます。",
+    installDisclosure: "Dashy は表示されたターミナルを開き、このコマンドを実行します。", installManualDisclosure: "Dashy はブラウザーで公式インストールガイドを開きます。", loginDisclosure: "Dashy は表示されたターミナルとブラウザーでプロバイダーの公式ログインを開きます。",
     publisher: "発行元", packageId: "パッケージ", command: "コマンド", manualHelp: "公式インストールガイドを開く", manualHelpFailure: "Dashy は公式インストールガイドを開けませんでした。", finish: "セットアップを完了",
     finishFailure: "Dashy はプロバイダーの選択を保存できませんでした。", actionFailure: "プロバイダーのセットアップを確認してください。", loading: "インストール済みツールを確認中",
   },

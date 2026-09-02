@@ -21,12 +21,18 @@ way. Read this once before opening an issue or a pull request.
 
 ## Set up a development machine
 
-Windows is the release target. Open PowerShell in the repository and let the
-bootstrap script check what is missing, then install it:
+Windows, macOS, and Linux are all release targets, and CI verifies every pull
+request on the three of them. Let the bootstrap script for your platform check
+what is missing, then install it:
 
 ```powershell
 .\install.ps1 -CheckOnly
 .\install.ps1
+```
+
+```bash
+./install.sh --check-only
+./install.sh
 ```
 
 Sign in to only the provider CLIs you need (`gh auth login`, `claude auth
@@ -38,8 +44,8 @@ signs in for you and Dashy never asks for a token.
 Browser preview of the notch with deterministic fixture data (no providers,
 no native edge behavior):
 
-```powershell
-Set-Location frontend
+```sh
+cd frontend
 npm run dev
 ```
 
@@ -47,33 +53,41 @@ Then open `http://localhost:5173/?fixture=1&placement=right&provider=claude&back
 
 The desktop application:
 
-```powershell
-Set-Location backend
+```sh
+cd backend
 cargo tauri dev --no-watch
 ```
 
 ## Before you push
 
-The same gates run in CI on every pull request (`.github/workflows/verify.yml`);
-run them locally first:
+The same gates run in CI on Windows, macOS, and Linux for every pull request
+(`.github/workflows/verify.yml`); run them locally first:
 
-```powershell
-Set-Location frontend
+```sh
+cd frontend
 npx tsc --noEmit -p .
 npm test
 npm run build
 
-Set-Location ..
-npm run test:release
+cd ..
+npm run test:release   # Windows only: it drives the PowerShell release steps
 
-Set-Location backend
+cd backend
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 ```
 
 If you touched the app icon, edit `backend/icons/icon.svg` and run
-`npm run icons:build`; CI fails when `icon.ico` no longer matches the SVG.
+`npm run icons:build`; CI fails when any generated icon (`icon.ico`,
+`icon.icns`, or the PNGs) no longer matches the SVG.
+
+Platform-specific code stays behind the desktop probe (`backend/src/desktop/`:
+`windows.rs`, `macos.rs`, `linux.rs`) and the Unix launcher
+(`backend/src/dashboard/unix.rs`). The edge machine, controller, providers, and
+UI are shared; a change there must not assume one operating system, and a
+platform backend must degrade to "not fullscreen" or "no cursor" rather than
+fail the controller.
 
 ## Pull requests
 

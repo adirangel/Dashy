@@ -155,7 +155,7 @@ fn calculate_streak(days: &[ContributionDay], today: NaiveDate) -> u32 {
     let mut streak = 0;
 
     while let Some(date) = current_date {
-        if !counts.get(&date).is_some_and(|count| *count > 0) {
+        if counts.get(&date).is_none_or(|count| *count == 0) {
             break;
         }
         streak += 1;

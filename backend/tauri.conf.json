@@ -28,7 +28,8 @@
         "transparent": true,
         "alwaysOnTop": false,
         "skipTaskbar": true,
-        "shadow": false
+        "shadow": false,
+        "visibleOnAllWorkspaces": true
       },
       {
         "label": "settings",
@@ -56,12 +57,26 @@
         "transparent": false,
         "skipTaskbar": false
       }
-    ]
+    ],
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
-    "icon": ["icons/icon.ico"],
+    "targets": [
+      "msi",
+      "dmg",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/icon.png",
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ],
     "windows": {
       "allowDowngrades": false,
       "webviewInstallMode": {
@@ -71,6 +86,17 @@
       "wix": {
         "language": "en-US",
         "upgradeCode": "ea949cb5-35f6-540d-a3ee-0cc7721c122c"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "section": "utils"
+      },
+      "rpm": {
+        "epoch": 0
       }
     }
   }

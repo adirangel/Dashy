@@ -1,4 +1,9 @@
-# Creating a Windows release
+# Creating a release
+
+One version tag produces the Windows MSI, the macOS DMG, and the Linux deb, rpm,
+and AppImage packages. The Windows workflow builds the MSI and creates the draft
+release; the macOS and Linux workflow runs after it succeeds and adds its packages
+to that same draft.
 
 Release tags are immutable. Start from an up-to-date `main` checkout and choose a
 new, unused semantic version such as `0.2.0`; never move, delete, or reuse an
@@ -155,9 +160,10 @@ enforced tag ruleset is the external control that closes that race.
    Never create a tag for an uncommitted tree or retag a different commit. If the
    workflow fails, fix the issue in a new commit and use a new patch version.
 
-4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed. Its
-   read-only build job first fetches `origin/main` and rejects any tag whose commit
-   is not in that branch's history. It validates the three manifest versions and
+4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed, then for
+   `release-desktop.yml`, which it triggers. The Windows read-only build job first
+   fetches `origin/main` and rejects any tag whose commit is not in that branch's
+   history. It validates the three manifest versions and
    both frontend lockfile version fields, builds and hashes the MSI, then transfers
    only that MSI and its matching checksum through immutable-pinned official
    artifact actions. A separate job with only `contents: write` downloads and
@@ -167,8 +173,18 @@ enforced tag ruleset is the external control that closes that race.
    `refs/tags/<tag>` reference's peeled commit to equal the triggering workflow SHA.
    A draft can remain partial or blocked while that workflow is still running or
    has failed; do not publish or manually complete it.
+
+   `release-desktop.yml` starts only from a successful Windows run. Its gate job
+   re-resolves the live tag, requires `origin/main` ancestry, and re-checks the
+   manifest versions; its macOS and Linux build jobs have only `contents: read`,
+   build with `--locked`, and stage each package beside a `.sha256` through the
+   same pinned artifact actions. Its release job never creates a release: it
+   requires the existing draft, verifies every checksum, uploads only the
+   packages that are missing, and fails if an existing asset differs.
 5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
-   `.msi` and its matching `.msi.sha256` checksum:
+   `.msi`, one universal `.dmg`, one `.deb`, one `.rpm`, and one `.AppImage`, each
+   with its matching `.sha256` checksum. The command below verifies the MSI; run
+   the equivalent `sha256sum --check` on macOS or Linux for the other packages:
 
    ```powershell
    $releaseTag = "v0.2.0"
@@ -189,9 +205,28 @@ enforced tag ruleset is the external control that closes that race.
    ```
 
 6. Complete [the Windows release checklist](WINDOWS_RELEASE_CHECKLIST.md) on
-   a clean Windows x64 machine. Publish the draft only when every automated and
-   clean-machine gate passes.
+   a clean Windows x64 machine, and the macOS and Linux smoke test below on clean
+   machines. Publish the draft only when every automated and clean-machine gate
+   passes.
 
-Private-test MSI releases are unsigned. Windows may show an **Unknown publisher**
-or SmartScreen warning; do not describe an unsigned build as suitable for public
-distribution.
+## macOS and Linux smoke test
+
+- [ ] macOS: open the DMG on a Mac without developer tooling, drag Dashy to
+      Applications, allow the unsigned app under Privacy & Security, and confirm
+      Dashy appears only in the menu bar with no Dock icon.
+- [ ] macOS: confirm the notch reveals on the configured edge, follows a Space
+      switch, and hides beside a fullscreen app unless the override is enabled.
+- [ ] macOS: confirm a Homebrew install action opens Terminal, runs only the
+      displayed `brew install` command, and that logins open the provider's flow.
+- [ ] Linux: install the deb on Ubuntu and the rpm on Fedora, and run the AppImage
+      on one of them, each on an X11 session; confirm the tray appears and the
+      notch reveals on the configured edge.
+- [ ] Linux: on a Wayland session confirm **Show Dashy** from the tray still opens
+      the notch and that the README's Wayland limitation matches what you see.
+- [ ] Both: confirm uninstalling Dashy leaves the provider CLIs and their logins
+      untouched.
+
+Private-test releases are unsigned and not notarized. Windows may show an
+**Unknown publisher** or SmartScreen warning and macOS blocks the first launch
+until the app is allowed; do not describe an unsigned build as suitable for
+public distribution.

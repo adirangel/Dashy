@@ -71,6 +71,8 @@ pub fn run() {
     };
 
     let process_runner = SystemProcessRunner;
+    #[cfg(unix)]
+    dashboard::unix::prime_login_shell_path();
     let diagnostics = Arc::new(FileDiagnostics::new());
     let dashboard = Arc::new(
         DashboardService::new(
@@ -103,9 +105,18 @@ pub fn run() {
             let settings = Arc::new(service_from_tauri_store(app).map_err(std::io::Error::other)?);
             let settings_changes = settings.subscribe();
             let probe: Arc<dyn DesktopProbe> =
-                Arc::new(desktop::platform::PlatformDesktopProbe::new());
+                Arc::new(desktop::platform::PlatformDesktopProbe::new(app.handle()));
             let window: Arc<dyn WindowPort> =
                 Arc::new(TauriWindowPort::from_manager(app).map_err(std::io::Error::other)?);
+            #[cfg(target_os = "macos")]
+            {
+                // Dashy is a menu-bar utility: no Dock icon, no app menu, and a
+                // notch that follows the user across Spaces.
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                if let Some(main) = desktop::macos::main_window(app.handle()) {
+                    desktop::macos::configure_main_window(&main).map_err(std::io::Error::other)?;
+                }
+            }
             let controller = Arc::new(DesktopController::new(
                 probe.clone(),
                 window,
@@ -329,26 +340,84 @@ mod config_tests {
     }
 
     #[test]
-    fn windows_bundle_uses_only_the_windows_icon() {
-        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
-        let config: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
+    fn bundle_icons_cover_windows_macos_and_linux() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir.join("tauri.conf.json")).unwrap(),
+        )
+        .unwrap();
 
+        let icons = config["bundle"]["icon"].as_array().unwrap();
         assert_eq!(
-            config["bundle"]["icon"],
-            serde_json::json!(["icons/icon.ico"])
+            icons,
+            &serde_json::json!([
+                "icons/icon.ico",
+                "icons/icon.icns",
+                "icons/icon.png",
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png"
+            ])
+            .as_array()
+            .unwrap()
+            .clone()
+        );
+        for icon in icons {
+            let path = manifest_dir.join(icon.as_str().unwrap());
+            assert!(
+                path.is_file(),
+                "{} is missing; run npm run icons:build",
+                path.display()
+            );
+        }
+        let icns = std::fs::read(manifest_dir.join("icons/icon.icns")).unwrap();
+        assert_eq!(&icns[..4], b"icns");
+        assert_eq!(
+            u32::from_be_bytes(icns[4..8].try_into().unwrap()) as usize,
+            icns.len()
         );
     }
 
     #[test]
-    fn windows_bundle_is_an_upgradeable_x64_msi_with_online_webview_bootstrap() {
+    fn macos_bundle_is_a_transparent_menu_bar_utility() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(manifest_dir.join("tauri.conf.json")).unwrap(),
+        )
+        .unwrap();
+        let main = config["app"]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|window| window["label"] == "main")
+            .unwrap();
+
+        assert_eq!(
+            config["app"]["macOSPrivateApi"], true,
+            "a transparent undecorated window on macOS requires the private API flag"
+        );
+        assert_eq!(main["visibleOnAllWorkspaces"], true);
+
+        let plist = std::fs::read_to_string(manifest_dir.join("Info.plist")).unwrap();
+        assert!(
+            plist.contains("<key>LSUIElement</key>") && plist.contains("<true/>"),
+            "the macOS bundle must register as a UI element so it has no Dock icon"
+        );
+    }
+
+    #[test]
+    fn bundle_targets_one_installer_format_per_platform_and_an_upgradeable_msi() {
         let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
         let config: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
         let bundle = &config["bundle"];
         let windows = &bundle["windows"];
 
-        assert_eq!(bundle["targets"], serde_json::json!(["msi"]));
+        assert_eq!(
+            bundle["targets"],
+            serde_json::json!(["msi", "dmg", "deb", "rpm", "appimage"]),
+            "Windows keeps the MSI only (no NSIS); macOS ships a DMG; Linux ships deb, rpm, and AppImage"
+        );
         assert_eq!(windows["allowDowngrades"], false);
         assert_eq!(
             windows["webviewInstallMode"],

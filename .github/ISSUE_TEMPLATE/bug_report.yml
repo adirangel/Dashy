@@ -30,10 +30,10 @@ body:
       label: Placement
       options: [Right, Left, Top]
   - type: input
-    id: windows
+    id: platform
     attributes:
-      label: Windows version and display setup
-      placeholder: Windows 11 24H2, two monitors, 150% scaling
+      label: Operating system and display setup
+      placeholder: Windows 11 24H2 / macOS 15.5 / Ubuntu 24.04 on X11, two monitors, 150% scaling
   - type: textarea
     id: extra
     attributes:

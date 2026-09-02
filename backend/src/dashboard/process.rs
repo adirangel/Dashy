@@ -29,6 +29,7 @@ pub enum AllowedProgram {
     Grok,
     CursorAgent,
     Winget,
+    Brew,
 }
 
 impl AllowedProgram {
@@ -40,14 +41,15 @@ impl AllowedProgram {
             Self::Grok => "grok",
             Self::CursorAgent => "cursor-agent",
             Self::Winget => "winget",
+            Self::Brew => "brew",
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ProgramLaunch {
-    executable: PathBuf,
-    prefix_args: Vec<std::ffi::OsString>,
+pub(crate) struct ProgramLaunch {
+    pub(crate) executable: PathBuf,
+    pub(crate) prefix_args: Vec<std::ffi::OsString>,
 }
 
 fn program_launch(program: AllowedProgram) -> ProgramLaunch {
@@ -55,6 +57,12 @@ fn program_launch(program: AllowedProgram) -> ProgramLaunch {
     {
         let path_entries = current_windows_program_search_paths();
         if let Some(launch) = resolve_windows_program_from_paths(program, &path_entries) {
+            return launch;
+        }
+    }
+    #[cfg(unix)]
+    {
+        if let Some(launch) = super::unix::program_launch(program) {
             return launch;
         }
     }
@@ -344,6 +352,7 @@ pub enum ProcessError {
 pub enum VisibleProcessError {
     NotInstalled,
     UnsupportedPlatform,
+    NoTerminal,
     Failed,
 }
 
@@ -413,7 +422,11 @@ impl VisibleRunner for SystemProcessRunner {
                 .then_some(())
                 .ok_or(VisibleProcessError::Failed);
         }
-        #[cfg(not(windows))]
+        #[cfg(unix)]
+        {
+            super::unix::run_visible(program, args).await
+        }
+        #[cfg(not(any(windows, unix)))]
         {
             let _ = (program, args);
             Err(VisibleProcessError::UnsupportedPlatform)
@@ -591,6 +604,11 @@ fn spawn_piped(
     }
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
+    // Desktop-launched processes on macOS and Linux inherit a minimal PATH; the
+    // provider CLIs spawn their own helpers (node, gh), so hand them the same
+    // search path Dashy resolved the CLI from.
+    #[cfg(unix)]
+    command.env("PATH", super::unix::child_path_value());
     command.kill_on_drop(true).spawn().map_err(map_spawn_error)
 }
 
@@ -805,6 +823,7 @@ mod tests {
         assert_eq!(AllowedProgram::Grok.executable(), "grok");
         assert_eq!(AllowedProgram::CursorAgent.executable(), "cursor-agent");
         assert_eq!(AllowedProgram::Winget.executable(), "winget");
+        assert_eq!(AllowedProgram::Brew.executable(), "brew");
     }
 
     #[cfg(windows)]
