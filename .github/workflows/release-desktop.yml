@@ -1,17 +1,20 @@
 name: Release macOS and Linux packages
 
-# Runs after "Release Windows MSI" has built the MSI and created the draft
-# release for a version tag. It never creates a release of its own: it adds the
-# macOS DMG and the Linux deb, rpm, and AppImage packages, each with a SHA-256
-# checksum, to that existing draft and refuses to touch anything else.
+# Builds the macOS DMG and the Linux deb, rpm, and AppImage packages for a
+# version tag, alongside "Release Windows MSI". It never creates a release of
+# its own: once the Windows workflow has created the draft release with the
+# MSI, this workflow adds its packages, each with a SHA-256 checksum, to that
+# draft and refuses to touch anything else.
 #
-# It can also be started by hand for a tag whose draft already holds the MSI,
-# for example after fixing a package build, without rebuilding the MSI.
+# Both workflows start from the same tag push, so this one waits (bounded) for
+# the Windows draft before uploading. It can also be started by hand for a tag
+# whose draft already holds the MSI, for example after fixing a package build,
+# without rebuilding the MSI.
 
 on:
-  workflow_run:
-    workflows: ["Release Windows MSI"]
-    types: [completed]
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
   workflow_dispatch:
     inputs:
       tag:
@@ -24,10 +27,6 @@ permissions: {}
 jobs:
   gate:
     name: Verify the release tag
-    if: >-
-      github.event_name == 'workflow_dispatch'
-      || (github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,13 +35,13 @@ jobs:
       sha: ${{ steps.tag.outputs.sha }}
       version: ${{ steps.tag.outputs.version }}
     steps:
-      - name: Resolve the release tag from the triggering run or the manual input
+      - name: Resolve the release tag from the push or the manual input
         id: tag
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PUSHED_TAG: ${{ github.ref_name }}
+          PUSHED_SHA: ${{ github.sha }}
           INPUT_TAG: ${{ inputs.tag }}
           RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
@@ -50,23 +49,24 @@ jobs:
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             tag="$INPUT_TAG"
           else
-            tag="$HEAD_BRANCH"
+            tag="$PUSHED_TAG"
           fi
           if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "The release tag is not a vMAJOR.MINOR.PATCH tag." >&2
             exit 1
           fi
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            # A manual run has no triggering commit; the live tag is the source of truth.
-            sha="$(gh api \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "repos/$RELEASE_REPOSITORY/commits/refs/tags/$tag" --jq .sha)"
-          else
-            sha="$HEAD_SHA"
-          fi
+          # The live tag is the source of truth for both entry points; a push
+          # must also agree with the commit the run was started for.
+          sha="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$RELEASE_REPOSITORY/commits/refs/tags/$tag" --jq .sha)"
           if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "The release commit is unavailable or malformed." >&2
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" != "workflow_dispatch" && "$sha" != "$PUSHED_SHA" ]]; then
+            echo "The release tag no longer points to the pushed commit." >&2
             exit 1
           fi
           {
@@ -328,10 +328,23 @@ jobs:
 
           assert_live_tag
 
-          release_json="$(gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json isDraft,isPrerelease,assets)" || {
-            echo "The Windows release workflow has not created the draft for $RELEASE_TAG." >&2
-            exit 1
-          }
+          # "Release Windows MSI" starts from the same tag push and creates the
+          # draft; wait for it (bounded) rather than racing it. Only a draft
+          # that already carries the MSI and its checksum counts.
+          msi_name="Dashy_${RELEASE_VERSION}_x64_en-US.msi"
+          release_json=""
+          for attempt in $(seq 1 60); do
+            if release_json="$(gh release view "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --json isDraft,isPrerelease,assets 2>/dev/null)" \
+              && [[ "$(jq -r --arg name "$msi_name" '[.assets[] | select(.name == $name or .name == ($name + ".sha256"))] | length' <<<"$release_json")" == "2" ]]; then
+              break
+            fi
+            release_json=""
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "The Windows release workflow has not created the draft for $RELEASE_TAG with $msi_name." >&2
+              exit 1
+            fi
+            sleep 60
+          done
           if [[ "$(jq -r .isDraft <<<"$release_json")" != "true" ]]; then
             echo "Refusing to modify a non-draft release." >&2; exit 1
           fi

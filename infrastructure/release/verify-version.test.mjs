@@ -748,8 +748,13 @@ test("macOS and Linux release workflow only extends the draft the Windows workfl
   const release = extractJob(source, "release-packages");
 
   assert.match(source, /^permissions: \{\}$/m);
-  assert.match(source, /workflow_run:\n\s+workflows: \["Release Windows MSI"\]\n\s+types: \[completed\]/);
-  assert.match(gate, /github\.event\.workflow_run\.conclusion == 'success'/);
+  // A tag push and a manual dispatch are the only entry points: both are
+  // trusted events, so no job ever checks out code named by an untrusted
+  // payload (CodeQL's untrusted-checkout and cache-poisoning rules).
+  assert.match(source, /^on:\n  push:\n    tags:\n      - "v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*"\n  workflow_dispatch:/m);
+  assert.doesNotMatch(source, /workflow_run|pull_request_target|github\.event\.workflow_run/);
+  assert.match(gate, /"repos\/\$RELEASE_REPOSITORY\/commits\/refs\/tags\/\$tag"/);
+  assert.match(gate, /no longer points to the pushed commit/);
   assert.match(gate, /^    permissions:\n      contents: read$/m);
   assert.match(gate, /"repos\/\$RELEASE_REPOSITORY\/commits\/refs\/tags\/\$RELEASE_TAG"/);
   assert.match(gate, /merge-base --is-ancestor/);
@@ -769,6 +774,8 @@ test("macOS and Linux release workflow only extends the draft the Windows workfl
   assert.match(release, /^    permissions:\n      contents: write$/m);
   assert.match(release, /Refusing to modify a non-draft release/);
   assert.match(release, /has not created the draft/);
+  assert.match(release, /for attempt in \$\(seq 1 60\)/);
+  assert.match(release, /sleep 60/);
   assert.doesNotMatch(release, /actions\/checkout|setup-node|rust-toolchain|tauri-action/);
   assert.doesNotMatch(release, /release\s+create|--clobber|release\s+delete|asset\s+delete/);
   assert.equal((source.match(/secrets\.GITHUB_TOKEN/g) ?? []).length, 1);
