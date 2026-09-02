@@ -748,13 +748,17 @@ test("macOS and Linux release workflow only extends the draft the Windows workfl
   const release = extractJob(source, "release-packages");
 
   assert.match(source, /^permissions: \{\}$/m);
-  // A tag push and a manual dispatch are the only entry points: both are
-  // trusted events, so no job ever checks out code named by an untrusted
-  // payload (CodeQL's untrusted-checkout and cache-poisoning rules).
-  assert.match(source, /^on:\n  push:\n    tags:\n      - "v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*"\n  workflow_dispatch:/m);
-  assert.doesNotMatch(source, /workflow_run|pull_request_target|github\.event\.workflow_run/);
+  // A tag push and a parameterless manual dispatch on that tag are the only
+  // entry points, and every checkout builds the commit the run was started
+  // for. A ref named by a run input would count as untrusted code executed in
+  // the default-branch context (CodeQL's cache-poisoning rules).
+  assert.match(source, /^on:\n  push:\n    tags:\n      - "v\[0-9\]\*\.\[0-9\]\*\.\[0-9\]\*"\n  workflow_dispatch:\n\npermissions/m);
+  assert.doesNotMatch(source, /workflow_run|pull_request_target|github\.event\.workflow_run|inputs\./);
+  assert.equal((source.match(/ref: \$\{\{ github\.sha \}\}/g) ?? []).length, 3);
+  assert.doesNotMatch(source, /ref: \$\{\{ (steps|needs)\./);
   assert.match(gate, /"repos\/\$RELEASE_REPOSITORY\/commits\/refs\/tags\/\$tag"/);
-  assert.match(gate, /no longer points to the pushed commit/);
+  assert.match(gate, /REF_TYPE" != "tag"/);
+  assert.match(gate, /no longer points to the commit this run was started for/);
   assert.match(gate, /^    permissions:\n      contents: read$/m);
   assert.match(gate, /"repos\/\$RELEASE_REPOSITORY\/commits\/refs\/tags\/\$RELEASE_TAG"/);
   assert.match(gate, /merge-base --is-ancestor/);
@@ -762,7 +766,7 @@ test("macOS and Linux release workflow only extends the draft the Windows workfl
   for (const build of [macos, linux]) {
     assert.match(build, /^    needs: gate$/m);
     assert.match(build, /^    permissions:\n      contents: read$/m);
-    assert.match(build, /ref: \$\{\{ needs\.gate\.outputs\.sha \}\}/);
+    assert.match(build, /ref: \$\{\{ github\.sha \}\}/);
     assert.match(build, /persist-credentials: false/);
     assert.match(build, /infrastructure\/release\/stage-assets\.sh/);
     assert.match(build, /-- --locked/);

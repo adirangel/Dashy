@@ -182,10 +182,12 @@ enforced tag ruleset is the external control that closes that race.
    release job never creates a release: it waits up to an hour for the Windows
    draft to exist with the MSI and its checksum, verifies every local checksum,
    uploads only the packages that are missing, and fails if an existing asset
-   differs. If one of its jobs fails after the MSI draft exists, fix the cause on
-   `main` and start it again by hand from the Actions tab (**Release macOS and
-   Linux packages → Run workflow**, with the release tag); the manual run passes
-   through the same gates.
+   differs. Every job builds the commit the run was started for. If one of its
+   jobs fails after the MSI draft exists and the tag's commit already carries
+   the fix, start it again by hand from the Actions tab (**Release macOS and
+   Linux packages → Run workflow**, selecting the release tag as the ref); the
+   manual run passes through the same gates. If the fix is not in the tag's
+   commit, cut a new patch version instead: release tags are immutable.
 5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
    `.msi`, one universal `.dmg`, one `.deb`, one `.rpm`, and one `.AppImage`, each
    with its matching `.sha256` checksum. The command below verifies the MSI; run
