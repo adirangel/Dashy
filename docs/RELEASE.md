@@ -2,8 +2,8 @@
 
 One version tag produces the Windows MSI, the macOS DMG, and the Linux deb, rpm,
 and AppImage packages. The Windows workflow builds the MSI and creates the draft
-release; the macOS and Linux workflow runs after it succeeds and adds its packages
-to that same draft.
+release; the macOS and Linux workflow starts from the same tag push, waits for
+that draft, and adds its packages to it.
 
 Release tags are immutable. Start from an up-to-date `main` checkout and choose a
 new, unused semantic version such as `0.2.0`; never move, delete, or reuse an
@@ -160,10 +160,10 @@ enforced tag ruleset is the external control that closes that race.
    Never create a tag for an uncommitted tree or retag a different commit. If the
    workflow fails, fix the issue in a new commit and use a new patch version.
 
-4. Wait for the `release-windows.yml` GitHub Actions workflow to succeed, then for
-   `release-desktop.yml`, which it triggers. The Windows read-only build job first
-   fetches `origin/main` and rejects any tag whose commit is not in that branch's
-   history. It validates the three manifest versions and
+4. Wait for the `release-windows.yml` and `release-desktop.yml` GitHub Actions
+   workflows to succeed; both start from the tag push. The Windows read-only build
+   job first fetches `origin/main` and rejects any tag whose commit is not in that
+   branch's history. It validates the three manifest versions and
    both frontend lockfile version fields, builds and hashes the MSI, then transfers
    only that MSI and its matching checksum through immutable-pinned official
    artifact actions. A separate job with only `contents: write` downloads and
@@ -174,13 +174,20 @@ enforced tag ruleset is the external control that closes that race.
    A draft can remain partial or blocked while that workflow is still running or
    has failed; do not publish or manually complete it.
 
-   `release-desktop.yml` starts only from a successful Windows run. Its gate job
-   re-resolves the live tag, requires `origin/main` ancestry, and re-checks the
-   manifest versions; its macOS and Linux build jobs have only `contents: read`,
-   build with `--locked`, and stage each package beside a `.sha256` through the
-   same pinned artifact actions. Its release job never creates a release: it
-   requires the existing draft, verifies every checksum, uploads only the
-   packages that are missing, and fails if an existing asset differs.
+   `release-desktop.yml` runs in parallel. Its gate job resolves the live tag
+   through the commits API, requires it to match the pushed commit and to be an
+   `origin/main` ancestor, and re-checks the manifest versions; its macOS and
+   Linux build jobs have only `contents: read`, build with `--locked`, and stage
+   each package beside a `.sha256` through the same pinned artifact actions. Its
+   release job never creates a release: it waits up to an hour for the Windows
+   draft to exist with the MSI and its checksum, verifies every local checksum,
+   uploads only the packages that are missing, and fails if an existing asset
+   differs. Every job builds the commit the run was started for. If one of its
+   jobs fails after the MSI draft exists and the tag's commit already carries
+   the fix, start it again by hand from the Actions tab (**Release macOS and
+   Linux packages → Run workflow**, selecting the release tag as the ref); the
+   manual run passes through the same gates. If the fix is not in the tag's
+   commit, cut a new patch version instead: release tags are immutable.
 5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
    `.msi`, one universal `.dmg`, one `.deb`, one `.rpm`, and one `.AppImage`, each
    with its matching `.sha256` checksum. The command below verifies the MSI; run
