@@ -4,11 +4,20 @@ name: Release macOS and Linux packages
 # release for a version tag. It never creates a release of its own: it adds the
 # macOS DMG and the Linux deb, rpm, and AppImage packages, each with a SHA-256
 # checksum, to that existing draft and refuses to touch anything else.
+#
+# It can also be started by hand for a tag whose draft already holds the MSI,
+# for example after fixing a package build, without rebuilding the MSI.
 
 on:
   workflow_run:
     workflows: ["Release Windows MSI"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose draft already holds the MSI (for example v0.5.0)"
+        required: true
+        type: string
 
 permissions: {}
 
@@ -16,8 +25,9 @@ jobs:
   gate:
     name: Verify the release tag
     if: >-
-      github.event.workflow_run.conclusion == 'success'
-      && github.event.workflow_run.event == 'push'
+      github.event_name == 'workflow_dispatch'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,25 +36,43 @@ jobs:
       sha: ${{ steps.tag.outputs.sha }}
       version: ${{ steps.tag.outputs.version }}
     steps:
-      - name: Resolve the release tag from the triggering run
+      - name: Resolve the release tag from the triggering run or the manual input
         id: tag
         env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          if [[ ! "$HEAD_BRANCH" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "The triggering run was not a vMAJOR.MINOR.PATCH tag push." >&2
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+          else
+            tag="$HEAD_BRANCH"
+          fi
+          if [[ ! "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "The release tag is not a vMAJOR.MINOR.PATCH tag." >&2
             exit 1
           fi
-          if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "The triggering commit is unavailable or malformed." >&2
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            # A manual run has no triggering commit; the live tag is the source of truth.
+            sha="$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/$RELEASE_REPOSITORY/commits/refs/tags/$tag" --jq .sha)"
+          else
+            sha="$HEAD_SHA"
+          fi
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The release commit is unavailable or malformed." >&2
             exit 1
           fi
           {
-            echo "tag=$HEAD_BRANCH"
-            echo "sha=$HEAD_SHA"
-            echo "version=${HEAD_BRANCH#v}"
+            echo "tag=$tag"
+            echo "sha=$sha"
+            echo "version=${tag#v}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check out the release commit
@@ -104,6 +132,7 @@ jobs:
         with:
           toolchain: "1.98.0"
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: rustfmt
 
       - name: Restore frontend dependencies
         run: npm --prefix frontend ci
@@ -183,6 +212,7 @@ jobs:
         with:
           toolchain: "1.98.0"
           targets: x86_64-unknown-linux-gnu
+          components: rustfmt
 
       - name: Restore frontend dependencies
         run: npm --prefix frontend ci

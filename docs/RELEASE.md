@@ -180,7 +180,11 @@ enforced tag ruleset is the external control that closes that race.
    build with `--locked`, and stage each package beside a `.sha256` through the
    same pinned artifact actions. Its release job never creates a release: it
    requires the existing draft, verifies every checksum, uploads only the
-   packages that are missing, and fails if an existing asset differs.
+   packages that are missing, and fails if an existing asset differs. If one
+   of its jobs fails after the MSI draft exists, fix the cause on `main` and
+   start it again by hand from the Actions tab (**Release macOS and Linux
+   packages → Run workflow**, with the release tag); it resolves the tag through
+   the commits API and runs the same gates.
 5. Inspect and verify the resulting draft. It must contain exactly one Windows x64
    `.msi`, one universal `.dmg`, one `.deb`, one `.rpm`, and one `.AppImage`, each
    with its matching `.sha256` checksum. The command below verifies the MSI; run
