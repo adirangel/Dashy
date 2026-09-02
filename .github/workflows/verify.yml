@@ -82,6 +82,12 @@ jobs:
         if: runner.os == 'Windows'
         run: npm run test:release
 
+      - name: Test the asset staging script
+        # The staging script runs on the macOS and Linux package builders, and
+        # the macOS runner ships Bash 3.2, so exercise it on both of their shells.
+        if: runner.os != 'Windows'
+        run: node --test --test-name-pattern "asset staging" infrastructure/release/verify-version.test.mjs
+
       - name: Check that the generated icons match icon.svg
         run: |
           npm run icons:build

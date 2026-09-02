@@ -794,6 +794,11 @@ test("macOS and Linux release workflow only extends the draft the Windows workfl
 
 test("asset staging script rejects unexpected bundles and stages one checksum per bundle", async () => {
   const scriptPath = path.resolve("infrastructure/release/stage-assets.sh");
+  // The macOS package builder runs this script on the runner's Bash 3.2, which
+  // has no mapfile or readarray, and on a system without sha256sum.
+  const script = await readFile(scriptPath, "utf8");
+  assert.doesNotMatch(script, /\b(mapfile|readarray)\b/);
+  assert.match(script, /shasum -a 256/);
   const root = await mkdtemp(path.join(tmpdir(), "dashy-release-stage-"));
   const bundleDirectory = path.join(root, "bundle");
   await mkdir(bundleDirectory);
