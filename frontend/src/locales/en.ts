@@ -33,7 +33,7 @@ const en = {
     useProvider: "Use {{provider}} in Dashy", connected: "Connected", notInstalled: "Not installed", signInRequired: "Sign in required", needsAttention: "Needs attention",
     installing: "Installing", connecting: "Connecting",
     install: "Install {{provider}}", connect: "Connect {{provider}}", retry: "Retry", cancel: "Cancel", confirmInstall: "Confirm installation", confirmLogin: "Open official login",
-    installDisclosure: "Dashy will open a visible terminal and run this WinGet command.", installManualDisclosure: "Dashy will open the official install guide in your browser.", loginDisclosure: "Dashy will open the provider's official login in a visible terminal and browser.",
+    installDisclosure: "Dashy will open a visible terminal and run this command.", installManualDisclosure: "Dashy will open the official install guide in your browser.", loginDisclosure: "Dashy will open the provider's official login in a visible terminal and browser.",
     publisher: "Publisher", packageId: "Package", command: "Command", manualHelp: "Open official installation guide", manualHelpFailure: "Dashy could not open the official installation guide.", finish: "Finish setup",
     finishFailure: "Dashy could not save your provider selection.", actionFailure: "Provider setup needs attention.", loading: "Checking installed tools",
   },

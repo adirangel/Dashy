@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ProviderId, ProviderStatus } from "../dashboard";
 
-export type ProviderInstallKind = "winget" | "manualUrl";
+export type ProviderInstallKind = "winget" | "homebrew" | "manualUrl";
+
+const packageManagerInstallKinds = new Set<ProviderInstallKind>(["winget", "homebrew"]);
+
+function isPackageManagerInstall(kind: ProviderInstallKind): boolean {
+  return packageManagerInstallKinds.has(kind);
+}
 
 export type ProviderSetupDefinition = {
   provider: ProviderId;
@@ -48,11 +54,14 @@ function isProviderSetupDefinition(value: unknown): value is ProviderSetupDefini
     && providerIds.has(candidate.provider as ProviderId)
     && typeof candidate.publisher === "string"
     && (candidate.packageId === null || typeof candidate.packageId === "string")
-    && (candidate.installKind === "winget" || candidate.installKind === "manualUrl")
-    // A winget install needs a package id; a manual install must not claim one.
-    && (candidate.installKind === "winget") === (typeof candidate.packageId === "string")
-    // Same coherence for the command: winget shows one, manual installs have none.
     && (candidate.installKind === "winget"
+      || candidate.installKind === "homebrew"
+      || candidate.installKind === "manualUrl")
+    // A package-manager install (WinGet on Windows, Homebrew on macOS) needs a
+    // package id; a manual install must not claim one.
+    && isPackageManagerInstall(candidate.installKind) === (typeof candidate.packageId === "string")
+    // Same coherence for the command: package managers show one, manual installs have none.
+    && (isPackageManagerInstall(candidate.installKind)
       ? typeof candidate.installCommand === "string"
       : candidate.installCommand === null)
     && candidate.installUrl === approvedInstallUrls[candidate.provider as ProviderId]

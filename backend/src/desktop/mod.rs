@@ -5,6 +5,13 @@ use tauri::{AppHandle, Manager};
 pub mod commands;
 pub mod controller;
 pub mod edge;
+// macOS compares CoreGraphics points in floating point inside macos.rs.
+#[cfg(not(target_os = "macos"))]
+mod fullscreen;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod linux;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod menu;
 pub mod platform;
 pub mod settings;

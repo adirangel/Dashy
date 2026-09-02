@@ -130,7 +130,11 @@ impl ControllerRuntime {
 
 pub struct TauriWindowPort<R: Runtime> {
     main: WebviewWindow<R>,
+    // Only Win32 identifies the foreground window by handle; macOS and Linux
+    // recognise Dashy's own windows by process id instead.
+    #[cfg(windows)]
     settings: Option<WebviewWindow<R>>,
+    #[cfg(windows)]
     onboarding: Option<WebviewWindow<R>>,
 }
 
@@ -141,7 +145,9 @@ impl<R: Runtime> TauriWindowPort<R> {
             .ok_or(DesktopError::WindowOperationFailed)?;
         Ok(Self {
             main,
+            #[cfg(windows)]
             settings: manager.get_webview_window("settings"),
+            #[cfg(windows)]
             onboarding: manager.get_webview_window("onboarding"),
         })
     }

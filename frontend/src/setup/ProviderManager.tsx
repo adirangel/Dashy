@@ -49,7 +49,7 @@ function Confirmation({
   const { t } = useTranslation();
   const labelId = `provider-setup-${definition.provider}-${action}-confirmation`;
   // Manual-URL providers have no command to run: the confirmation only opens the
-  // official install guide, so it discloses that instead of a winget command.
+  // official install guide, so it discloses that instead of a package-manager command.
   const manualInstall = action === "install" && definition.installKind === "manualUrl";
   const confirmKey = manualInstall
     ? "setup.manualHelp"

@@ -13,7 +13,7 @@ const fr = {
     useProvider: "Utiliser {{provider}} dans Dashy", connected: "Connecté", notInstalled: "Non installé", signInRequired: "Connexion requise", needsAttention: "Nécessite votre attention",
     installing: "Installation", connecting: "Connexion",
     install: "Installer {{provider}}", connect: "Connecter {{provider}}", retry: "Réessayer", cancel: "Annuler", confirmInstall: "Confirmer l’installation", confirmLogin: "Ouvrir la connexion officielle",
-    installDisclosure: "Dashy ouvrira un terminal visible et exécutera cette commande WinGet.", installManualDisclosure: "Dashy ouvrira le guide d’installation officiel dans votre navigateur.", loginDisclosure: "Dashy ouvrira la connexion officielle du fournisseur dans un terminal visible et le navigateur.",
+    installDisclosure: "Dashy ouvrira un terminal visible et exécutera cette commande.", installManualDisclosure: "Dashy ouvrira le guide d’installation officiel dans votre navigateur.", loginDisclosure: "Dashy ouvrira la connexion officielle du fournisseur dans un terminal visible et le navigateur.",
     publisher: "Éditeur", packageId: "Paquet", command: "Commande", manualHelp: "Ouvrir le guide d’installation officiel", manualHelpFailure: "Dashy n’a pas pu ouvrir le guide d’installation officiel.", finish: "Terminer la configuration",
     finishFailure: "Dashy n’a pas pu enregistrer la sélection des fournisseurs.", actionFailure: "La configuration du fournisseur nécessite votre attention.", loading: "Vérification des outils installés",
   },

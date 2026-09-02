@@ -4,7 +4,7 @@ use crate::dashboard::{
     models::ProviderId,
     process::{AllowedProgram, VisibleProcessError, VisibleRunner},
 };
-use crate::setup::models::ProviderSetupDefinition;
+use crate::setup::models::{HostPlatform, ProviderInstallKind, ProviderSetupDefinition};
 
 pub struct SetupService {
     runner: Arc<dyn VisibleRunner>,
@@ -16,27 +16,30 @@ impl SetupService {
     }
 
     pub async fn install(&self, provider: ProviderId) -> Result<(), String> {
+        self.install_on(provider, HostPlatform::current()).await
+    }
+
+    pub async fn install_on(
+        &self,
+        provider: ProviderId,
+        platform: HostPlatform,
+    ) -> Result<(), String> {
         // Manual-URL providers are installed through their official guide, which the
         // frontend opens from its exact-URL allowlist; defense in depth keeps this
         // path from ever spawning a process for them.
-        let Some(package) = ProviderSetupDefinition::for_provider(provider).package_id else {
+        let package = ProviderSetupDefinition::for_provider_on(provider, platform).package;
+        let Some(args) = package.install_args() else {
             return Err("provider does not support automated install".to_owned());
         };
+        let program = match package.install_kind() {
+            ProviderInstallKind::Winget => AllowedProgram::Winget,
+            ProviderInstallKind::Homebrew => AllowedProgram::Brew,
+            ProviderInstallKind::ManualUrl => {
+                return Err("provider does not support automated install".to_owned())
+            }
+        };
         self.runner
-            .run_visible(
-                AllowedProgram::Winget,
-                vec![
-                    "install".into(),
-                    "--id".into(),
-                    package.into(),
-                    "--exact".into(),
-                    "--source".into(),
-                    "winget".into(),
-                    "--interactive".into(),
-                    "--accept-source-agreements".into(),
-                    "--accept-package-agreements".into(),
-                ],
-            )
+            .run_visible(program, args)
             .await
             .map_err(sanitize_setup_error)
     }
@@ -62,6 +65,9 @@ fn sanitize_setup_error(error: VisibleProcessError) -> String {
             "provider setup is not supported on this platform"
         }
         VisibleProcessError::NotInstalled => "provider tool is not installed",
+        VisibleProcessError::NoTerminal => {
+            "no terminal application was found to run the provider tool"
+        }
         VisibleProcessError::Failed => "provider setup process did not complete",
     }
     .to_string()
@@ -78,6 +84,7 @@ mod tests {
         models::ProviderId,
         process::{AllowedProgram, VisibleProcessError, VisibleRunner},
     };
+    use crate::setup::models::HostPlatform;
 
     #[derive(Default)]
     struct RecordingRunner(std::sync::Mutex<Vec<(AllowedProgram, Vec<String>)>>);
@@ -104,7 +111,10 @@ mod tests {
     async fn install_uses_only_the_exact_codex_winget_package() {
         let runner = Arc::new(RecordingRunner::default());
         let service = SetupService::new(runner.clone());
-        service.install(ProviderId::Codex).await.unwrap();
+        service
+            .install_on(ProviderId::Codex, HostPlatform::Windows)
+            .await
+            .unwrap();
         assert_eq!(
             runner.calls(),
             vec![(
@@ -131,7 +141,10 @@ mod tests {
     async fn install_uses_only_the_exact_grok_winget_package() {
         let runner = Arc::new(RecordingRunner::default());
         let service = SetupService::new(runner.clone());
-        service.install(ProviderId::Grok).await.unwrap();
+        service
+            .install_on(ProviderId::Grok, HostPlatform::Windows)
+            .await
+            .unwrap();
         let calls = runner.calls();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, AllowedProgram::Winget);
@@ -139,14 +152,56 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cursor_install_never_spawns_a_process() {
+    async fn macos_install_uses_only_the_exact_homebrew_package() {
+        let runner = Arc::new(RecordingRunner::default());
+        let service = SetupService::new(runner.clone());
+        service
+            .install_on(ProviderId::Claude, HostPlatform::MacOs)
+            .await
+            .unwrap();
+        service
+            .install_on(ProviderId::GitHub, HostPlatform::MacOs)
+            .await
+            .unwrap();
+        assert_eq!(
+            runner.calls(),
+            vec![
+                (
+                    AllowedProgram::Brew,
+                    vec!["install".into(), "--cask".into(), "claude-code".into()]
+                ),
+                (AllowedProgram::Brew, vec!["install".into(), "gh".into()]),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn cursor_grok_on_macos_and_every_linux_install_never_spawn_a_process() {
         let runner = Arc::new(RecordingRunner::default());
         let service = SetupService::new(runner.clone());
 
+        for platform in [
+            HostPlatform::Windows,
+            HostPlatform::MacOs,
+            HostPlatform::Linux,
+        ] {
+            assert_eq!(
+                service.install_on(ProviderId::Cursor, platform).await,
+                Err("provider does not support automated install".to_owned())
+            );
+        }
         assert_eq!(
-            service.install(ProviderId::Cursor).await,
+            service
+                .install_on(ProviderId::Grok, HostPlatform::MacOs)
+                .await,
             Err("provider does not support automated install".to_owned())
         );
+        for provider in ProviderId::ALL {
+            assert_eq!(
+                service.install_on(provider, HostPlatform::Linux).await,
+                Err("provider does not support automated install".to_owned())
+            );
+        }
         assert!(runner.calls().is_empty());
     }
 

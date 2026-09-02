@@ -296,6 +296,9 @@ jobs:
           }
 
           $expectedNames = @($requiredMsiName, "$requiredMsiName.sha256")
+          # release-desktop.yml adds these to the same draft after this workflow
+          # succeeds; a re-run must tolerate them without ever touching them.
+          $companionAssetPattern = '^Dashy(_' + [regex]::Escape($version) + '_(universal\.dmg|amd64\.deb|amd64\.AppImage)|-' + [regex]::Escape($version) + '-1\.x86_64\.rpm)(\.sha256)?$'
           $expectedTitle = "Dashy $tag"
           $expectedNotes = (([string]$env:RELEASE_NOTES -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd([char[]]"`n")
           if (-not $expectedNotes) { throw "The required release warning is unavailable." }
@@ -314,7 +317,7 @@ jobs:
               throw "Draft release body is missing the required unsigned-build warning."
             }
 
-            $assets = @($release.assets)
+            $assets = @($release.assets | Where-Object { $_.name -cnotmatch $companionAssetPattern })
             $unexpected = @($assets | Where-Object { $expectedNames -cnotcontains $_.name })
             if ($unexpected.Count) {
               throw "Draft release contains unexpected assets: $($unexpected.name -join ', ')."

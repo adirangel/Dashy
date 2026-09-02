@@ -295,7 +295,10 @@ mod tests {
 
         let result = run_provider_setup_action(
             ProviderId::Codex,
-            setup.install(ProviderId::Codex),
+            setup.install_on(
+                ProviderId::Codex,
+                crate::setup::models::HostPlatform::Windows,
+            ),
             move |provider| {
                 refresh_trace.lock().unwrap().push("refresh");
                 std::future::ready(ProviderSetupState {

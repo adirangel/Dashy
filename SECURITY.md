@@ -39,6 +39,7 @@ Build, Cursor) belong to their vendors.
 
 ## Unsigned builds
 
-Current releases are not code-signed, so Windows may show a SmartScreen or
-Unknown publisher warning. Verify a download against the `.sha256` file
-published with every release before installing.
+Current releases are not code-signed or notarized, so Windows may show a
+SmartScreen or Unknown publisher warning and macOS may refuse to open the app
+until it is allowed under Privacy & Security. Verify a download against the
+`.sha256` file published with every release before installing.

@@ -14,14 +14,35 @@ concurrency:
 
 jobs:
   verify:
-    name: Frontend, backend, and release tooling
-    runs-on: windows-latest
-    timeout-minutes: 45
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
+          - os: ubuntu-latest
+            name: Linux
     steps:
       - name: Check out the commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -56,12 +77,15 @@ jobs:
         run: npm ci
 
       - name: Test the release tooling
+        # The release workflow tests drive PowerShell steps with Windows command
+        # mocks, so they run where the release workflow runs.
+        if: runner.os == 'Windows'
         run: npm run test:release
 
-      - name: Check that icon.ico matches icon.svg
+      - name: Check that the generated icons match icon.svg
         run: |
           npm run icons:build
-          git diff --exit-code -- backend/icons/icon.ico
+          git diff --exit-code -- backend/icons
 
       - name: Check Rust formatting
         run: cargo fmt --check
