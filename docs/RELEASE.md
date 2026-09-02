@@ -160,6 +160,18 @@ enforced tag ruleset is the external control that closes that race.
    Never create a tag for an uncommitted tree or retag a different commit. If the
    workflow fails, fix the issue in a new commit and use a new patch version.
 
+   If the release commit merges through a pull request instead of the local
+   `git push --atomic` above, tag only after the merge, and only the merge
+   commit: run `git switch main` and `git pull --ff-only`, require
+   `git rev-parse HEAD` to equal `git rev-parse origin/main`, run
+   `node infrastructure/release/verify-version.mjs vX.Y.Z` on that checkout,
+   then `git tag vX.Y.Z` and `git push origin refs/tags/vX.Y.Z`. A tag created
+   on a stale local `main` points at the previous release commit, whose
+   manifests still carry the old version: the Windows workflow then fails at
+   version verification, the tag-push trigger of the desktop workflow may not
+   exist at that commit, and the protected tag cannot be moved. This is what
+   happened to `v0.5.1`, which `v0.5.2` replaced.
+
 4. Wait for the `release-windows.yml` and `release-desktop.yml` GitHub Actions
    workflows to succeed; both start from the tag push. The Windows read-only build
    job first fetches `origin/main` and rejects any tag whose commit is not in that
