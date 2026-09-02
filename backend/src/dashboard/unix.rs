@@ -507,10 +507,13 @@ mod tests {
         std::fs::create_dir_all(&startup).unwrap();
         let process = std::env::join_paths([&startup]).unwrap();
 
+        // The fixed system directories are part of every search, so a machine
+        // with gh installed globally still resolves something; the point is that
+        // the newly installed copy is not found until the login PATH carries it.
         let before = candidate_paths(Some(&process), None, None);
-        assert_eq!(
+        assert_ne!(
             resolve_program_from_paths(AllowedProgram::Gh, &before),
-            None
+            Some(installed.join("gh"))
         );
 
         write_executable(&installed.join("gh"), true);
