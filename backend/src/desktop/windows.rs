@@ -8,15 +8,16 @@ use windows::{
     core::BOOL,
     Win32::{
         Foundation::{HWND, LPARAM, POINT, RECT},
+        Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED},
         Graphics::Gdi::{
             EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFOEXW,
             MONITOR_DEFAULTTONULL,
         },
         UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
         UI::WindowsAndMessaging::{
-            GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowRect, SetWindowPos,
-            HWND_NOTOPMOST, HWND_TOPMOST, MONITORINFOF_PRIMARY, SWP_HIDEWINDOW, SWP_NOACTIVATE,
-            SWP_NOOWNERZORDER, SWP_SHOWWINDOW,
+            GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowRect, IsWindowVisible,
+            SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, MONITORINFOF_PRIMARY, SWP_HIDEWINDOW,
+            SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_SHOWWINDOW,
         },
     },
 };
@@ -214,6 +215,9 @@ pub(super) fn foreground_is_fullscreen(
         return false;
     }
     let foreground_class = window_class_name(foreground);
+    // SAFETY: `foreground` is used only as an opaque handle.
+    let visible = unsafe { IsWindowVisible(foreground) }.as_bool();
+    let cloaked = window_is_cloaked(foreground);
 
     let mut window_rect = RECT::default();
     // SAFETY: `foreground` came from Windows and `window_rect` is writable for this call.
@@ -239,14 +243,39 @@ pub(super) fn foreground_is_fullscreen(
     };
 
     classify_fullscreen(
-        foreground_handle,
+        ForegroundWindow {
+            handle: foreground_handle,
+            class_name: foreground_class.as_deref(),
+            visible,
+            cloaked,
+            monitor_id: &foreground_monitor.id,
+            rect: window_rect.into(),
+        },
         dashy_window_handles,
-        foreground_class.as_deref(),
-        &foreground_monitor.id,
         &selected_monitor.id,
-        window_rect.into(),
         selected_rect,
     )
+}
+
+/// Whether the Desktop Window Manager is cloaking `window`: it remains a
+/// top-level window that can hold the foreground, yet paints nothing. The lock
+/// screen stays cloaked and foreground after the session is unlocked, and the
+/// Windows 11 Start menu and search host are monitor-sized cloaked windows
+/// whenever they are closed. A query failure counts as not cloaked so the
+/// geometry rule still applies.
+fn window_is_cloaked(window: HWND) -> bool {
+    let mut cloaked = 0_u32;
+    // SAFETY: `window` is used only as an opaque handle, and `cloaked` is a writable u32 whose
+    // size is passed alongside it for the duration of this synchronous call.
+    let queried = unsafe {
+        DwmGetWindowAttribute(
+            window,
+            DWMWA_CLOAKED,
+            ptr::addr_of_mut!(cloaked).cast(),
+            size_of::<u32>() as u32,
+        )
+    };
+    queried.is_ok() && cloaked != 0
 }
 
 /// The foreground window's class name, or `None` when the query fails (a window
@@ -409,22 +438,36 @@ fn checked_work_area(rect: RawRect) -> Result<MonitorWorkArea, DesktopError> {
         .map_err(|_| DesktopError::InvalidMonitorGeometry)
 }
 
+/// What the Win32 probe learned about the foreground window before the
+/// platform-neutral coverage rule is applied.
+#[derive(Clone, Copy, Debug)]
+struct ForegroundWindow<'a> {
+    handle: NativeWindowHandle,
+    class_name: Option<&'a str>,
+    /// `IsWindowVisible`: a hidden window cannot be the application in front
+    /// of the user, whatever its rectangle says.
+    visible: bool,
+    /// `DWMWA_CLOAKED`: see [`window_is_cloaked`].
+    cloaked: bool,
+    monitor_id: &'a str,
+    rect: RawRect,
+}
+
 fn classify_fullscreen(
-    foreground_handle: NativeWindowHandle,
+    foreground: ForegroundWindow<'_>,
     dashy_window_handles: &[NativeWindowHandle],
-    foreground_class: Option<&str>,
-    foreground_monitor_id: &str,
     selected_monitor_id: &str,
-    window_rect: RawRect,
     monitor_rect: RawRect,
 ) -> bool {
-    if dashy_window_handles.contains(&foreground_handle)
-        || foreground_class.is_some_and(is_shell_window_class)
-        || foreground_monitor_id != selected_monitor_id
+    if dashy_window_handles.contains(&foreground.handle)
+        || !foreground.visible
+        || foreground.cloaked
+        || foreground.class_name.is_some_and(is_shell_window_class)
+        || foreground.monitor_id != selected_monitor_id
     {
         return false;
     }
-    window_covers_monitor(window_rect, monitor_rect)
+    window_covers_monitor(foreground.rect, monitor_rect)
 }
 
 #[cfg(test)]
@@ -738,52 +781,58 @@ mod tests {
         assert_eq!(error, DesktopError::InvalidMonitorGeometry);
     }
 
+    const MONITOR: RawRect = RawRect::new(0, 0, 1920, 1080);
+
+    /// A visible, uncloaked window of another process that covers the monitor.
+    fn covering_window(class_name: Option<&str>) -> ForegroundWindow<'_> {
+        ForegroundWindow {
+            handle: 41,
+            class_name,
+            visible: true,
+            cloaked: false,
+            monitor_id: "\\\\.\\DISPLAY1",
+            rect: MONITOR,
+        }
+    }
+
     #[test]
     fn a_foreground_window_covering_the_selected_monitor_is_fullscreen() {
         assert!(classify_fullscreen(
-            41,
+            covering_window(Some("Chrome_WidgetWin_1")),
             &[],
-            Some("Chrome_WidgetWin_1"),
             "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(0, 0, 1920, 1080),
-            RawRect::new(0, 0, 1920, 1080),
+            MONITOR,
         ));
         // A window whose class could not be read is still judged by its geometry.
         assert!(classify_fullscreen(
-            41,
+            covering_window(None),
             &[],
-            None,
             "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(0, 0, 1920, 1080),
-            RawRect::new(0, 0, 1920, 1080),
+            MONITOR,
         ));
     }
 
     #[test]
     fn fullscreen_on_another_monitor_does_not_suppress_the_selected_monitor() {
         assert!(!classify_fullscreen(
-            41,
+            ForegroundWindow {
+                monitor_id: "\\\\.\\DISPLAY2",
+                rect: RawRect::new(-1920, 0, 0, 1080),
+                ..covering_window(Some("Chrome_WidgetWin_1"))
+            },
             &[],
-            Some("Chrome_WidgetWin_1"),
-            "\\\\.\\DISPLAY2",
             "\\\\.\\DISPLAY1",
-            RawRect::new(-1920, 0, 0, 1080),
-            RawRect::new(0, 0, 1920, 1080),
+            MONITOR,
         ));
     }
 
     #[test]
     fn dashys_own_hwnd_never_suppresses_itself() {
         assert!(!classify_fullscreen(
-            41,
+            covering_window(Some("TauriWindow")),
             &[17, 41],
-            Some("TauriWindow"),
             "\\\\.\\DISPLAY1",
-            "\\\\.\\DISPLAY1",
-            RawRect::new(0, 0, 1920, 1080),
-            RawRect::new(0, 0, 1920, 1080),
+            MONITOR,
         ));
     }
 
@@ -795,17 +844,45 @@ mod tests {
         for shell_class in SHELL_WINDOW_CLASSES {
             assert!(
                 !classify_fullscreen(
-                    41,
+                    covering_window(Some(shell_class)),
                     &[],
-                    Some(shell_class),
                     "\\\\.\\DISPLAY1",
-                    "\\\\.\\DISPLAY1",
-                    RawRect::new(0, 0, 1920, 1080),
-                    RawRect::new(0, 0, 1920, 1080),
+                    MONITOR,
                 ),
                 "{shell_class} must not suppress the notch"
             );
         }
+    }
+
+    #[test]
+    fn a_cloaked_or_hidden_foreground_window_never_counts_as_fullscreen() {
+        // The lock screen keeps the foreground after unlocking but is cloaked;
+        // a closed Start menu or search host is a monitor-sized cloaked window.
+        assert!(!classify_fullscreen(
+            ForegroundWindow {
+                cloaked: true,
+                ..covering_window(Some("Windows.UI.Core.CoreWindow"))
+            },
+            &[],
+            "\\\\.\\DISPLAY1",
+            MONITOR,
+        ));
+        assert!(!classify_fullscreen(
+            ForegroundWindow {
+                visible: false,
+                ..covering_window(Some("Windows.UI.Core.CoreWindow"))
+            },
+            &[],
+            "\\\\.\\DISPLAY1",
+            MONITOR,
+        ));
+        // The same class, visible and uncloaked (a fullscreen Store app), still counts.
+        assert!(classify_fullscreen(
+            covering_window(Some("Windows.UI.Core.CoreWindow")),
+            &[],
+            "\\\\.\\DISPLAY1",
+            MONITOR,
+        ));
     }
 
     #[test]
