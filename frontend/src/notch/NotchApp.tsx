@@ -124,6 +124,9 @@ export function NotchApp({
   const lastSelected = useRef<ProviderId>(selectedProp ?? "claude");
   const edgeViewRef = useRef(edgeView);
   edgeViewRef.current = edgeView;
+  const revalidateDashboard = dashboard.revalidate;
+  const enabledProvidersRef = useRef(enabledProviders);
+  enabledProvidersRef.current = enabledProviders;
   const focusRestoreArmed = useRef<ProviderId | null>(null);
   const suppressFocusSelection = useRef<ProviderId | null>(null);
   const acknowledgedExit = useRef<ExitToken | null>(null);
@@ -191,6 +194,11 @@ export function NotchApp({
     let eventRevision = 0;
     const applyView = (next: EdgeViewState) => {
       if (!isVisibleView(next)) focusRestoreArmed.current = null;
+      // The hidden notch window cannot rely on its timers, so every reveal
+      // revalidates the dashboard before the user reads it.
+      if (isVisibleView(next) && !isVisibleView(edgeViewRef.current)) {
+        revalidateDashboard(enabledProvidersRef.current);
+      }
       if (next.provider) {
         lastSelected.current = next.provider;
         setSelectedProvider(next.provider);
@@ -220,7 +228,7 @@ export function NotchApp({
       }
     }).catch(() => undefined);
     return () => { active = false; unlisten?.(); };
-  }, [native]);
+  }, [native, revalidateDashboard]);
 
   useEffect(() => {
     if (selectedProp) {

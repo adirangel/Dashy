@@ -144,6 +144,105 @@ describe("useDashboardSnapshot", () => {
     unmount();
   });
 
+  it("reads through the cache on a reveal while the snapshot is fresh and healthy", async () => {
+    vi.useFakeTimers();
+    getSnapshot.mockResolvedValue(snapshot);
+
+    const { result, unmount } = renderHook(() => useDashboardSnapshot());
+    await act(async () => { await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledExactlyOnceWith(false);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    await act(async () => { result.current.revalidate(["claude", "codex"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(getSnapshot).toHaveBeenLastCalledWith(false);
+
+    unmount();
+  });
+
+  it("forces a refresh on a reveal once the last completed refresh is older than five minutes", async () => {
+    vi.useFakeTimers();
+    getSnapshot.mockResolvedValue(snapshot);
+
+    const { result, unmount } = renderHook(() => useDashboardSnapshot());
+    await act(async () => { await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledExactlyOnceWith(false);
+    // A hidden, throttled window may never run its periodic forced refresh.
+    vi.clearAllTimers();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(299_000); });
+    await act(async () => { result.current.revalidate(["claude"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(getSnapshot).toHaveBeenLastCalledWith(false);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(300_000); });
+    await act(async () => { result.current.revalidate(["claude"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(3);
+    expect(getSnapshot).toHaveBeenLastCalledWith(true);
+
+    unmount();
+  });
+
+  it("re-probes a failed enabled provider on a reveal, at most once a minute", async () => {
+    vi.useFakeTimers();
+    const failed: DashboardSnapshot = {
+      ...snapshot,
+      claude: { ...snapshot.claude, status: "notInstalled" },
+    };
+    getSnapshot.mockResolvedValue(failed);
+
+    const { result, unmount } = renderHook(() => useDashboardSnapshot());
+    await act(async () => { await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledExactlyOnceWith(false);
+
+    // A disabled provider's failure is not a reason to spawn its CLI.
+    await act(async () => { result.current.revalidate(["codex", "github"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    expect(getSnapshot).toHaveBeenLastCalledWith(false);
+
+    await act(async () => { result.current.revalidate(["claude", "codex"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(3);
+    expect(getSnapshot).toHaveBeenLastCalledWith(true);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await act(async () => { result.current.revalidate(["claude", "codex"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(4);
+    expect(getSnapshot).toHaveBeenLastCalledWith(false);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await act(async () => { result.current.revalidate(["claude", "codex"]); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(5);
+    expect(getSnapshot).toHaveBeenLastCalledWith(true);
+
+    unmount();
+  });
+
+  it("revalidates when the document becomes visible again and stops after unmount", async () => {
+    vi.useFakeTimers();
+    getSnapshot.mockResolvedValue(snapshot);
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+
+    const { unmount } = renderHook(() => useDashboardSnapshot());
+    await act(async () => { await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledExactlyOnceWith(false);
+
+    visibility.mockReturnValue("hidden");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(1);
+
+    vi.clearAllTimers();
+    await act(async () => { await vi.advanceTimersByTimeAsync(300_000); });
+    visibility.mockReturnValue("visible");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenLastCalledWith(true);
+    const calls = getSnapshot.mock.calls.length;
+
+    unmount();
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await Promise.resolve(); });
+    expect(getSnapshot).toHaveBeenCalledTimes(calls);
+    visibility.mockRestore();
+  });
+
   it("keeps the previous snapshot when a refresh is rejected", async () => {
     vi.useFakeTimers();
     getSnapshot.mockResolvedValueOnce(snapshot).mockRejectedValueOnce(new Error("offline"));

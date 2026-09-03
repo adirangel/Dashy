@@ -9,7 +9,27 @@ import {
 import { listenForDashboardCacheChanged } from "./window";
 
 const REFRESH_INTERVAL_MS = 300_000;
+// A reveal re-probes failed providers at most this often so hovering the edge
+// repeatedly never turns into a CLI process storm.
+const REVEAL_REPROBE_COOLDOWN_MS = 60_000;
 const PROVIDERS: ProviderId[] = ["github", "codex", "claude", "grok", "cursor"];
+
+// "cache" reads through the backend cache, "force" bypasses it, and "reveal"
+// picks one of the two from how old and how healthy the current snapshot is.
+type RefreshMode = "cache" | "reveal" | "force";
+const REFRESH_PRIORITY: Record<RefreshMode, number> = { cache: 0, reveal: 1, force: 2 };
+
+function strongerMode(current: RefreshMode | null, next: RefreshMode): RefreshMode {
+  return current !== null && REFRESH_PRIORITY[current] >= REFRESH_PRIORITY[next] ? current : next;
+}
+
+function hasFailedProvider(
+  snapshot: DashboardSnapshot | null,
+  providers: readonly ProviderId[],
+): boolean {
+  if (!snapshot) return true;
+  return providers.some((provider) => snapshot[provider].status !== "connected");
+}
 
 type ProviderVersions = Record<ProviderId, number>;
 
@@ -63,6 +83,12 @@ export function useDashboardSnapshot() {
   const mounted = useRef(true);
   const providerRefreshes = useRef(new Set<ProviderId>());
   const providerVersions = useRef<ProviderVersions>(initialProviderVersions());
+  const snapshotRef = useRef<DashboardSnapshot | null>(null);
+  snapshotRef.current = snapshot;
+  const lastCompletedRefreshAt = useRef<number | null>(null);
+  const lastRevealReprobeAt = useRef(Number.NEGATIVE_INFINITY);
+  const revealProviders = useRef<readonly ProviderId[]>(PROVIDERS);
+  const revealRef = useRef<(() => void) | null>(null);
 
   const refreshProvider = useCallback(async (provider: ProviderId) => {
     if (providerRefreshes.current.has(provider)) return;
@@ -109,11 +135,27 @@ export function useDashboardSnapshot() {
     let unlisten: (() => void) | undefined;
     let intervalId: number | undefined;
     let inFlight = false;
-    let cacheDirty = false;
+    let pending: RefreshMode | null = null;
     let listenerReady = false;
 
-    const refresh = async (force: boolean) => {
-      if (!active || inFlight) return;
+    const revealNeedsForce = () => {
+      const now = Date.now();
+      const completed = lastCompletedRefreshAt.current;
+      if (completed === null || now - completed >= REFRESH_INTERVAL_MS) return true;
+      if (now - lastRevealReprobeAt.current < REVEAL_REPROBE_COOLDOWN_MS) return false;
+      return hasFailedProvider(snapshotRef.current, revealProviders.current);
+    };
+
+    const refresh = async (mode: RefreshMode) => {
+      if (!active) return;
+      if (inFlight) {
+        // The in-flight read publishes its own result; only a cache change
+        // must be re-read afterwards, since it may postdate that read.
+        if (mode === "cache") pending = strongerMode(pending, "cache");
+        return;
+      }
+      const force = mode === "force" || (mode === "reveal" && revealNeedsForce());
+      if (mode === "reveal" && force) lastRevealReprobeAt.current = Date.now();
 
       inFlight = true;
       const requestVersions = Object.fromEntries(
@@ -123,6 +165,7 @@ export function useDashboardSnapshot() {
 
       try {
         const nextSnapshot = await getDashboardSnapshot(force);
+        lastCompletedRefreshAt.current = Date.now();
         if (mounted.current) {
           setSnapshot((current) => {
             const applied = PROVIDERS.filter(
@@ -160,9 +203,10 @@ export function useDashboardSnapshot() {
       } finally {
         inFlight = false;
         if (!active) return;
-        if (cacheDirty) {
-          cacheDirty = false;
-          void refresh(false);
+        const followUp = pending;
+        pending = null;
+        if (followUp !== null) {
+          void refresh(followUp);
         } else {
           setRefreshing(false);
         }
@@ -171,19 +215,38 @@ export function useDashboardSnapshot() {
 
     const onCacheChanged = () => {
       if (!active) return;
-      if (!listenerReady || inFlight) {
-        cacheDirty = true;
+      if (!listenerReady) {
+        pending = strongerMode(pending, "cache");
         return;
       }
-      void refresh(false);
+      void refresh("cache");
     };
+
+    const onReveal = () => {
+      if (!active) return;
+      if (!listenerReady) {
+        pending = strongerMode(pending, "reveal");
+        return;
+      }
+      void refresh("reveal");
+    };
+    revealRef.current = onReveal;
+
+    // The notch window is hidden nearly all the time, so its timers may be
+    // throttled or paused by the webview and by system sleep. Whenever the page
+    // becomes visible again, revalidate instead of trusting the interval.
+    const onDocumentVisible = () => {
+      if (document.visibilityState === "visible") onReveal();
+    };
+    document.addEventListener("visibilitychange", onDocumentVisible);
 
     const startRefreshLoop = () => {
       if (!active) return;
       listenerReady = true;
-      cacheDirty = false;
-      void refresh(false);
-      intervalId = window.setInterval(() => { void refresh(true); }, REFRESH_INTERVAL_MS);
+      const initial = pending;
+      pending = null;
+      void refresh(initial === "reveal" ? "reveal" : "cache");
+      intervalId = window.setInterval(() => { void refresh("force"); }, REFRESH_INTERVAL_MS);
     };
 
     void listenForDashboardCacheChanged(onCacheChanged).then((stop) => {
@@ -198,10 +261,19 @@ export function useDashboardSnapshot() {
     return () => {
       active = false;
       mounted.current = false;
+      revealRef.current = null;
+      document.removeEventListener("visibilitychange", onDocumentVisible);
       unlisten?.();
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
   }, []);
 
-  return { snapshot, refreshing, refreshProvider, refreshingProviders, refreshFailures };
+  // Called when the notch surface becomes visible. Reads through the cache when
+  // the snapshot is fresh and healthy; otherwise re-probes the given providers.
+  const revalidate = useCallback((providers: readonly ProviderId[]) => {
+    revealProviders.current = providers;
+    revealRef.current?.();
+  }, []);
+
+  return { snapshot, refreshing, refreshProvider, refreshingProviders, refreshFailures, revalidate };
 }
