@@ -117,11 +117,10 @@ pub fn run() {
                     desktop::macos::configure_main_window(&main).map_err(std::io::Error::other)?;
                 }
             }
-            let controller = Arc::new(DesktopController::new(
-                probe.clone(),
-                window,
-                settings.clone(),
-            ));
+            let controller = Arc::new(
+                DesktopController::new(probe.clone(), window, settings.clone())
+                    .with_diagnostics(diagnostics.clone()),
+            );
 
             let tray_state = Arc::new(TrayState::default());
             let current_settings = settings.current().map_err(std::io::Error::other)?;

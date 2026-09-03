@@ -134,6 +134,10 @@ impl DesktopProbe for FakeProbe {
         *self.cursor.read().unwrap()
     }
 
+    fn describe_foreground(&self) -> Option<String> {
+        Some("class=Windows.UI.Core.CoreWindow cloaked=true".to_owned())
+    }
+
     fn monitors(&self) -> Result<Vec<MonitorDescriptor>, DesktopError> {
         self.monitors.read().unwrap().clone()
     }
@@ -1149,4 +1153,50 @@ fn tray_labels_accept_unicode_but_reject_empty_control_and_overlong_inputs() {
         };
         assert!(invalid.validate().is_err());
     }
+}
+
+#[derive(Default)]
+struct FakeDiagnostics {
+    notes: Mutex<Vec<String>>,
+}
+
+impl dashy::dashboard::diagnostics::DiagnosticsSink for FakeDiagnostics {
+    fn record(&self, _record: &dashy::dashboard::diagnostics::RefreshRecord) {}
+
+    fn note(&self, _at: chrono::DateTime<chrono::Utc>, event: &str) {
+        self.notes.lock().unwrap().push(event.to_owned());
+    }
+}
+
+#[test]
+fn fullscreen_suppression_transitions_are_logged_with_the_foreground_window() {
+    let window = Arc::new(FakeWindow::default());
+    let probe = Arc::new(FakeProbe::new(monitor("display-a", "Desk", 0, 1920, true)));
+    let settings = Arc::new(FakeSettings::new(configured_settings()));
+    let diagnostics = Arc::new(FakeDiagnostics::default());
+    let controller = DesktopController::new(probe.clone(), window, settings)
+        .with_diagnostics(diagnostics.clone());
+
+    controller.step(Duration::ZERO);
+    assert!(diagnostics.notes.lock().unwrap().is_empty());
+
+    *probe.fullscreen.write().unwrap() = true;
+    controller.step(Duration::from_millis(1));
+    // Staying suppressed is not a transition: one line per change, not per tick.
+    controller.step(Duration::from_millis(2));
+    assert_eq!(
+        *diagnostics.notes.lock().unwrap(),
+        vec!["fullscreen suppression began: class=Windows.UI.Core.CoreWindow cloaked=true"]
+    );
+
+    *probe.fullscreen.write().unwrap() = false;
+    controller.step(Duration::from_millis(3));
+    controller.step(Duration::from_millis(4));
+    assert_eq!(
+        *diagnostics.notes.lock().unwrap(),
+        vec![
+            "fullscreen suppression began: class=Windows.UI.Core.CoreWindow cloaked=true",
+            "fullscreen suppression ended",
+        ]
+    );
 }

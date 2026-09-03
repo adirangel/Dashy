@@ -199,43 +199,62 @@ pub(super) fn monitors() -> Result<Vec<MonitorDescriptor>, DesktopError> {
     normalize_monitors(state.monitors)
 }
 
-pub(super) fn foreground_is_fullscreen(
-    selected_monitor: &MonitorDescriptor,
-    dashy_window_handles: &[NativeWindowHandle],
-) -> bool {
-    // GetForegroundWindow legitimately returns NULL while activation is changing.
+/// Everything the probe reads about the foreground window, gathered once per
+/// query so the fullscreen rule and the diagnostics line agree.
+struct ForegroundQuery {
+    handle: NativeWindowHandle,
+    class_name: Option<String>,
+    visible: bool,
+    cloaked: bool,
+    monitor_id: String,
+    rect: RawRect,
+}
+
+/// `None` when there is no foreground window (activation is changing), its
+/// rectangle cannot be read, or it sits on no monitor (a stale off-screen
+/// handle). Query failures are deliberately treated as "not fullscreen" so a
+/// transient Win32 error cannot suppress Dashy indefinitely.
+fn query_foreground() -> Option<ForegroundQuery> {
     // SAFETY: This function has no pointer parameters and only reads desktop state.
     let foreground = unsafe { GetForegroundWindow() };
     if foreground.0.is_null() {
-        return false;
+        return None;
     }
 
-    let foreground_handle = foreground.0 as isize;
-    if dashy_window_handles.contains(&foreground_handle) {
-        return false;
-    }
-    let foreground_class = window_class_name(foreground);
+    let class_name = window_class_name(foreground);
     // SAFETY: `foreground` is used only as an opaque handle.
     let visible = unsafe { IsWindowVisible(foreground) }.as_bool();
     let cloaked = window_is_cloaked(foreground);
 
     let mut window_rect = RECT::default();
     // SAFETY: `foreground` came from Windows and `window_rect` is writable for this call.
-    if unsafe { GetWindowRect(foreground, ptr::addr_of_mut!(window_rect)) }.is_err() {
-        return false;
-    }
+    unsafe { GetWindowRect(foreground, ptr::addr_of_mut!(window_rect)) }.ok()?;
 
     // MONITOR_DEFAULTTONULL prevents a stale/off-screen foreground window from being assigned to
     // an unrelated monitor.
     // SAFETY: `foreground` is used only as an opaque handle.
     let foreground_monitor = unsafe { MonitorFromWindow(foreground, MONITOR_DEFAULTTONULL) };
     if foreground_monitor.0.is_null() {
-        return false;
+        return None;
     }
+    // SAFETY: `foreground_monitor` is the live handle Windows just returned.
+    let foreground_monitor = unsafe { monitor_from_handle(foreground_monitor) }.ok()?;
 
-    // Query failures are deliberately treated as not fullscreen so a transient Win32 error cannot
-    // suppress Dashy indefinitely.
-    let Ok(foreground_monitor) = (unsafe { monitor_from_handle(foreground_monitor) }) else {
+    Some(ForegroundQuery {
+        handle: foreground.0 as isize,
+        class_name,
+        visible,
+        cloaked,
+        monitor_id: foreground_monitor.id,
+        rect: window_rect.into(),
+    })
+}
+
+pub(super) fn foreground_is_fullscreen(
+    selected_monitor: &MonitorDescriptor,
+    dashy_window_handles: &[NativeWindowHandle],
+) -> bool {
+    let Some(foreground) = query_foreground() else {
         return false;
     };
     let Some(selected_rect) = RawRect::from_rect(selected_monitor.monitor_rect) else {
@@ -244,16 +263,46 @@ pub(super) fn foreground_is_fullscreen(
 
     classify_fullscreen(
         ForegroundWindow {
-            handle: foreground_handle,
-            class_name: foreground_class.as_deref(),
-            visible,
-            cloaked,
-            monitor_id: &foreground_monitor.id,
-            rect: window_rect.into(),
+            handle: foreground.handle,
+            class_name: foreground.class_name.as_deref(),
+            visible: foreground.visible,
+            cloaked: foreground.cloaked,
+            monitor_id: &foreground.monitor_id,
+            rect: foreground.rect,
         },
         dashy_window_handles,
         &selected_monitor.id,
         selected_rect,
+    )
+}
+
+/// The diagnostics description of the foreground window: class, visibility,
+/// cloaking, rectangle, and monitor. Window titles are never included.
+pub(super) fn describe_foreground() -> Option<String> {
+    let foreground = query_foreground()?;
+    Some(describe_foreground_query(
+        foreground.class_name.as_deref(),
+        foreground.visible,
+        foreground.cloaked,
+        foreground.rect,
+        &foreground.monitor_id,
+    ))
+}
+
+fn describe_foreground_query(
+    class_name: Option<&str>,
+    visible: bool,
+    cloaked: bool,
+    rect: RawRect,
+    monitor_id: &str,
+) -> String {
+    format!(
+        "class={} visible={visible} cloaked={cloaked} rect={},{}-{},{} monitor={monitor_id}",
+        class_name.unwrap_or("?"),
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
     )
 }
 
@@ -883,6 +932,24 @@ mod tests {
             "\\\\.\\DISPLAY1",
             MONITOR,
         ));
+    }
+
+    #[test]
+    fn the_foreground_description_names_class_geometry_and_monitor_only() {
+        assert_eq!(
+            describe_foreground_query(
+                Some("Windows.UI.Core.CoreWindow"),
+                true,
+                true,
+                RawRect::new(0, 0, 1920, 1080),
+                "\\\\.\\DISPLAY1"
+            ),
+            "class=Windows.UI.Core.CoreWindow visible=true cloaked=true rect=0,0-1920,1080 monitor=\\\\.\\DISPLAY1"
+        );
+        assert_eq!(
+            describe_foreground_query(None, false, false, RawRect::new(-8, -8, 1928, 1088), "x"),
+            "class=? visible=false cloaked=false rect=-8,-8-1928,1088 monitor=x"
+        );
     }
 
     #[test]

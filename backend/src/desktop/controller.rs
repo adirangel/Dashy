@@ -19,6 +19,7 @@ use super::{
     platform::{DesktopError, DesktopProbe, NativeWindowHandle},
     settings::{AppSettings, SettingsService},
 };
+use crate::dashboard::diagnostics::{DiagnosticsSink, NoopDiagnostics};
 
 pub const TICK_INTERVAL: Duration = Duration::from_millis(40);
 pub const EXIT_FALLBACK: Duration = Duration::from_millis(260);
@@ -85,11 +86,18 @@ struct PendingHide {
     token: Option<ExitToken>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SuppressionChange {
+    Began,
+    Ended,
+}
+
 #[derive(Default)]
 struct OperationPlan {
     layout: Option<WindowLayout>,
     view: Option<EdgeViewState>,
     focus_requested: bool,
+    suppression: Option<SuppressionChange>,
 }
 
 #[derive(Default)]
@@ -111,6 +119,7 @@ pub struct DesktopController {
     probe: Arc<dyn DesktopProbe>,
     window: Arc<dyn WindowPort>,
     settings: Arc<dyn SettingsSource>,
+    diagnostics: Arc<dyn DiagnosticsSink>,
     core: Mutex<ControllerCore>,
 }
 
@@ -288,8 +297,16 @@ impl DesktopController {
             probe,
             window,
             settings,
+            diagnostics: Arc::new(NoopDiagnostics),
             core: Mutex::new(ControllerCore::default()),
         }
+    }
+
+    /// Routes one line per fullscreen-suppression transition to the local
+    /// diagnostics log, naming the window that triggered it.
+    pub fn with_diagnostics(mut self, diagnostics: Arc<dyn DiagnosticsSink>) -> Self {
+        self.diagnostics = diagnostics;
+        self
     }
 
     pub fn queue_interaction(&self, interaction: EdgeInteraction) {
@@ -512,6 +529,23 @@ impl DesktopController {
                 errors.push(error);
             }
         }
+        match plan.suppression {
+            Some(SuppressionChange::Began) => {
+                let foreground = self
+                    .probe
+                    .describe_foreground()
+                    .unwrap_or_else(|| "foreground window unavailable".to_owned());
+                self.diagnostics.note(
+                    chrono::Utc::now(),
+                    &format!("fullscreen suppression began: {foreground}"),
+                );
+            }
+            Some(SuppressionChange::Ended) => {
+                self.diagnostics
+                    .note(chrono::Utc::now(), "fullscreen suppression ended");
+            }
+            None => {}
+        }
         errors
     }
 
@@ -530,6 +564,7 @@ impl DesktopController {
         surface_enabled: bool,
     ) -> OperationPlan {
         let mut core = self.core.lock().expect("desktop controller lock poisoned");
+        let was_suppressed = core.machine.state() == EdgeUiState::Suppressed;
         let mut plan = OperationPlan {
             layout: core
                 .retry_layout
@@ -540,6 +575,7 @@ impl DesktopController {
                 .take()
                 .filter(|view| surface_enabled || view.visibility == EdgeUiState::Hidden),
             focus_requested: false,
+            suppression: None,
         };
 
         let events = core.events.drain(..).collect::<Vec<_>>();
@@ -636,6 +672,12 @@ impl DesktopController {
                 core.machine.state(),
                 EdgeUiState::RailVisible | EdgeUiState::CardVisible | EdgeUiState::Pinned
             );
+        let is_suppressed = core.machine.state() == EdgeUiState::Suppressed;
+        plan.suppression = match (was_suppressed, is_suppressed) {
+            (false, true) => Some(SuppressionChange::Began),
+            (true, false) => Some(SuppressionChange::Ended),
+            _ => None,
+        };
         plan
     }
 }
