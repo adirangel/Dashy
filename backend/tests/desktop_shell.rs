@@ -978,21 +978,41 @@ fn newer_hidden_layout_replaces_the_css_deferred_hide_destination() {
 }
 
 #[test]
-fn activation_does_not_focus_when_final_state_is_hidden_or_suppressed() {
+fn explicit_show_reveals_and_focuses_over_a_fullscreen_application() {
     let fixture = Fixture::new();
     *fixture.probe.fullscreen.write().unwrap() = true;
-    fixture.controller.show_explicit();
     fixture.controller.step(Duration::ZERO);
     assert_eq!(fixture.controller.state(), EdgeUiState::Suppressed);
-    assert!(!fixture.window.actions().contains(&WindowAction::Focus));
 
-    *fixture.probe.fullscreen.write().unwrap() = false;
+    // The tray's Show Dashy is the way in even when the fullscreen probe is
+    // wrong about what is in front (a cloaked lock screen, an empty desktop).
     fixture.window.clear();
+    fixture.controller.show_explicit();
+    fixture.controller.step(Duration::from_millis(1));
+    assert_eq!(fixture.controller.state(), EdgeUiState::RailVisible);
+    assert!(fixture.window.actions().contains(&WindowAction::Focus));
+
+    // It stays revealed while the same window remains in front and only
+    // becomes suppressible again after it hides.
+    fixture.controller.step(Duration::from_millis(2));
+    assert_eq!(fixture.controller.state(), EdgeUiState::RailVisible);
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::Dismiss);
+    fixture.controller.step(Duration::from_millis(3));
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    fixture.controller.step(Duration::from_millis(4));
+    assert_eq!(fixture.controller.state(), EdgeUiState::Suppressed);
+}
+
+#[test]
+fn activation_does_not_focus_when_final_state_is_hidden() {
+    let fixture = Fixture::new();
     fixture.controller.show_explicit();
     fixture
         .controller
         .queue_interaction(EdgeInteraction::Dismiss);
-    fixture.controller.step(Duration::from_millis(1));
+    fixture.controller.step(Duration::ZERO);
     assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
     assert!(!fixture.window.actions().contains(&WindowAction::Focus));
 }

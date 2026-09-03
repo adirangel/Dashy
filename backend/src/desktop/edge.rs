@@ -338,6 +338,10 @@ pub struct EdgeMachine {
     dwell_started: Option<Duration>,
     close_started: Option<Duration>,
     last_context: Option<LayoutContext>,
+    /// An explicit Show (tray click, tray menu) while a fullscreen application
+    /// is in front keeps the surface out of `Suppressed` until it hides again,
+    /// so the tray remains the way in even when the fullscreen probe is wrong.
+    shown_over_fullscreen: bool,
 }
 
 impl Default for EdgeMachine {
@@ -355,6 +359,7 @@ impl EdgeMachine {
             dwell_started: None,
             close_started: None,
             last_context: None,
+            shown_over_fullscreen: false,
         }
     }
 
@@ -394,11 +399,19 @@ impl EdgeMachine {
             self.safe_region_entered = false;
         }
 
-        if input.foreground_fullscreen && !input.always_show_over_fullscreen {
+        let explicit_show = matches!(input.interaction, Some(EdgeInteraction::Show));
+        let suppressed_by_fullscreen = input.foreground_fullscreen
+            && !input.always_show_over_fullscreen
+            && !explicit_show
+            && !self.shown_over_fullscreen;
+        if suppressed_by_fullscreen {
             self.suppress();
         } else {
             if self.state == EdgeUiState::Suppressed {
                 self.hide();
+            }
+            if explicit_show && input.foreground_fullscreen {
+                self.shown_over_fullscreen = true;
             }
             self.handle_interaction(now, input.interaction);
             self.handle_timers(now, input);
@@ -556,6 +569,7 @@ impl EdgeMachine {
         self.safe_region_entered = false;
         self.dwell_started = None;
         self.close_started = None;
+        self.shown_over_fullscreen = false;
     }
 
     fn suppress(&mut self) {
@@ -1676,6 +1690,36 @@ mod tests {
                 provider: None,
             })]
         );
+    }
+
+    #[test]
+    fn an_explicit_show_reveals_over_a_fullscreen_application_until_it_hides() {
+        let mut machine = EdgeMachine::new();
+        let mut fullscreen = idle(None);
+        fullscreen.foreground_fullscreen = true;
+        machine.advance(ms(100), fullscreen);
+        assert_eq!(machine.state(), EdgeUiState::Suppressed);
+
+        // The tray's Show Dashy is the user's way in whatever the probe says.
+        let mut show = event(EdgeInteraction::Show);
+        show.foreground_fullscreen = true;
+        let effects = machine.advance(ms(101), show);
+        assert_eq!(machine.state(), EdgeUiState::RailVisible);
+        assert!(effects
+            .iter()
+            .any(|effect| matches!(effect, EdgeEffect::ApplyWindow(layout) if layout.visible)));
+
+        // The fullscreen application stays in front; the rail is not re-suppressed.
+        machine.advance(ms(102), fullscreen);
+        assert_eq!(machine.state(), EdgeUiState::RailVisible);
+
+        // Once the surface hides, the fullscreen rule applies again.
+        let mut dismiss = event(EdgeInteraction::Dismiss);
+        dismiss.foreground_fullscreen = true;
+        machine.advance(ms(103), dismiss);
+        assert_eq!(machine.state(), EdgeUiState::Hidden);
+        machine.advance(ms(104), fullscreen);
+        assert_eq!(machine.state(), EdgeUiState::Suppressed);
     }
 
     #[test]
