@@ -1,9 +1,12 @@
 //! A local, bounded log of provider refreshes for troubleshooting.
 //!
 //! Each refresh writes one line: when it ran, which provider, whether it
-//! succeeded (or the sanitized error category), and how long it took. Nothing
-//! else is recorded — no CLI output, arguments, account identity, or secrets —
-//! so the file can be shared as-is when a tile shows "Unavailable".
+//! succeeded (or the sanitized error category), and how long it took. The
+//! desktop controller adds one line whenever fullscreen suppression begins or
+//! ends, naming the window class, rectangle, and monitor that triggered it.
+//! Nothing else is recorded — no CLI output, arguments, window titles, account
+//! identity, or secrets — so the file can be shared as-is when a tile shows
+//! "Unavailable" or the notch stops revealing.
 
 use std::{
     fs::{self, OpenOptions},
@@ -34,6 +37,9 @@ pub struct RefreshRecord {
 
 pub trait DiagnosticsSink: Send + Sync {
     fn record(&self, record: &RefreshRecord);
+
+    /// A one-line desktop event (fullscreen suppression beginning or ending).
+    fn note(&self, _at: DateTime<Utc>, _event: &str) {}
 }
 
 /// Discards every record; the default until a log directory is attached.
@@ -64,6 +70,14 @@ pub fn format_line(record: &RefreshRecord) -> String {
         provider_name(record.provider),
         outcome,
         record.duration.as_millis()
+    )
+}
+
+pub fn format_note(at: DateTime<Utc>, event: &str) -> String {
+    format!(
+        "{} desktop {}\n",
+        at.to_rfc3339_opts(SecondsFormat::Secs, true),
+        event
     )
 }
 
@@ -138,6 +152,16 @@ impl DiagnosticsSink for FileDiagnostics {
         };
         let _ = Self::append(directory, state.max_bytes, &format_line(record));
     }
+
+    fn note(&self, at: DateTime<Utc>, event: &str) {
+        let Ok(state) = self.state.lock() else {
+            return;
+        };
+        let Some(directory) = state.directory.as_deref() else {
+            return;
+        };
+        let _ = Self::append(directory, state.max_bytes, &format_note(at, event));
+    }
 }
 
 #[cfg(test)]
@@ -181,6 +205,37 @@ mod tests {
             )),
             "2026-09-01T19:55:02Z grok error: provider authentication is unavailable 812ms\n"
         );
+    }
+
+    #[test]
+    fn desktop_notes_carry_only_time_and_the_event() {
+        assert_eq!(
+            format_note(
+                Utc.with_ymd_and_hms(2026, 9, 1, 19, 55, 2).unwrap(),
+                "fullscreen suppression began: class=Progman"
+            ),
+            "2026-09-01T19:55:02Z desktop fullscreen suppression began: class=Progman\n"
+        );
+    }
+
+    #[test]
+    fn desktop_notes_share_the_refresh_log() {
+        let dir = temp_dir("notes");
+        let sink = FileDiagnostics::new();
+        sink.attach_directory(dir.clone());
+
+        sink.record(&record(ProviderId::Claude, None, 10));
+        sink.note(
+            Utc.with_ymd_and_hms(2026, 9, 1, 19, 55, 3).unwrap(),
+            "fullscreen suppression ended",
+        );
+
+        let live = fs::read_to_string(dir.join(LOG_FILE_NAME)).unwrap();
+        assert_eq!(
+            live,
+            "2026-09-01T19:55:02Z claude ok 10ms\n2026-09-01T19:55:03Z desktop fullscreen suppression ended\n"
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

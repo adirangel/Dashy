@@ -134,6 +134,10 @@ impl DesktopProbe for FakeProbe {
         *self.cursor.read().unwrap()
     }
 
+    fn describe_foreground(&self) -> Option<String> {
+        Some("class=Windows.UI.Core.CoreWindow cloaked=true".to_owned())
+    }
+
     fn monitors(&self) -> Result<Vec<MonitorDescriptor>, DesktopError> {
         self.monitors.read().unwrap().clone()
     }
@@ -978,21 +982,41 @@ fn newer_hidden_layout_replaces_the_css_deferred_hide_destination() {
 }
 
 #[test]
-fn activation_does_not_focus_when_final_state_is_hidden_or_suppressed() {
+fn explicit_show_reveals_and_focuses_over_a_fullscreen_application() {
     let fixture = Fixture::new();
     *fixture.probe.fullscreen.write().unwrap() = true;
-    fixture.controller.show_explicit();
     fixture.controller.step(Duration::ZERO);
     assert_eq!(fixture.controller.state(), EdgeUiState::Suppressed);
-    assert!(!fixture.window.actions().contains(&WindowAction::Focus));
 
-    *fixture.probe.fullscreen.write().unwrap() = false;
+    // The tray's Show Dashy is the way in even when the fullscreen probe is
+    // wrong about what is in front (a cloaked lock screen, an empty desktop).
     fixture.window.clear();
+    fixture.controller.show_explicit();
+    fixture.controller.step(Duration::from_millis(1));
+    assert_eq!(fixture.controller.state(), EdgeUiState::RailVisible);
+    assert!(fixture.window.actions().contains(&WindowAction::Focus));
+
+    // It stays revealed while the same window remains in front and only
+    // becomes suppressible again after it hides.
+    fixture.controller.step(Duration::from_millis(2));
+    assert_eq!(fixture.controller.state(), EdgeUiState::RailVisible);
+    fixture
+        .controller
+        .queue_interaction(EdgeInteraction::Dismiss);
+    fixture.controller.step(Duration::from_millis(3));
+    assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
+    fixture.controller.step(Duration::from_millis(4));
+    assert_eq!(fixture.controller.state(), EdgeUiState::Suppressed);
+}
+
+#[test]
+fn activation_does_not_focus_when_final_state_is_hidden() {
+    let fixture = Fixture::new();
     fixture.controller.show_explicit();
     fixture
         .controller
         .queue_interaction(EdgeInteraction::Dismiss);
-    fixture.controller.step(Duration::from_millis(1));
+    fixture.controller.step(Duration::ZERO);
     assert_eq!(fixture.controller.state(), EdgeUiState::Hidden);
     assert!(!fixture.window.actions().contains(&WindowAction::Focus));
 }
@@ -1129,4 +1153,50 @@ fn tray_labels_accept_unicode_but_reject_empty_control_and_overlong_inputs() {
         };
         assert!(invalid.validate().is_err());
     }
+}
+
+#[derive(Default)]
+struct FakeDiagnostics {
+    notes: Mutex<Vec<String>>,
+}
+
+impl dashy::dashboard::diagnostics::DiagnosticsSink for FakeDiagnostics {
+    fn record(&self, _record: &dashy::dashboard::diagnostics::RefreshRecord) {}
+
+    fn note(&self, _at: chrono::DateTime<chrono::Utc>, event: &str) {
+        self.notes.lock().unwrap().push(event.to_owned());
+    }
+}
+
+#[test]
+fn fullscreen_suppression_transitions_are_logged_with_the_foreground_window() {
+    let window = Arc::new(FakeWindow::default());
+    let probe = Arc::new(FakeProbe::new(monitor("display-a", "Desk", 0, 1920, true)));
+    let settings = Arc::new(FakeSettings::new(configured_settings()));
+    let diagnostics = Arc::new(FakeDiagnostics::default());
+    let controller = DesktopController::new(probe.clone(), window, settings)
+        .with_diagnostics(diagnostics.clone());
+
+    controller.step(Duration::ZERO);
+    assert!(diagnostics.notes.lock().unwrap().is_empty());
+
+    *probe.fullscreen.write().unwrap() = true;
+    controller.step(Duration::from_millis(1));
+    // Staying suppressed is not a transition: one line per change, not per tick.
+    controller.step(Duration::from_millis(2));
+    assert_eq!(
+        *diagnostics.notes.lock().unwrap(),
+        vec!["fullscreen suppression began: class=Windows.UI.Core.CoreWindow cloaked=true"]
+    );
+
+    *probe.fullscreen.write().unwrap() = false;
+    controller.step(Duration::from_millis(3));
+    controller.step(Duration::from_millis(4));
+    assert_eq!(
+        *diagnostics.notes.lock().unwrap(),
+        vec![
+            "fullscreen suppression began: class=Windows.UI.Core.CoreWindow cloaked=true",
+            "fullscreen suppression ended",
+        ]
+    );
 }

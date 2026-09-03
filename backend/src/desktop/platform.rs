@@ -53,6 +53,13 @@ pub trait DesktopProbe: Send + Sync {
         selected_monitor: &MonitorDescriptor,
         dashy_window_handles: &[NativeWindowHandle],
     ) -> bool;
+
+    /// A short, secret-free description of the foreground window (class,
+    /// visibility, rectangle, monitor) for the diagnostics log when fullscreen
+    /// suppression begins. `None` where the platform cannot name it.
+    fn describe_foreground(&self) -> Option<String> {
+        None
+    }
 }
 
 /// A monitor as reported by a toolkit-level enumeration (Tauri on macOS, GDK on
@@ -263,6 +270,10 @@ impl DesktopProbe for PlatformDesktopProbe {
         dashy_window_handles: &[NativeWindowHandle],
     ) -> bool {
         crate::desktop::windows::foreground_is_fullscreen(selected_monitor, dashy_window_handles)
+    }
+
+    fn describe_foreground(&self) -> Option<String> {
+        crate::desktop::windows::describe_foreground()
     }
 }
 

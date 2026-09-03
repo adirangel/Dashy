@@ -113,7 +113,8 @@ panels, and display or DPI changes trigger repositioning.
 
 Dashy hides when another application is fullscreen on the selected monitor by
 default. Enable **Always show over fullscreen apps** in Settings to override that
-behavior.
+behavior. Show Dashy from the tray reveals the notch over a fullscreen application
+either way, until it hides again.
 
 The system tray (the menu bar on macOS) remains available while the notch is hidden
 or fullscreen-suppressed. Its menu provides Show Dashy, Refresh all providers,
@@ -125,7 +126,8 @@ Dashy shares one Rust edge controller and one React interface on every platform;
 only the thin desktop probe differs.
 
 - **Windows:** Win32 monitor and DPI enumeration, foreground-window fullscreen
-  detection, and a notch window that never activates when it reveals.
+  detection that never mistakes the focused desktop or taskbar for a fullscreen
+  application, and a notch window that never activates when it reveals.
 - **macOS:** Dashy runs as a menu-bar utility with no Dock icon. The notch joins
   every Space, hides beside fullscreen apps unless overridden, and the tray lives
   in the menu bar. Provider CLIs are resolved through the login shell's `PATH`
@@ -397,7 +399,8 @@ same draft. The full guarded procedure lives in [docs/RELEASE.md](docs/RELEASE.m
 - **A provider is unavailable or stale:** the CLI may have timed out, lost network
   access, or changed its supported output. Dashy keeps the last verified local value.
 - **The notch does not reveal:** check the selected placement and monitor, then use
-  Show Dashy from the tray. A fullscreen application may be suppressing it.
+  Show Dashy from the tray, which works even while a fullscreen application is
+  suppressing the edge reveal.
 - **A saved monitor is disconnected:** Dashy falls back to the primary monitor; reconnect
   it or choose a new monitor in Settings.
 - **The tray is not visible:** on Windows check the hidden-icons area; on GNOME

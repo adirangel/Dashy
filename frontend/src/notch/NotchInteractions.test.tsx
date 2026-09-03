@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   beginNotchExit: vi.fn(), completeNotchExit: vi.fn(),
   createExitToken: vi.fn(),
   openSettings: vi.fn(), setNotchInteraction: vi.fn(), showNotchMenu: vi.fn(), unlisten: vi.fn(), settingsUnlisten: vi.fn(),
-  refreshProvider: vi.fn(),
+  refreshProvider: vi.fn(), revalidate: vi.fn(),
   dashboard: {
     snapshot: null as DashboardSnapshot | null,
     refreshing: false,
@@ -30,7 +30,9 @@ vi.mock("../window", () => ({
   setNotchInteraction: mocks.setNotchInteraction, showNotchMenu: mocks.showNotchMenu,
 }));
 vi.mock("../useDashboardSnapshot", () => ({
-  useDashboardSnapshot: () => ({ ...mocks.dashboard, refreshProvider: mocks.refreshProvider }),
+  useDashboardSnapshot: () => ({
+    ...mocks.dashboard, refreshProvider: mocks.refreshProvider, revalidate: mocks.revalidate,
+  }),
 }));
 
 import { NotchApp } from "./NotchApp";
@@ -101,6 +103,24 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByTestId("notch-surface"))
       .toHaveAttribute("data-logical-size", "70x400");
     expect(screen.getByTestId("notch-surface")).not.toHaveClass("is-expanded");
+  });
+
+  it("revalidates the dashboard for the enabled providers only when the notch is revealed", async () => {
+    await renderNativeNotch();
+    await waitFor(() => expect(screen.getByTestId("notch-app")).toHaveAttribute("data-visibility", "hidden"));
+    expect(mocks.revalidate).not.toHaveBeenCalled();
+
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+    expect(mocks.revalidate).toHaveBeenCalledExactlyOnceWith(["claude", "codex", "github"]);
+
+    // Moving between visible states is not a reveal.
+    await emitEdgeView({ visibility: "card", placement: "right", provider: "claude" });
+    await emitEdgeView({ visibility: "pinned", placement: "right", provider: "claude" });
+    expect(mocks.revalidate).toHaveBeenCalledTimes(1);
+
+    await emitEdgeView({ visibility: "hidden", placement: "right", provider: null });
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+    expect(mocks.revalidate).toHaveBeenCalledTimes(2);
   });
 
   it.each([
