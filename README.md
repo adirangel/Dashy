@@ -125,7 +125,8 @@ Dashy shares one Rust edge controller and one React interface on every platform;
 only the thin desktop probe differs.
 
 - **Windows:** Win32 monitor and DPI enumeration, foreground-window fullscreen
-  detection, and a notch window that never activates when it reveals.
+  detection that never mistakes the focused desktop or taskbar for a fullscreen
+  application, and a notch window that never activates when it reveals.
 - **macOS:** Dashy runs as a menu-bar utility with no Dock icon. The notch joins
   every Space, hides beside fullscreen apps unless overridden, and the tray lives
   in the menu bar. Provider CLIs are resolved through the login shell's `PATH`

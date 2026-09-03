@@ -14,9 +14,9 @@ use windows::{
         },
         UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
         UI::WindowsAndMessaging::{
-            GetCursorPos, GetForegroundWindow, GetWindowRect, SetWindowPos, HWND_NOTOPMOST,
-            HWND_TOPMOST, MONITORINFOF_PRIMARY, SWP_HIDEWINDOW, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
-            SWP_SHOWWINDOW,
+            GetClassNameW, GetCursorPos, GetForegroundWindow, GetWindowRect, SetWindowPos,
+            HWND_NOTOPMOST, HWND_TOPMOST, MONITORINFOF_PRIMARY, SWP_HIDEWINDOW, SWP_NOACTIVATE,
+            SWP_NOOWNERZORDER, SWP_SHOWWINDOW,
         },
     },
 };
@@ -28,6 +28,21 @@ use crate::desktop::{
 };
 
 const MAX_DISPLAY_LABEL_SCALARS: usize = 80;
+/// Window class names are at most 256 characters including the terminator.
+const MAX_WINDOW_CLASS_NAME_UTF16: usize = 256;
+
+/// Window classes the Windows shell itself owns. Explorer's desktop (`Progman`,
+/// or `WorkerW` once the icon view has been re-parented) and the taskbars are
+/// sized to the monitor, and the desktop is the foreground window whenever the
+/// user has nothing else focused: right after an installer or the onboarding
+/// window closes, after unlocking the session, or after clicking the wallpaper.
+/// None of them is a fullscreen application, so none of them may suppress Dashy.
+const SHELL_WINDOW_CLASSES: [&str; 4] = [
+    "Progman",
+    "WorkerW",
+    "Shell_TrayWnd",
+    "Shell_SecondaryTrayWnd",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WindowZOrder {
@@ -198,6 +213,7 @@ pub(super) fn foreground_is_fullscreen(
     if dashy_window_handles.contains(&foreground_handle) {
         return false;
     }
+    let foreground_class = window_class_name(foreground);
 
     let mut window_rect = RECT::default();
     // SAFETY: `foreground` came from Windows and `window_rect` is writable for this call.
@@ -225,11 +241,27 @@ pub(super) fn foreground_is_fullscreen(
     classify_fullscreen(
         foreground_handle,
         dashy_window_handles,
+        foreground_class.as_deref(),
         &foreground_monitor.id,
         &selected_monitor.id,
         window_rect.into(),
         selected_rect,
     )
+}
+
+/// The foreground window's class name, or `None` when the query fails (a window
+/// that vanished while activation was changing, or a cross-desktop handle).
+fn window_class_name(window: HWND) -> Option<String> {
+    let mut buffer = [0_u16; MAX_WINDOW_CLASS_NAME_UTF16];
+    // SAFETY: `window` is used only as an opaque handle and `buffer` stays valid and writable for
+    // this synchronous call; GetClassNameW writes at most `buffer.len() - 1` code units plus NUL.
+    let length = unsafe { GetClassNameW(window, &mut buffer) };
+    let length = usize::try_from(length).ok().filter(|length| *length > 0)?;
+    String::from_utf16(buffer.get(..length)?).ok()
+}
+
+fn is_shell_window_class(class_name: &str) -> bool {
+    SHELL_WINDOW_CLASSES.contains(&class_name)
 }
 
 unsafe extern "system" fn enumerate_monitor(
@@ -380,12 +412,14 @@ fn checked_work_area(rect: RawRect) -> Result<MonitorWorkArea, DesktopError> {
 fn classify_fullscreen(
     foreground_handle: NativeWindowHandle,
     dashy_window_handles: &[NativeWindowHandle],
+    foreground_class: Option<&str>,
     foreground_monitor_id: &str,
     selected_monitor_id: &str,
     window_rect: RawRect,
     monitor_rect: RawRect,
 ) -> bool {
     if dashy_window_handles.contains(&foreground_handle)
+        || foreground_class.is_some_and(is_shell_window_class)
         || foreground_monitor_id != selected_monitor_id
     {
         return false;
@@ -705,10 +739,34 @@ mod tests {
     }
 
     #[test]
+    fn a_foreground_window_covering_the_selected_monitor_is_fullscreen() {
+        assert!(classify_fullscreen(
+            41,
+            &[],
+            Some("Chrome_WidgetWin_1"),
+            "\\\\.\\DISPLAY1",
+            "\\\\.\\DISPLAY1",
+            RawRect::new(0, 0, 1920, 1080),
+            RawRect::new(0, 0, 1920, 1080),
+        ));
+        // A window whose class could not be read is still judged by its geometry.
+        assert!(classify_fullscreen(
+            41,
+            &[],
+            None,
+            "\\\\.\\DISPLAY1",
+            "\\\\.\\DISPLAY1",
+            RawRect::new(0, 0, 1920, 1080),
+            RawRect::new(0, 0, 1920, 1080),
+        ));
+    }
+
+    #[test]
     fn fullscreen_on_another_monitor_does_not_suppress_the_selected_monitor() {
         assert!(!classify_fullscreen(
             41,
             &[],
+            Some("Chrome_WidgetWin_1"),
             "\\\\.\\DISPLAY2",
             "\\\\.\\DISPLAY1",
             RawRect::new(-1920, 0, 0, 1080),
@@ -721,11 +779,42 @@ mod tests {
         assert!(!classify_fullscreen(
             41,
             &[17, 41],
+            Some("TauriWindow"),
             "\\\\.\\DISPLAY1",
             "\\\\.\\DISPLAY1",
             RawRect::new(0, 0, 1920, 1080),
             RawRect::new(0, 0, 1920, 1080),
         ));
+    }
+
+    #[test]
+    fn the_focused_desktop_and_taskbar_never_count_as_a_fullscreen_application() {
+        // An empty desktop is the foreground window after an installer or the
+        // onboarding window closes and after the session is unlocked; Explorer
+        // sizes it to the monitor exactly like a fullscreen game would be.
+        for shell_class in SHELL_WINDOW_CLASSES {
+            assert!(
+                !classify_fullscreen(
+                    41,
+                    &[],
+                    Some(shell_class),
+                    "\\\\.\\DISPLAY1",
+                    "\\\\.\\DISPLAY1",
+                    RawRect::new(0, 0, 1920, 1080),
+                    RawRect::new(0, 0, 1920, 1080),
+                ),
+                "{shell_class} must not suppress the notch"
+            );
+        }
+    }
+
+    #[test]
+    fn shell_window_classes_match_exactly() {
+        assert!(is_shell_window_class("Progman"));
+        assert!(is_shell_window_class("WorkerW"));
+        assert!(!is_shell_window_class("progman"));
+        assert!(!is_shell_window_class("WorkerW2"));
+        assert!(!is_shell_window_class(""));
     }
 
     #[test]
