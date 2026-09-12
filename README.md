@@ -9,6 +9,16 @@ and Cursor account status using your locally authenticated command-line tools.
 [Download Dashy](https://github.com/adirangel/Dashy/releases/latest) ·
 [Installation guide](#install-dashy) · [Troubleshooting](#troubleshooting)
 
+## See Dashy in 24 seconds
+
+[![Dashy interface tour: Claude Code and Codex remaining usage, GitHub activity, and screen-edge layouts](docs/images/dashy-tour.gif)](https://dashy-ai-usage.adirangel.chatgpt.site/#demo)
+
+[Watch the captioned tour](https://dashy-ai-usage.adirangel.chatgpt.site/#demo).
+The tour uses real UI components with illustrative sample data.
+
+Setup help: [Monitor Claude Code usage](https://dashy-ai-usage.adirangel.chatgpt.site/guides/claude-code-usage-monitor) ·
+[Check Codex usage limits](https://dashy-ai-usage.adirangel.chatgpt.site/guides/codex-usage-limits).
+
 ## What Dashy tracks
 
 - Claude session and weekly usage windows
