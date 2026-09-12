@@ -1,7 +1,15 @@
-# Dashy
+# Dashy — AI Usage Monitor for Windows, macOS, and Linux
 
-Dashy is a local-first side-notch for Windows, macOS, and Linux that shows real,
-CLI-backed signals:
+Dashy is a free, open-source desktop app by [Adir Angel](https://github.com/adirangel)
+for monitoring **Claude Code and Codex usage limits** from a compact screen-edge
+notch. Track session and weekly usage alongside GitHub contributions, Grok credits,
+and Cursor account status using your locally authenticated command-line tools.
+
+[Website](https://dashy-ai-usage.adirangel.chatgpt.site/) ·
+[Download Dashy](https://github.com/adirangel/Dashy/releases/latest) ·
+[Installation guide](#install-dashy) · [Troubleshooting](#troubleshooting)
+
+## What Dashy tracks
 
 - Claude session and weekly usage windows
 - Codex session and weekly usage windows
