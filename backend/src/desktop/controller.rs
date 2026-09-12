@@ -166,26 +166,10 @@ impl<R: Runtime> WindowPort for TauriWindowPort<R> {
     fn apply(&self, layout: &WindowLayout) -> Result<(), DesktopError> {
         #[cfg(windows)]
         {
-            let handle = self
-                .main
-                .hwnd()
-                .map_err(|_| DesktopError::WindowOperationFailed)?;
-            super::windows::apply_window_bounds(handle.0 as NativeWindowHandle, layout)?;
-            // SetWindowPos shows and hides the host window behind the toolkit's
-            // back, so WebView2 is never told that its host became visible. A
-            // WebView2 that was created, navigated, and resized while hidden can
-            // present nothing after the host is shown until an unrelated repaint
-            // (WebView2Feedback #1077, #2983, #4763, #5673). Toggling the webview
-            // itself makes every reveal a real visibility transition; wry hosts it
-            // in a child window, so showing it never activates the notch.
-            let webview: &tauri::Webview<R> = self.main.as_ref();
-            if layout.visible {
-                webview.show()
-            } else {
-                webview.hide()
-            }
-            .map_err(|_| DesktopError::WindowOperationFailed)?;
-            Ok(())
+            // Host bounds, child visibility and the compositor must change on
+            // the WebView's UI thread as one operation. Raw SetWindowPos from
+            // the controller worker bypasses the toolkit's visibility lifecycle.
+            super::windows::apply_webview_layout(&self.main, *layout)
         }
         #[cfg(not(windows))]
         {

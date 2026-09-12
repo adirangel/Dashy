@@ -172,6 +172,12 @@ modes. Cursor's CLI reports the connection and plan tier but no usage numbers, s
 its tile and card show the account state and point to the Cursor dashboard for
 usage.
 
+On Windows, provider installs from onboarding or Settings also verify command
+discovery from the saved user/machine `PATH`, add only a missing command directory
+to the user `PATH`, and notify Windows of the change. Existing terminal processes
+can retain their old environment; close all terminal windows and reopen from Start.
+The contributor bootstrap scripts are not required for installed-app users.
+
 The dashboard primes its local cache on startup and refreshes periodically. Each
 provider remains isolated: one unavailable or signed-out CLI does not prevent the
 other providers from working.

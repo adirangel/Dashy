@@ -41,6 +41,17 @@ impl SetupService {
         self.runner
             .run_visible(program, args)
             .await
+            .map_err(sanitize_setup_error)?;
+        let provider_program = match provider {
+            ProviderId::Claude => AllowedProgram::Claude,
+            ProviderId::Codex => AllowedProgram::Codex,
+            ProviderId::GitHub => AllowedProgram::Gh,
+            ProviderId::Grok => AllowedProgram::Grok,
+            ProviderId::Cursor => AllowedProgram::CursorAgent,
+        };
+        self.runner
+            .finish_install(provider_program)
+            .await
             .map_err(sanitize_setup_error)
     }
 
@@ -105,6 +116,34 @@ mod tests {
             self.0.lock().unwrap().push((program, args));
             Ok(())
         }
+    }
+
+    struct FailingFinalization;
+
+    #[async_trait]
+    impl VisibleRunner for FailingFinalization {
+        async fn run_visible(
+            &self,
+            _: AllowedProgram,
+            _: Vec<String>,
+        ) -> Result<(), VisibleProcessError> {
+            Ok(())
+        }
+        async fn finish_install(&self, program: AllowedProgram) -> Result<(), VisibleProcessError> {
+            assert_eq!(program, AllowedProgram::Codex);
+            Err(VisibleProcessError::NotInstalled)
+        }
+    }
+
+    #[tokio::test]
+    async fn installer_success_is_not_success_when_the_shell_command_is_missing() {
+        let service = SetupService::new(Arc::new(FailingFinalization));
+        assert_eq!(
+            service
+                .install_on(ProviderId::Codex, HostPlatform::Windows)
+                .await,
+            Err("provider tool is not installed".to_owned())
+        );
     }
 
     #[tokio::test]

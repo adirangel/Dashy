@@ -203,6 +203,51 @@ describe("native notch interaction bridge", () => {
     expect(screen.getByTestId("notch-app")).toBeEmptyDOMElement();
   });
 
+  it("recovers a failed startup settings query without a click or refresh", async () => {
+    mocks.getSettings.mockRejectedValueOnce(new Error("backend still starting"));
+    mocks.getCurrentEdgeView.mockResolvedValue({ visibility: "rail", placement: "right", provider: null });
+    await renderNativeNotch();
+    expect(screen.queryByTestId("notch-surface")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Codex/i })).toBeInTheDocument(), { timeout: 2000 });
+    expect(mocks.getSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers a failed startup view query without waiting for another edge event", async () => {
+    mocks.getCurrentEdgeView
+      .mockRejectedValueOnce(new Error("backend still starting"))
+      .mockResolvedValue({ visibility: "rail", placement: "right", provider: null });
+    await renderNativeNotch();
+    await waitFor(() => expect(screen.getByTestId("notch-surface")).toBeInTheDocument(), { timeout: 2000 });
+    expect(mocks.getCurrentEdgeView).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the initial view even if event registration fails", async () => {
+    mocks.listenForEdgeView.mockRejectedValueOnce(new Error("listener unavailable"));
+    mocks.getCurrentEdgeView.mockResolvedValue({ visibility: "rail", placement: "right", provider: null });
+    render(<NotchApp snapshot={snapshot} />);
+    await waitFor(() => expect(screen.getByTestId("notch-surface")).toBeInTheDocument());
+  });
+
+  it("reconnects an initially failed edge subscription and follows later views", async () => {
+    mocks.listenForEdgeView.mockRejectedValueOnce(new Error("bridge still starting"));
+    render(<NotchApp snapshot={snapshot} />);
+    await waitFor(() => expect(edgeHandler).toBeTypeOf("function"), { timeout: 2500 });
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+    expect(screen.getByTestId("notch-surface")).toBeInTheDocument();
+    expect(mocks.listenForEdgeView).toHaveBeenCalledTimes(2);
+  });
+
+  it("reconciles settings missed while the startup subscription was unavailable", async () => {
+    mocks.listenForSettingsChanges.mockRejectedValueOnce(new Error("bridge still starting"));
+    await renderNativeNotch();
+    await emitEdgeView({ visibility: "rail", placement: "right", provider: null });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Codex/i })).toBeInTheDocument());
+    mocks.getSettings.mockResolvedValue({ placement: "left", enabledProviders: ["claude"] });
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Codex/i })).not.toBeInTheDocument(), { timeout: 2500 });
+    expect(mocks.listenForSettingsChanges).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: /Claude/i })).toBeInTheDocument();
+  });
+
   it("does not query settings after listener registration rejects following cleanup", async () => {
     let rejectListener!: (reason: Error) => void;
     mocks.listenForSettingsChanges.mockReturnValue(new Promise((_, reject) => {

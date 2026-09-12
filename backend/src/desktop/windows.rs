@@ -106,11 +106,79 @@ impl WindowBoundsApi for Win32WindowBoundsApi {
     }
 }
 
-pub(super) fn apply_window_bounds(
-    handle: NativeWindowHandle,
-    layout: &WindowLayout,
+pub(super) fn apply_webview_layout<R: tauri::Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    layout: WindowLayout,
 ) -> Result<(), DesktopError> {
-    apply_window_bounds_with(&Win32WindowBoundsApi, handle, layout)
+    let handle = window
+        .hwnd()
+        .map_err(|_| DesktopError::WindowOperationFailed)?
+        .0 as NativeWindowHandle;
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    window
+        .with_webview(move |webview| {
+            let result = (|| {
+                use windows::Win32::{
+                    Graphics::Gdi::{RedrawWindow, RDW_ALLCHILDREN, RDW_INVALIDATE, RDW_UPDATENOW},
+                    UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOWNOACTIVATE},
+                };
+                let controller = webview.controller();
+                // SAFETY: with_webview runs on the owning UI thread and all handles
+                // remain owned by the live Tauri window throughout this callback.
+                unsafe {
+                    apply_window_bounds_with(&Win32WindowBoundsApi, handle, &layout)?;
+                    let mut child = HWND::default();
+                    controller
+                        .ParentWindow(&mut child)
+                        .map_err(|_| DesktopError::WindowOperationFailed)?;
+                    let _ = ShowWindow(
+                        child,
+                        if layout.visible {
+                            SW_SHOWNOACTIVATE
+                        } else {
+                            SW_HIDE
+                        },
+                    );
+                    controller
+                        .SetBounds(RECT {
+                            left: 0,
+                            top: 0,
+                            right: i32::try_from(layout.size.width)
+                                .map_err(|_| DesktopError::WindowOperationFailed)?,
+                            bottom: i32::try_from(layout.size.height)
+                                .map_err(|_| DesktopError::WindowOperationFailed)?,
+                        })
+                        .map_err(|_| DesktopError::WindowOperationFailed)?;
+                    controller
+                        .SetIsVisible(layout.visible)
+                        .map_err(|_| DesktopError::WindowOperationFailed)?;
+                    controller
+                        .NotifyParentWindowPositionChanged()
+                        .map_err(|_| DesktopError::WindowOperationFailed)?;
+                    if layout.visible {
+                        // Invalidate after every visible layout, including first
+                        // reveal, resize and retries after a failed paint. This
+                        // runs only on layout changes, not on controller ticks.
+                        RedrawWindow(
+                            Some(HWND(handle as *mut _)),
+                            None,
+                            None,
+                            RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW,
+                        )
+                        .ok()
+                        .map_err(|_| DesktopError::WindowOperationFailed)?;
+                    }
+                }
+                Ok(())
+            })();
+            let _ = sender.send(result);
+        })
+        .map_err(|_| DesktopError::WindowOperationFailed)?;
+    // Only the background controller calls this port. Propagate native failures
+    // so its existing retry mechanism does not mark an unpainted layout applied.
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .map_err(|_| DesktopError::WindowOperationFailed)?
 }
 
 fn apply_window_bounds_with(

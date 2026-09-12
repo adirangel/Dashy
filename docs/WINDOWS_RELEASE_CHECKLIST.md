@@ -81,3 +81,12 @@ not treat a developer workstation as a clean-machine result.
 - [ ] Publish the draft only after the responsible maintainer has recorded the
       evidence. If a gate fails, leave the draft unpublished, fix the source in a
       new commit, and create a new immutable patch-version tag.
+
+## Startup and provider command regression checks
+
+- [ ] Enable launch at startup, sign out/in or reboot, then hover the selected edge without clicking the tray, focusing Dashy or refreshing the desktop. Repeat on each edge and after lock/unlock.
+- [ ] Reveal/hide the notch repeatedly; check that passive reveals do not steal keyboard focus, and fullscreen suppression still works.
+- [ ] On a clean Windows user, install each selected CLI from onboarding. Open a new PowerShell from Start and check `Get-Command claude,codex,gh,grok` for the providers actually installed.
+- [ ] Confirm pre-existing user PATH entries, including expandable variables and paths with spaces/non-ASCII text, remain intact. Repeat install/repair to check that entries are not duplicated.
+- [ ] Test a missing executable, cancelled installer and failed environment update: setup must show a recoverable failure instead of reporting installation success.
+- [ ] Close all Windows Terminal windows before the fresh-shell check; a new tab in an already-running terminal can inherit its old environment.

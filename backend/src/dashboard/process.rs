@@ -89,7 +89,7 @@ fn current_windows_program_search_paths() -> Vec<PathBuf> {
     let program_files_x86 = std::env::var_os("ProgramFiles(x86)").map(PathBuf::from);
     let user_profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
 
-    windows_program_search_paths(
+    let mut paths = windows_program_search_paths(
         process_path.as_deref(),
         user_path.as_deref(),
         machine_path.as_deref(),
@@ -97,7 +97,17 @@ fn current_windows_program_search_paths() -> Vec<PathBuf> {
         program_files.as_deref(),
         program_files_x86.as_deref(),
         user_profile.as_deref(),
-    )
+    );
+    if let Some(root) = std::env::var_os("APPDATA") {
+        paths.push(PathBuf::from(root).join("npm"));
+    }
+    paths
+}
+
+#[cfg(windows)]
+fn windows_child_path_value() -> std::ffi::OsString {
+    std::env::join_paths(current_windows_program_search_paths())
+        .unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
 }
 
 #[cfg(windows)]
@@ -119,18 +129,23 @@ fn windows_program_search_paths(
     }
     if let Some(root) = local_app_data {
         paths.push(root.join("Microsoft/WinGet/Links"));
+        paths.push(root.join("Microsoft/WindowsApps"));
         // The Cursor CLI installer's fixed home; covers a wiped user PATH.
         paths.push(root.join("cursor-agent"));
     }
     if let Some(root) = program_files {
         paths.push(root.join("WinGet/Links"));
+        paths.push(root.join("GitHub CLI"));
     }
     if let Some(root) = program_files_x86 {
         paths.push(root.join("WinGet/Links"));
+        paths.push(root.join("GitHub CLI"));
     }
     if let Some(root) = user_profile {
         // The Grok CLI installer's fixed bin directory; covers a wiped user PATH.
         paths.push(root.join(".grok/bin"));
+        paths.push(root.join(".local/bin"));
+        paths.push(root.join("AppData/Roaming/npm"));
     }
     paths
 }
@@ -358,6 +373,11 @@ pub enum VisibleProcessError {
 
 #[async_trait]
 pub trait VisibleRunner: Send + Sync {
+    /// Complete an explicitly requested install, including shell discovery.
+    async fn finish_install(&self, _program: AllowedProgram) -> Result<(), VisibleProcessError> {
+        Ok(())
+    }
+
     async fn run_visible(
         &self,
         program: AllowedProgram,
@@ -392,6 +412,50 @@ pub struct SystemProcessRunner;
 
 #[async_trait]
 impl VisibleRunner for SystemProcessRunner {
+    async fn finish_install(&self, program: AllowedProgram) -> Result<(), VisibleProcessError> {
+        #[cfg(windows)]
+        {
+            if matches!(program, AllowedProgram::Winget | AllowedProgram::Brew) {
+                return Err(VisibleProcessError::Failed);
+            }
+            // No user-supplied shell text: only this compiled script and an
+            // allowlisted CLI name. Serialize repairs to avoid lost PATH updates.
+            static INSTALL_PATH_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+            let _guard = INSTALL_PATH_GATE.lock().await;
+            let script = include_str!("windows_install_path.ps1")
+                .replace("__DASHY_COMMAND__", program.executable());
+            let system_root = std::env::var_os("SystemRoot").ok_or(VisibleProcessError::Failed)?;
+            let mut command = Command::new(
+                PathBuf::from(system_root).join("System32/WindowsPowerShell/v1.0/powershell.exe"),
+            );
+            command
+                .args([
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    &script,
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .kill_on_drop(true);
+            return tokio::time::timeout(Duration::from_secs(30), command.status())
+                .await
+                .map_err(|_| VisibleProcessError::Failed)?
+                .map_err(|_| VisibleProcessError::Failed)?
+                .success()
+                .then_some(())
+                .ok_or(VisibleProcessError::Failed);
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = program;
+            Ok(())
+        }
+    }
+
     async fn run_visible(
         &self,
         program: AllowedProgram,
@@ -404,6 +468,7 @@ impl VisibleRunner for SystemProcessRunner {
             let status = Command::new(&launch.executable)
                 .args(&launch.prefix_args)
                 .args(args)
+                .env("PATH", windows_child_path_value())
                 .stdin(std::process::Stdio::inherit())
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
@@ -603,7 +668,9 @@ fn spawn_piped(
         command.stdin(std::process::Stdio::null());
     }
     #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
+    command
+        .creation_flags(CREATE_NO_WINDOW)
+        .env("PATH", windows_child_path_value());
     // Desktop-launched processes on macOS and Linux inherit a minimal PATH; the
     // provider CLIs spawn their own helpers (node, gh), so hand them the same
     // search path Dashy resolved the CLI from.

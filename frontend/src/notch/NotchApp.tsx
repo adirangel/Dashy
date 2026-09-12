@@ -150,13 +150,16 @@ export function NotchApp({
     let unlisten: (() => void) | undefined;
     let eventRevision = 0;
     let hasSettings = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let listenerRetryTimer: ReturnType<typeof setTimeout> | undefined;
     const applySettings = (settings: Awaited<ReturnType<typeof getSettings>>) => {
       hasSettings = true;
+      clearTimeout(retryTimer);
       if (!placementProp) setPersistedPlacement(settings.placement);
       setEnabledProviders(PROVIDERS.filter((provider) => settings.enabledProviders.includes(provider)));
       setSettingsReady(true);
     };
-    void (async () => {
+    const bootstrap = async () => {
       try {
         const stop = await listenForSettingsChanges((settings) => {
           if (!active) return;
@@ -169,22 +172,32 @@ export function NotchApp({
         }
         unlisten = stop;
       } catch {
-        // The one-shot settings query below remains available without events.
+        // Read settings now, and recover the subscription independently.
+        if (active) listenerRetryTimer = setTimeout(() => { void bootstrap(); }, 1000);
       }
       if (!active) return;
 
-      const queryRevision = eventRevision;
-      try {
-        const settings = await getSettings();
-        if (active && eventRevision === queryRevision) applySettings(settings);
-      } catch {
-        if (active && !hasSettings && eventRevision === queryRevision) {
-          setEnabledProviders([]);
-          setSettingsReady(true);
+      const readSettings = async () => {
+        if (!active) return;
+        clearTimeout(retryTimer);
+        const queryRevision = eventRevision;
+        try {
+          const settings = await getSettings();
+          if (active && eventRevision === queryRevision) applySettings(settings);
+        } catch {
+          if (active && eventRevision === queryRevision) {
+            if (!hasSettings) {
+              setEnabledProviders([]);
+              setSettingsReady(true);
+            }
+            retryTimer = setTimeout(() => { void readSettings(); }, 500);
+          }
         }
-      }
-    })();
-    return () => { active = false; unlisten?.(); };
+      };
+      await readSettings();
+    };
+    void bootstrap();
+    return () => { active = false; clearTimeout(retryTimer); clearTimeout(listenerRetryTimer); unlisten?.(); };
   }, [native, placementProp]);
 
   useEffect(() => {
@@ -192,6 +205,8 @@ export function NotchApp({
     let active = true;
     let unlisten: (() => void) | undefined;
     let eventRevision = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let listenerRetryTimer: ReturnType<typeof setTimeout> | undefined;
     const applyView = (next: EdgeViewState) => {
       if (!isVisibleView(next)) focusRestoreArmed.current = null;
       // The hidden notch window cannot rely on its timers, so every reveal
@@ -209,25 +224,37 @@ export function NotchApp({
         exitToken: isVisibleView(next) ? undefined : createExitToken(),
       });
     };
-    void listenForEdgeView((next) => {
+    const readView = async () => {
       if (!active) return;
-      eventRevision += 1;
-      applyView(next);
-    }).then(async (stop) => {
-      if (!active) {
-        stop();
-        return;
-      }
-      unlisten = stop;
+      clearTimeout(retryTimer);
       const queryRevision = eventRevision;
       try {
         const current = await getCurrentEdgeView();
         if (active && eventRevision === queryRevision) applyView(current);
       } catch {
-        // A later edge event remains authoritative when the handshake is unavailable.
+        if (active && eventRevision === queryRevision) {
+          retryTimer = setTimeout(() => { void readView(); }, 500);
+        }
       }
-    }).catch(() => undefined);
-    return () => { active = false; unlisten?.(); };
+    };
+    const bootstrap = async () => {
+      try {
+        const stop = await listenForEdgeView((next) => {
+          if (!active) return;
+          eventRevision += 1;
+          clearTimeout(retryTimer);
+          applyView(next);
+        });
+        if (!active) { stop(); return; }
+        unlisten = stop;
+      } catch {
+        // Restore the snapshot now and retry listening for future reveals.
+        if (active) listenerRetryTimer = setTimeout(() => { void bootstrap(); }, 1000);
+      }
+      await readView();
+    };
+    void bootstrap();
+    return () => { active = false; clearTimeout(retryTimer); clearTimeout(listenerRetryTimer); unlisten?.(); };
   }, [native, revalidateDashboard]);
 
   useEffect(() => {
