@@ -142,9 +142,10 @@ fn provider_setup_state(provider: ProviderId, snapshot: &DashboardSnapshot) -> P
         definition: ProviderSetupDefinition::for_provider(provider),
         status,
         repair_action: match error_kind {
-            Some(crate::dashboard::models::ProviderErrorKind::MissingExecutable) => {
-                Some(ProviderRepairAction::Install)
-            }
+            Some(
+                crate::dashboard::models::ProviderErrorKind::MissingExecutable
+                | crate::dashboard::models::ProviderErrorKind::Launch,
+            ) => Some(ProviderRepairAction::Install),
             Some(crate::dashboard::models::ProviderErrorKind::Authentication) => {
                 Some(ProviderRepairAction::Login)
             }
@@ -281,6 +282,20 @@ mod tests {
             ))
             .unwrap();
             assert_eq!(login["repairAction"], "login", "{provider:?}");
+        }
+    }
+
+    #[test]
+    fn an_unlaunchable_provider_offers_install_repair_without_an_automatic_install() {
+        for provider in ProviderId::ALL {
+            let state = provider_setup_state(
+                provider,
+                &stale_snapshot(provider, ProviderErrorKind::Launch),
+            );
+            assert_eq!(
+                state.repair_action,
+                Some(crate::setup::models::ProviderRepairAction::Install)
+            );
         }
     }
 

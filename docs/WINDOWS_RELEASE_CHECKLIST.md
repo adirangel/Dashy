@@ -90,3 +90,15 @@ not treat a developer workstation as a clean-machine result.
 - [ ] Confirm pre-existing user PATH entries, including expandable variables and paths with spaces/non-ASCII text, remain intact. Repeat install/repair to check that entries are not duplicated.
 - [ ] Test a missing executable, cancelled installer and failed environment update: setup must show a recoverable failure instead of reporting installation success.
 - [ ] Close all Windows Terminal windows before the fresh-shell check; a new tab in an already-running terminal can inherit its old environment.
+
+- [ ] Test a Codex WinGet portable payload without its command alias and repeat
+      Install when WinGet reports no applicable update. Confirm the repaired
+      command works from a fresh PowerShell and Dashy can launch it without Node.
+- [ ] Test native and npm Claude installations, nested/hoisted Codex npm layouts,
+      and a provider updated while Dashy remains open with its old PATH.
+- [ ] Test an invalid executable and a missing Node runtime. Installation must
+      fail verification, startup failures must remain recoverable, and the log
+      must identify the setup stage/OS code without including CLI output.
+- [ ] Launch Dashy from the MSI and at logon, then install/login and refresh both
+      Claude and Codex. Validate subscription data on the affected machine;
+      version probes alone do not establish authenticated data retrieval.

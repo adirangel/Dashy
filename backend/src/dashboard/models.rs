@@ -38,10 +38,12 @@ pub enum ProviderStatus {
 #[serde(rename_all = "camelCase")]
 pub enum ProviderErrorKind {
     MissingExecutable,
+    Launch,
     Authentication,
     Network,
     Timeout,
     UnsupportedOutput,
+    UsageUnavailable,
     Process,
 }
 
@@ -55,6 +57,10 @@ pub enum ProviderError {
     Timeout,
     #[error("provider output is unsupported")]
     UnsupportedOutput,
+    #[error("provider is authenticated but did not return usage limits")]
+    UsageUnavailable,
+    #[error("provider executable could not start (OS code {os_code:?})")]
+    Launch { os_code: Option<i32> },
     #[error("provider process failed")]
     Process,
     #[error("provider network request failed")]

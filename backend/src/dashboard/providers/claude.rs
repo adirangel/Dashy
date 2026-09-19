@@ -76,9 +76,10 @@ impl<C: CaptureRunner> DataProvider<UsageData> for ClaudeProvider<C> {
 fn map_auth_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
         ProcessError::NonZero(_) => ProviderError::NotAuthenticated,
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
         ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => ProviderError::Process,
     }
 }
@@ -86,8 +87,9 @@ fn map_auth_process_error(error: ProcessError) -> ProviderError {
 fn map_usage_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
         ProcessError::NonZero(_) | ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => {
             ProviderError::Process
         }
@@ -122,6 +124,14 @@ where
     }
     if response.subtype != "success" || response.result.trim().is_empty() {
         return Err(ProviderError::UnsupportedOutput);
+    }
+
+    // A successful command can confirm the subscription while its usage request
+    // returns no limits. This is neither a zero allowance nor a format change.
+    if response.result.trim()
+        == "You are currently using your subscription to power your Claude Code usage"
+    {
+        return Err(ProviderError::UsageUnavailable);
     }
 
     parse_usage_summary_at(&response.result, now.clone())
@@ -848,6 +858,21 @@ mod tests {
     }
 
     #[test]
+    fn subscription_confirmation_without_limits_is_unavailable_not_zero() {
+        let response = usage_response(
+            "You are currently using your subscription to power your Claude Code usage\n",
+        );
+        assert_eq!(
+            parse_usage_response(&response),
+            Err(ProviderError::UsageUnavailable)
+        );
+        assert_eq!(
+            parse_usage_response(&usage_response("An unrecognized subscription response")),
+            Err(ProviderError::UnsupportedOutput)
+        );
+    }
+
+    #[test]
     fn rejects_duplicate_missing_and_malformed_required_summaries() {
         let duplicate = "Current session: 23% used · resets in 2 hr\nCurrent session: 24% used · resets in 3 hr\nCurrent week (all models): 41% used · resets Sep 3 at 2:00 PM";
         let missing = "Current session: 23% used · resets in 2 hr";
@@ -1197,7 +1222,11 @@ mod tests {
             (ProcessError::Timeout, ProviderError::Timeout),
             (ProcessError::NonZero(1), ProviderError::NotAuthenticated),
             (ProcessError::OutputLimit, ProviderError::Process),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
         ];
         for (error, expected) in auth_cases {
             let provider =
@@ -1210,7 +1239,11 @@ mod tests {
             (ProcessError::Timeout, ProviderError::Timeout),
             (ProcessError::NonZero(1), ProviderError::Process),
             (ProcessError::OutputLimit, ProviderError::Process),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
         ];
         for (error, expected) in usage_cases {
             let provider = ClaudeProvider::new(RecordingCaptureRunner::with_results(vec![

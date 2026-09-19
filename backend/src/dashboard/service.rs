@@ -420,7 +420,12 @@ fn map_error(error: &ProviderError) -> (ProviderStatus, ProviderErrorKind) {
             ProviderStatus::Unavailable,
             ProviderErrorKind::UnsupportedOutput,
         ),
+        ProviderError::UsageUnavailable => (
+            ProviderStatus::Unavailable,
+            ProviderErrorKind::UsageUnavailable,
+        ),
         ProviderError::Network => (ProviderStatus::Unavailable, ProviderErrorKind::Network),
+        ProviderError::Launch { .. } => (ProviderStatus::Unavailable, ProviderErrorKind::Launch),
         ProviderError::Process => (ProviderStatus::Unavailable, ProviderErrorKind::Process),
     }
 }
@@ -921,6 +926,17 @@ mod tests {
         assert_eq!(snapshot.github.account_login, None);
         assert_eq!(snapshot.github.contribution_days, None);
         assert_eq!(snapshot.codex.remaining_percent, Some(72));
+    }
+
+    #[test]
+    fn missing_usage_limits_preserve_a_distinct_recoverable_error() {
+        assert_eq!(
+            super::map_error(&ProviderError::UsageUnavailable),
+            (
+                ProviderStatus::Unavailable,
+                ProviderErrorKind::UsageUnavailable
+            )
+        );
     }
 
     #[tokio::test]

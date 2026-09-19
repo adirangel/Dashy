@@ -56,7 +56,10 @@ fn program_launch(program: AllowedProgram) -> ProgramLaunch {
     #[cfg(windows)]
     {
         let path_entries = current_windows_program_search_paths();
-        if let Some(launch) = resolve_windows_program_from_paths(program, &path_entries) {
+        if let Some(mut launch) = resolve_windows_program_from_paths(program, &path_entries) {
+            // Some Windows programs parse argv[0] as switches when it contains
+            // forward slashes. Use native separators for discovered executables.
+            launch.executable = launch.executable.components().collect();
             return launch;
         }
     }
@@ -121,7 +124,8 @@ fn windows_program_search_paths(
     user_profile: Option<&std::path::Path>,
 ) -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    for value in [process_path, user_path, machine_path]
+    // Match a fresh Windows shell before consulting Dashy's startup snapshot.
+    for value in [machine_path, user_path, process_path]
         .into_iter()
         .flatten()
     {
@@ -132,14 +136,20 @@ fn windows_program_search_paths(
         paths.push(root.join("Microsoft/WindowsApps"));
         // The Cursor CLI installer's fixed home; covers a wiped user PATH.
         paths.push(root.join("cursor-agent"));
+        paths.push(root.join("Programs/OpenAI/Codex/bin"));
+        append_winget_package_paths(&mut paths, &root.join("Microsoft/WinGet/Packages"));
     }
     if let Some(root) = program_files {
         paths.push(root.join("WinGet/Links"));
         paths.push(root.join("GitHub CLI"));
+        paths.push(root.join("nodejs"));
+        append_winget_package_paths(&mut paths, &root.join("WinGet/Packages"));
     }
     if let Some(root) = program_files_x86 {
         paths.push(root.join("WinGet/Links"));
         paths.push(root.join("GitHub CLI"));
+        paths.push(root.join("nodejs"));
+        append_winget_package_paths(&mut paths, &root.join("WinGet/Packages"));
     }
     if let Some(root) = user_profile {
         // The Grok CLI installer's fixed bin directory; covers a wiped user PATH.
@@ -147,7 +157,23 @@ fn windows_program_search_paths(
         paths.push(root.join(".local/bin"));
         paths.push(root.join("AppData/Roaming/npm"));
     }
-    paths
+    // Empty/relative PATH entries depend on the installer's working directory.
+    let mut unique = Vec::new();
+    for path in paths {
+        if path.is_absolute() && !unique.contains(&path) {
+            unique.push(path);
+        }
+    }
+    unique
+}
+
+#[cfg(windows)]
+fn append_winget_package_paths(paths: &mut Vec<PathBuf>, root: &std::path::Path) {
+    // WinGet may add the portable package directory instead of creating an alias.
+    // Only inspect known package homes; never recursively scan user directories.
+    for package in ["OpenAI.Codex", "Anthropic.ClaudeCode", "xAI.GrokBuild"] {
+        paths.push(root.join(format!("{package}_Microsoft.Winget.Source_8wekyb3d8bbwe")));
+    }
 }
 
 #[cfg(windows)]
@@ -242,7 +268,25 @@ fn resolve_windows_program_from_paths(
     // .cmd shims cannot be spawned as direct children, so shim-distributed programs
     // resolve to the real executable (or node plus script) behind their wrapper.
     match program {
-        AllowedProgram::Codex => resolve_codex_npm_shim(path_entries),
+        AllowedProgram::Codex => path_entries
+            .iter()
+            .flat_map(|directory| {
+                // An x64 Dashy can run under emulation on Windows ARM64 while
+                // WinGet installs the native ARM64 provider.
+                [
+                    format!("codex-{CODEX_WINDOWS_TARGET}.exe"),
+                    "codex-x86_64-pc-windows-msvc.exe".to_owned(),
+                    "codex-aarch64-pc-windows-msvc.exe".to_owned(),
+                ]
+                .map(|name| directory.join(name))
+            })
+            .find(|candidate| candidate.is_file())
+            .map(|executable| ProgramLaunch {
+                executable,
+                prefix_args: Vec::new(),
+            })
+            .or_else(|| resolve_codex_npm_shim(path_entries)),
+        AllowedProgram::Claude => resolve_claude_npm_shim(path_entries),
         AllowedProgram::CursorAgent => resolve_cursor_agent_shim(path_entries),
         _ => None,
     }
@@ -257,20 +301,22 @@ fn resolve_codex_npm_shim(path_entries: &[PathBuf]) -> Option<ProgramLaunch> {
         }
 
         let package_root = directory.join("node_modules/@openai/codex");
-        [
+        let roots = [
             package_root
                 .join("node_modules/@openai")
-                .join(CODEX_WINDOWS_PACKAGE)
-                .join("vendor")
-                .join(CODEX_WINDOWS_TARGET)
-                .join("bin/codex.exe"),
-            package_root
-                .join("vendor")
-                .join(CODEX_WINDOWS_TARGET)
-                .join("bin/codex.exe"),
-        ]
-        .into_iter()
-        .find(|candidate| candidate.is_file())
+                .join(CODEX_WINDOWS_PACKAGE),
+            directory
+                .join("node_modules/@openai")
+                .join(CODEX_WINDOWS_PACKAGE),
+            package_root,
+        ];
+        roots
+            .into_iter()
+            .flat_map(|root| {
+                ["bin/codex.exe", "codex/codex.exe"]
+                    .map(|suffix| root.join("vendor").join(CODEX_WINDOWS_TARGET).join(suffix))
+            })
+            .find(|candidate| candidate.is_file())
     }) {
         return Some(ProgramLaunch {
             executable,
@@ -281,19 +327,68 @@ fn resolve_codex_npm_shim(path_entries: &[PathBuf]) -> Option<ProgramLaunch> {
     // Keep a compatibility fallback for future npm layouts. Current official
     // packages are resolved to their bundled executable above, which preserves
     // direct child-process ownership for timeout cleanup.
-    let node = path_entries
-        .iter()
-        .map(|directory| directory.join("node.exe"))
-        .find(|candidate| candidate.is_file())?;
-    let script = path_entries.iter().find_map(|directory| {
-        let shim = directory.join("codex.cmd");
-        let script = directory.join("node_modules/@openai/codex/bin/codex.js");
-        (shim.is_file() && script.is_file()).then_some(script)
-    })?;
+    resolve_node_shim(path_entries, "codex", "@openai/codex/bin/codex.js")
+}
 
-    Some(ProgramLaunch {
-        executable: node,
-        prefix_args: vec![script.into_os_string()],
+#[cfg(windows)]
+fn resolve_claude_npm_shim(path_entries: &[PathBuf]) -> Option<ProgramLaunch> {
+    let architectures = if cfg!(target_arch = "aarch64") {
+        ["arm64", "x64"]
+    } else {
+        ["x64", "arm64"]
+    };
+    for directory in path_entries {
+        if !directory.join("claude.cmd").is_file() {
+            continue;
+        }
+        let package = directory.join("node_modules/@anthropic-ai/claude-code");
+        // New npm releases ship a native optional dependency and copy/hardlink
+        // it to bin/claude.exe. Prefer the payload if postinstall left a stub.
+        let candidates = architectures.into_iter().flat_map(|architecture| {
+            let name = format!("claude-code-win32-{architecture}");
+            [
+                package
+                    .join("node_modules/@anthropic-ai")
+                    .join(&name)
+                    .join("claude.exe"),
+                directory
+                    .join("node_modules/@anthropic-ai")
+                    .join(name)
+                    .join("claude.exe"),
+            ]
+        });
+        if let Some(executable) = candidates
+            .chain(std::iter::once(package.join("bin/claude.exe")))
+            .find(|candidate| candidate.is_file())
+        {
+            return Some(ProgramLaunch {
+                executable,
+                prefix_args: Vec::new(),
+            });
+        }
+    }
+    resolve_node_shim(path_entries, "claude", "@anthropic-ai/claude-code/cli.js")
+}
+
+#[cfg(windows)]
+fn resolve_node_shim(
+    path_entries: &[PathBuf],
+    name: &str,
+    script_path: &str,
+) -> Option<ProgramLaunch> {
+    path_entries.iter().find_map(|directory| {
+        let script = directory.join("node_modules").join(script_path);
+        if !directory.join(format!("{name}.cmd")).is_file() || !script.is_file() {
+            return None;
+        }
+        let node = std::iter::once(directory)
+            .chain(path_entries.iter())
+            .map(|entry| entry.join("node.exe"))
+            .find(|candidate| candidate.is_file())?;
+        Some(ProgramLaunch {
+            executable: node,
+            prefix_args: vec![script.into_os_string()],
+        })
     })
 }
 
@@ -356,6 +451,7 @@ pub struct CapturedOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessError {
     NotInstalled,
+    Spawn { os_code: Option<i32> },
     Timeout,
     NonZero(i32),
     OutputLimit,
@@ -366,6 +462,8 @@ pub enum ProcessError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisibleProcessError {
     NotInstalled,
+    Spawn { os_code: Option<i32> },
+    NonZero(i32),
     UnsupportedPlatform,
     NoTerminal,
     Failed,
@@ -426,8 +524,13 @@ impl VisibleRunner for SystemProcessRunner {
                 .replace("__DASHY_COMMAND__", program.executable());
             let system_root = std::env::var_os("SystemRoot").ok_or(VisibleProcessError::Failed)?;
             let mut command = Command::new(
-                PathBuf::from(system_root).join("System32/WindowsPowerShell/v1.0/powershell.exe"),
+                PathBuf::from(system_root)
+                    .join("System32")
+                    .join("WindowsPowerShell")
+                    .join("v1.0")
+                    .join("powershell.exe"),
             );
+            configure_windows_working_directory(&mut command);
             command
                 .args([
                     "-NoLogo",
@@ -441,13 +544,31 @@ impl VisibleRunner for SystemProcessRunner {
                 .stderr(std::process::Stdio::null())
                 .creation_flags(CREATE_NO_WINDOW)
                 .kill_on_drop(true);
-            return tokio::time::timeout(Duration::from_secs(30), command.status())
+            let status = tokio::time::timeout(Duration::from_secs(30), command.status())
                 .await
                 .map_err(|_| VisibleProcessError::Failed)?
-                .map_err(|_| VisibleProcessError::Failed)?
-                .success()
-                .then_some(())
-                .ok_or(VisibleProcessError::Failed);
+                .map_err(|error| VisibleProcessError::Spawn {
+                    os_code: error.raw_os_error(),
+                })?;
+            if !status.success() {
+                return Err(VisibleProcessError::NonZero(status.code().unwrap_or(-1)));
+            }
+            // A discoverable wrapper is not necessarily runnable (missing Node,
+            // native dependencies, or a partial install). Probe without logging in.
+            return self
+                .capture(
+                    program,
+                    vec!["--version".to_owned()],
+                    Duration::from_secs(10),
+                )
+                .await
+                .map(|_| ())
+                .map_err(|error| match error {
+                    ProcessError::NotInstalled => VisibleProcessError::NotInstalled,
+                    ProcessError::Spawn { os_code } => VisibleProcessError::Spawn { os_code },
+                    ProcessError::NonZero(code) => VisibleProcessError::NonZero(code),
+                    _ => VisibleProcessError::Failed,
+                });
         }
         #[cfg(not(windows))]
         {
@@ -465,7 +586,9 @@ impl VisibleRunner for SystemProcessRunner {
         {
             const CREATE_NEW_CONSOLE: u32 = 0x00000010;
             let launch = program_launch(program);
-            let status = Command::new(&launch.executable)
+            let mut command = Command::new(&launch.executable);
+            configure_windows_working_directory(&mut command);
+            let status = command
                 .args(&launch.prefix_args)
                 .args(args)
                 .env("PATH", windows_child_path_value())
@@ -479,13 +602,15 @@ impl VisibleRunner for SystemProcessRunner {
                     if error.kind() == std::io::ErrorKind::NotFound {
                         VisibleProcessError::NotInstalled
                     } else {
-                        VisibleProcessError::Failed
+                        VisibleProcessError::Spawn {
+                            os_code: error.raw_os_error(),
+                        }
                     }
                 })?;
             return status
                 .success()
                 .then_some(())
-                .ok_or(VisibleProcessError::Failed);
+                .ok_or(VisibleProcessError::NonZero(status.code().unwrap_or(-1)));
         }
         #[cfg(unix)]
         {
@@ -572,7 +697,7 @@ impl CaptureRunner for SystemProcessRunner {
 
         let outcome = timeout_at(operation_deadline, async {
             tokio::try_join!(
-                async { child.wait().await.map_err(map_spawn_error) },
+                async { child.wait().await.map_err(|_| ProcessError::Io) },
                 async { tokio::try_join!(read_bounded(stdout), read_bounded(stderr)) }
             )
         })
@@ -626,7 +751,7 @@ impl JsonRpcRunner for SystemProcessRunner {
             for request in requests {
                 let mut line = serde_json::to_vec(&request).map_err(|_| ProcessError::Io)?;
                 line.push(b'\n');
-                stdin.write_all(&line).await.map_err(map_spawn_error)?;
+                stdin.write_all(&line).await.map_err(|_| ProcessError::Io)?;
             }
 
             stderr_task.wait_for_json_response(response).await
@@ -650,12 +775,31 @@ impl JsonRpcRunner for SystemProcessRunner {
     }
 }
 
+#[cfg(windows)]
+fn configure_windows_working_directory(command: &mut Command) {
+    // MSI and startup shortcuts can leave a transient or protected working
+    // directory. Account commands need a stable user-owned directory.
+    if let Some(directory) = std::env::var_os("USERPROFILE")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute() && path.is_dir())
+    {
+        command.current_dir(directory);
+    }
+}
+
 fn spawn_piped(
     program: AllowedProgram,
     args: Vec<String>,
     with_stdin: bool,
 ) -> Result<Child, ProcessError> {
-    let launch = program_launch(program);
+    spawn_piped_launch(program_launch(program), args, with_stdin)
+}
+
+fn spawn_piped_launch(
+    launch: ProgramLaunch,
+    args: Vec<String>,
+    with_stdin: bool,
+) -> Result<Child, ProcessError> {
     let mut command = Command::new(&launch.executable);
     command
         .args(&launch.prefix_args)
@@ -668,9 +812,12 @@ fn spawn_piped(
         command.stdin(std::process::Stdio::null());
     }
     #[cfg(windows)]
-    command
-        .creation_flags(CREATE_NO_WINDOW)
-        .env("PATH", windows_child_path_value());
+    {
+        configure_windows_working_directory(&mut command);
+        command
+            .creation_flags(CREATE_NO_WINDOW)
+            .env("PATH", windows_child_path_value());
+    }
     // Desktop-launched processes on macOS and Linux inherit a minimal PATH; the
     // provider CLIs spawn their own helpers (node, gh), so hand them the same
     // search path Dashy resolved the CLI from.
@@ -684,7 +831,10 @@ async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> Result<Vec<u8>, Pr
     let mut buffer = [0_u8; 8192];
 
     loop {
-        let count = reader.read(&mut buffer).await.map_err(map_spawn_error)?;
+        let count = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|_| ProcessError::Io)?;
         if count == 0 {
             return Ok(output);
         }
@@ -704,7 +854,10 @@ async fn read_json_response<R: AsyncRead + Unpin>(
     let mut buffer = [0_u8; 4096];
 
     loop {
-        let count = reader.read(&mut buffer).await.map_err(map_spawn_error)?;
+        let count = reader
+            .read(&mut buffer)
+            .await
+            .map_err(|_| ProcessError::Io)?;
         if count == 0 {
             return Err(ProcessError::Io);
         }
@@ -762,7 +915,7 @@ async fn terminate_tokio_before(
     let _ = child.start_kill();
     match timeout_at(deadline, child.wait()).await {
         Ok(Ok(_)) => Ok(()),
-        Ok(Err(error)) => Err(map_spawn_error(error)),
+        Ok(Err(_)) => Err(ProcessError::Io),
         Err(_) => Err(ProcessError::Timeout),
     }
 }
@@ -798,7 +951,9 @@ fn map_spawn_error(error: std::io::Error) -> ProcessError {
     if error.kind() == std::io::ErrorKind::NotFound {
         ProcessError::NotInstalled
     } else {
-        ProcessError::Io
+        ProcessError::Spawn {
+            os_code: error.raw_os_error(),
+        }
     }
 }
 
@@ -1175,3 +1330,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "windows_process_tests.rs"]
+mod windows_tests;

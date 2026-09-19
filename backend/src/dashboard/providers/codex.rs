@@ -62,6 +62,7 @@ impl<R: JsonRpcRunner> DataProvider<UsageData> for CodexProvider<R> {
 fn map_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
         ProcessError::JsonRpc { code, message }
             if code == AUTHENTICATION_ERROR_CODE && message == AUTHENTICATION_ERROR_MESSAGE =>
@@ -71,7 +72,7 @@ fn map_process_error(error: ProcessError) -> ProviderError {
         ProcessError::NonZero(_) | ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => {
             ProviderError::Process
         }
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
     }
 }
 
@@ -142,75 +143,23 @@ struct ParsedWindow {
     window_duration_mins: u32,
 }
 
+// Account, billing and model metadata can grow independently of usage windows.
+// Deserialize only the fields Dashy needs; the selected bucket identity and
+// window schema remain validated below.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RateLimitsResponse {
     #[serde(rename = "rateLimits")]
     rate_limits: Option<serde_json::Value>,
     #[serde(rename = "rateLimitsByLimitId")]
     rate_limits_by_limit_id: Option<std::collections::BTreeMap<String, serde_json::Value>>,
-    #[serde(rename = "rateLimitResetCredits")]
-    _rate_limit_reset_credits: Option<RateLimitResetCredits>,
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct RateLimitBucket {
-    #[serde(rename = "credits")]
-    _credits: Option<Credits>,
-    #[serde(rename = "individualLimit")]
-    _individual_limit: Option<()>,
     #[serde(rename = "limitId")]
     limit_id: String,
-    #[serde(rename = "limitName")]
-    _limit_name: Option<String>,
-    #[serde(rename = "planType")]
-    _plan_type: Option<String>,
     primary: Option<RateLimitWindow>,
-    #[serde(rename = "rateLimitReachedType")]
-    _rate_limit_reached_type: Option<String>,
     secondary: Option<RateLimitWindow>,
-    #[serde(rename = "spendControlReached")]
-    _spend_control_reached: Option<bool>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Credits {
-    #[serde(rename = "balance")]
-    _balance: String,
-    #[serde(rename = "hasCredits")]
-    _has_credits: bool,
-    #[serde(rename = "unlimited")]
-    _unlimited: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RateLimitResetCredits {
-    #[serde(rename = "availableCount")]
-    _available_count: u64,
-    #[serde(rename = "credits")]
-    _credits: Vec<ResetCredit>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ResetCredit {
-    #[serde(rename = "description")]
-    _description: String,
-    #[serde(rename = "expiresAt")]
-    _expires_at: i64,
-    #[serde(rename = "grantedAt")]
-    _granted_at: i64,
-    #[serde(rename = "id")]
-    _id: String,
-    #[serde(rename = "resetType")]
-    _reset_type: String,
-    #[serde(rename = "status")]
-    _status: String,
-    #[serde(rename = "title")]
-    _title: String,
 }
 
 #[derive(Deserialize)]
@@ -273,14 +222,11 @@ mod tests {
     }
 
     #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
     struct RawRateLimitsResponse {
         #[serde(rename = "rateLimits")]
         _rate_limits: Option<RateLimitBucket>,
         #[serde(rename = "rateLimitsByLimitId")]
         _rate_limits_by_limit_id: Option<std::collections::BTreeMap<String, serde_json::Value>>,
-        #[serde(rename = "rateLimitResetCredits")]
-        _rate_limit_reset_credits: Option<RateLimitResetCredits>,
     }
 
     #[test]
@@ -651,6 +597,39 @@ mod tests {
         assert_eq!(usage.weekly_window.unwrap().remaining_percent, 80);
     }
 
+    #[test]
+    fn accepts_additive_account_and_billing_metadata_without_storing_it() {
+        let value = json!({
+            "accountId": "fixture-account",
+            "ordinaryUsageAllowed": true,
+            "rateLimitResetCredits": {
+                "availableCount": 1,
+                "credits": [{"id": "fixture-credit", "newCreditMetadata": true}]
+            },
+            "rateLimitUpsell": {"newUpsellMetadata": true},
+            "futureResponseMetadata": {"version": 2},
+            "rateLimitsByLimitId": {
+                "codex": {
+                    "limitId": "codex",
+                    "normalModelSlug": "fixture-model",
+                    "futureBucketMetadata": true,
+                    "credits": {"newBillingMetadata": true},
+                    "primary": {
+                        "usedPercent": 8,
+                        "windowDurationMins": 10080,
+                        "resetsAt": 1788532560
+                    },
+                    "secondary": null
+                }
+            }
+        });
+        let usage = parse_value(value).unwrap();
+        assert!(usage.short_window.is_none());
+        let weekly = usage.weekly_window.unwrap();
+        assert_eq!(weekly.remaining_percent, 92);
+        assert_eq!(weekly.resets_at.unwrap().timestamp(), 1788532560);
+    }
+
     type JsonRpcCall = (
         AllowedProgram,
         Vec<String>,
@@ -757,7 +736,11 @@ mod tests {
             ),
             (ProcessError::NonZero(1), ProviderError::Process),
             (ProcessError::OutputLimit, ProviderError::Process),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
         ];
 
         for (error, expected) in cases {

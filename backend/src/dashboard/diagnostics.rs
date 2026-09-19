@@ -2,6 +2,7 @@
 //!
 //! Each refresh writes one line: when it ran, which provider, whether it
 //! succeeded (or the sanitized error category), and how long it took. The
+//! setup service records the failed stage and numeric exit/OS code. The
 //! desktop controller adds one line whenever fullscreen suppression begins or
 //! ends, naming the window class, rectangle, and monitor that triggered it.
 //! Nothing else is recorded — no CLI output, arguments, window titles, account
@@ -30,7 +31,7 @@ pub struct RefreshRecord {
     pub at: DateTime<Utc>,
     pub provider: ProviderId,
     /// `None` when the refresh produced data; otherwise the provider error's
-    /// display text, which is a fixed category and never CLI output.
+    /// display text, or a setup stage and numeric code; never CLI output.
     pub error: Option<String>,
     pub duration: Duration,
 }

@@ -123,6 +123,7 @@ fn parse_default_auth_method(value: &serde_json::Value) -> bool {
 fn map_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
         ProcessError::JsonRpc { code, message }
             if code == AUTHENTICATION_ERROR_CODE && message == AUTHENTICATION_ERROR_MESSAGE =>
@@ -132,7 +133,7 @@ fn map_process_error(error: ProcessError) -> ProviderError {
         ProcessError::NonZero(_) | ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => {
             ProviderError::Process
         }
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
     }
 }
 
@@ -370,7 +371,11 @@ mod tests {
     async fn probe_stage_runner_failures_keep_their_own_mapping() {
         for (probe_error, expected) in [
             (ProcessError::Timeout, ProviderError::Timeout),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
             (ProcessError::NonZero(3), ProviderError::Process),
             (authentication_required(), ProviderError::NotAuthenticated),
         ] {
@@ -414,7 +419,11 @@ mod tests {
             ),
             (ProcessError::NonZero(9), ProviderError::Process),
             (ProcessError::OutputLimit, ProviderError::Process),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
         ];
 
         for (process_error, expected) in cases {

@@ -65,8 +65,9 @@ impl<C: CaptureRunner> DataProvider<AccountData> for CursorProvider<C> {
 fn map_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
         ProcessError::NonZero(_) | ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => {
             ProviderError::Process
         }
@@ -311,7 +312,11 @@ mod tests {
             (ProcessError::NotInstalled, ProviderError::NotInstalled),
             (ProcessError::Timeout, ProviderError::Timeout),
             (ProcessError::OutputLimit, ProviderError::Process),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
         ];
         for (error, expected) in cases {
             let capture = RecordingCaptureRunner::with_results(vec![Err(error)]);

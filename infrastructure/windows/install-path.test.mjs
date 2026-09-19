@@ -13,8 +13,8 @@ $ErrorActionPreference = 'Stop'
 $tokens = $null; $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:DASHY_PATH_SCRIPT, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-# Import only pure helpers; never run the registry writer in a test.
-$ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Get-DashyUserPathUpdate', 'Find-DashyCommandDirectory') }, $true) |
+# Import fixture-safe helpers only; never run the registry writer in a test.
+$ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -in @('Get-DashyUserPathUpdate', 'Find-DashyCommandDirectory', 'Repair-DashyCodexCommandAlias') }, $true) |
   ForEach-Object { Invoke-Expression $_.Extent.Text }
 function Assert-Equal($actual, $expected) {
   if ($actual -cne $expected) { throw "Mismatch: expected [$expected], got [$actual]" }
@@ -34,6 +34,26 @@ Assert-Equal (Find-DashyCommandDirectory 'codex' @('C:\missing', $bin)) $bin
 $failed = $false
 try { Find-DashyCommandDirectory 'gh' @($bin) } catch { $failed = $true }
 if (-not $failed) { throw 'Missing command must fail verification' }
+# Reproduce a portable WinGet install with its target-qualified executable and
+# no command alias. Copy only the system shell as an isolated executable fixture.
+$portable = Join-Path $bin 'portable & !test!'
+New-Item -ItemType Directory -Path $portable | Out-Null
+Copy-Item -LiteralPath $env:ComSpec -Destination (Join-Path $portable 'codex-x86_64-pc-windows-msvc.exe')
+Assert-Equal (Find-DashyCommandDirectory 'codex' @($portable)) $portable
+$launcher = Join-Path $portable 'codex.cmd'
+$before = [IO.File]::ReadAllText($launcher)
+& $launcher /d /c 'exit 17'
+if ($LASTEXITCODE -ne 17) { throw 'Portable launcher lost the child exit code' }
+Assert-Equal (Find-DashyCommandDirectory 'codex' @($portable)) $portable
+Assert-Equal ([IO.File]::ReadAllText($launcher)) $before
+# Existing shell commands take priority over creating a portable alias.
+Remove-Item -LiteralPath $launcher
+Assert-Equal (Find-DashyCommandDirectory 'codex' @($portable, $bin)) $bin
+if (Test-Path -LiteralPath $launcher) { throw 'Existing command should prevent alias creation' }
+Assert-Equal (Find-DashyCommandDirectory 'codex' @($portable)) $portable
+$env:Path = Get-DashyUserPathUpdate '' '' $portable
+& $env:DASHY_POWERSHELL -NoProfile -NonInteractive -Command 'codex /d /c "exit 17"; exit $LASTEXITCODE'
+if ($LASTEXITCODE -ne 17) { throw 'Fresh shell could not run the repaired portable CLI' }
 $env:Path = Get-DashyUserPathUpdate '' '' $bin
 & $env:DASHY_POWERSHELL -NoProfile -NonInteractive -Command 'if (-not (Get-Command codex -CommandType Application -ErrorAction SilentlyContinue)) { exit 1 }'
 if ($LASTEXITCODE -ne 0) { throw 'New PowerShell did not discover codex' }

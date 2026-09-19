@@ -34,7 +34,32 @@ function Find-DashyCommandDirectory {
             }
         }
     }
+    if ($Name -eq 'codex') {
+        return Repair-DashyCodexCommandAlias -Directories $Directories
+    }
     throw 'The installer completed but the provider command is missing.'
+}
+
+function Repair-DashyCodexCommandAlias {
+    param([string[]]$Directories)
+    # WinGet may add the package directory without creating codex.exe. The
+    # relative ASCII launcher supports Unicode paths and adjacent helpers.
+    # Run only after an explicit install; never replace an existing command.
+    foreach ($directory in $Directories) {
+        if ([string]::IsNullOrWhiteSpace($directory)) { continue }
+        $directory = [Environment]::ExpandEnvironmentVariables($directory.Trim().Trim('"'))
+        if (-not [IO.Path]::IsPathRooted($directory)) { continue }
+        foreach ($payload in @('codex-x86_64-pc-windows-msvc.exe', 'codex-aarch64-pc-windows-msvc.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $directory $payload) -PathType Leaf)) { continue }
+            $launcher = Join-Path $directory 'codex.cmd'
+            $lines = @('@echo off', 'setlocal DisableDelayedExpansion', ('@"%~dp0' + $payload + '" %*'), 'exit /b %errorlevel%', '')
+            $bytes = [Text.Encoding]::ASCII.GetBytes([string]::Join([Environment]::NewLine, $lines))
+            $stream = [IO.File]::Open($launcher, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+            try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+            return $directory
+        }
+    }
+    throw 'The installer completed but the Codex executable is missing.'
 }
 
 function Repair-DashyInstalledCommand {
@@ -57,6 +82,7 @@ function Repair-DashyInstalledCommand {
         $directories += @(
             (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'),
             (Join-Path $env:LOCALAPPDATA 'cursor-agent'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\OpenAI\Codex\bin'),
             (Join-Path $env:USERPROFILE '.local\bin'),
             (Join-Path $env:USERPROFILE '.grok\bin'),
             (Join-Path $env:APPDATA 'npm')
@@ -65,6 +91,15 @@ function Repair-DashyInstalledCommand {
             if ($root) {
                 $directories += (Join-Path $root 'WinGet\Links')
                 $directories += (Join-Path $root 'GitHub CLI')
+            }
+        }
+        $packageRoots = @((Join-Path $env:LOCALAPPDATA 'Microsoft/WinGet/Packages'))
+        foreach ($root in @($env:ProgramFiles, [Environment]::GetEnvironmentVariable('ProgramFiles(x86)'))) {
+            if ($root) { $packageRoots += (Join-Path $root 'WinGet/Packages') }
+        }
+        foreach ($root in $packageRoots) {
+            foreach ($package in @('OpenAI.Codex', 'Anthropic.ClaudeCode', 'xAI.GrokBuild')) {
+                $directories += (Join-Path $root ($package + '_Microsoft.Winget.Source_8wekyb3d8bbwe'))
             }
         }
         $directory = Find-DashyCommandDirectory -Name $Name -Directories $directories

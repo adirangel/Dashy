@@ -66,9 +66,10 @@ impl<R: CaptureRunner> DataProvider<GitHubData> for GitHubProvider<R> {
 fn map_auth_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
         ProcessError::NonZero(_) => ProviderError::NotAuthenticated,
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
         ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => ProviderError::Process,
     }
 }
@@ -76,11 +77,12 @@ fn map_auth_process_error(error: ProcessError) -> ProviderError {
 fn map_graphql_process_error(error: ProcessError) -> ProviderError {
     match error {
         ProcessError::NotInstalled => ProviderError::NotInstalled,
+        ProcessError::Spawn { os_code } => ProviderError::Launch { os_code },
         ProcessError::Timeout => ProviderError::Timeout,
         ProcessError::NonZero(_) | ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => {
             ProviderError::Process
         }
-        ProcessError::Io => ProviderError::Network,
+        ProcessError::Io => ProviderError::Process,
     }
 }
 
@@ -465,7 +467,11 @@ mod tests {
             (ProcessError::NotInstalled, ProviderError::NotInstalled),
             (ProcessError::Timeout, ProviderError::Timeout),
             (ProcessError::NonZero(1), ProviderError::NotAuthenticated),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
             (ProcessError::OutputLimit, ProviderError::Process),
         ];
 
@@ -502,7 +508,11 @@ mod tests {
     async fn preserves_network_and_timeout_errors_after_active_auth() {
         let cases = [
             (ProcessError::Timeout, ProviderError::Timeout),
-            (ProcessError::Io, ProviderError::Network),
+            (ProcessError::Io, ProviderError::Process),
+            (
+                ProcessError::Spawn { os_code: Some(193) },
+                ProviderError::Launch { os_code: Some(193) },
+            ),
             (ProcessError::OutputLimit, ProviderError::Process),
         ];
 

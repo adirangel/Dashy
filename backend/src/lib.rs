@@ -94,9 +94,9 @@ pub fn run() {
             None,
         ))
         .manage(AppState::new(dashboard))
-        .manage(SetupState::new(Arc::new(SetupService::new(Arc::new(
-            SystemProcessRunner,
-        )))))
+        .manage(SetupState::new(Arc::new(
+            SetupService::new(Arc::new(SystemProcessRunner)).with_diagnostics(diagnostics.clone()),
+        )))
         .on_menu_event(|app, event| handle_menu_action(app, event.id.as_ref()))
         .setup(move |app| {
             // The log lives in the per-user app log directory; attaching it here
