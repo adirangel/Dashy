@@ -69,6 +69,19 @@ fn map_process_error(error: ProcessError) -> ProviderError {
         {
             ProviderError::NotAuthenticated
         }
+        ProcessError::JsonRpc {
+            code: -32600,
+            message,
+        } if message == "codex account authentication required to read rate limits" => {
+            ProviderError::NotAuthenticated
+        }
+        ProcessError::JsonRpc {
+            code: -32600,
+            message,
+        } if message == "chatgpt authentication required to read rate limits" => {
+            // API-key authentication can be valid without subscription limits.
+            ProviderError::UsageUnavailable
+        }
         ProcessError::NonZero(_) | ProcessError::OutputLimit | ProcessError::JsonRpc { .. } => {
             ProviderError::Process
         }
@@ -628,6 +641,43 @@ mod tests {
         let weekly = usage.weekly_window.unwrap();
         assert_eq!(weekly.remaining_percent, 92);
         assert_eq!(weekly.resets_at.unwrap().timestamp(), 1788532560);
+    }
+
+    #[test]
+    fn official_signed_out_response_requests_login_without_matching_other_rpc_errors() {
+        let message = "codex account authentication required to read rate limits";
+        assert_eq!(
+            map_process_error(ProcessError::JsonRpc {
+                code: -32600,
+                message: message.to_owned()
+            }),
+            ProviderError::NotAuthenticated
+        );
+        assert_eq!(
+            map_process_error(ProcessError::JsonRpc {
+                code: -32603,
+                message: message.to_owned()
+            }),
+            ProviderError::Process
+        );
+        assert_eq!(
+            map_process_error(ProcessError::JsonRpc {
+                code: -32600,
+                message: "unrelated invalid request".to_owned()
+            }),
+            ProviderError::Process
+        );
+    }
+
+    #[test]
+    fn api_key_only_account_does_not_become_signed_out() {
+        assert_eq!(
+            map_process_error(ProcessError::JsonRpc {
+                code: -32600,
+                message: "chatgpt authentication required to read rate limits".to_owned(),
+            }),
+            ProviderError::UsageUnavailable
+        );
     }
 
     type JsonRpcCall = (

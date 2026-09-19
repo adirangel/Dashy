@@ -33,6 +33,16 @@ The old logs did not record install/login failure stages or exit codes.
 - Children use a stable user directory and native Windows executable separators.
   A CLI that cannot start offers the existing explicit installation action.
 
+## First login on a new computer
+
+Codex app-server returns JSON-RPC error -32600 with a specific account-authentication
+message when signed out. Dashy recognizes that response and offers the existing
+Login action; unrelated invalid requests remain process errors. An API-key-only
+account receives a different response and remains authenticated with unavailable
+subscription limits, rather than being incorrectly treated as signed out.
+
+The response contract is covered by [the official Codex tests](https://github.com/openai/codex/blob/a5290028a2936b91ec9305f6de7780463620ca70/codex-rs/app-server/tests/suite/v2/rate_limits.rs).
+
 ## Usage response compatibility
 
 Codex account, billing and model metadata can change without changing the usage
