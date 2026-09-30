@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ProviderId, ProviderStatus } from "../dashboard";
 import { ProviderGlyph } from "../notch/ProviderGlyph";
+import { providerGuidanceKey } from "../notch/ProviderCard";
 import type { ProviderSetupDefinition } from "./api";
 import type { ProviderSetupController } from "./useProviderSetup";
 
@@ -21,14 +22,16 @@ type PendingAction = {
 
 const providerOrder: ProviderId[] = ["claude", "codex", "github", "grok", "cursor"];
 
-function statusKey(status: ProviderStatus) {
+function statusKey(status: ProviderStatus, errorKind: string | null) {
+  if ((status === "unavailable" || status === "stale") && errorKind === "usageUnavailable") {
+    return "setup.usageUnavailable";
+  }
   switch (status) {
     case "connected": return "setup.connected" as const;
     case "notInstalled": return "setup.notInstalled" as const;
     case "notAuthenticated": return "setup.signInRequired" as const;
-    // Stale means the last successful refresh produced real data; the connection is
-    // fine even though the newest refresh attempt failed, so keep reporting Connected.
-    case "stale": return "setup.connected" as const;
+    // Cached data does not prove that the CLI is still installed or signed in.
+    case "stale": return "setup.needsAttention" as const;
     case "unavailable": return "setup.needsAttention" as const;
   }
 }
@@ -167,9 +170,19 @@ export function ProviderManager({
   const statesByProvider = new Map(
     controller.states.map((state) => [state.definition.provider, state]),
   );
-  const setupActionActive = controller.busyProvider !== null;
+  const setupActionActive = selectionDisabled || controller.busyProvider !== null;
 
   return <div className="provider-setup-list">
+    {controller.loadFailed && <div className="provider-setup-row">
+      <p className="provider-setup-error" role="alert">{t("setup.actionFailure")}</p>
+      <div className="provider-setup-row-actions">
+        <button
+          type="button"
+          disabled={setupActionActive}
+          onClick={() => { void controller.reload(); }}
+        >{t("setup.retry")}</button>
+      </div>
+    </div>}
     {providerOrder.map((provider) => {
       const state = statesByProvider.get(provider);
       if (!state) return null;
@@ -182,6 +195,7 @@ export function ProviderManager({
       const pending = pendingAction?.provider === provider ? pendingAction : null;
       const isEnabled = enabledProviders.includes(provider);
       const actionsAvailable = !actionsRequireSelection || isEnabled;
+      const guidanceKey = providerGuidanceKey(provider, state.status, state.errorKind);
       const showFailure = actionsAvailable
         && (controller.failureProvider === provider || manualHelpFailureProvider === provider);
 
@@ -232,7 +246,7 @@ export function ProviderManager({
               role="status"
               aria-live="polite"
               aria-atomic="true"
-            ><i className="provider-setup-status-dot" aria-hidden="true" />{busyStatus ?? t(statusKey(state.status))}</span>
+            ><i className="provider-setup-status-dot" aria-hidden="true" />{busyStatus ?? t(statusKey(state.status, state.errorKind))}</span>
           </div>
           <div className="provider-setup-row-actions">
             {actionsAvailable && state.repairAction === "install" && <button
@@ -267,6 +281,10 @@ export function ProviderManager({
               : enabledProviders.filter((enabled) => enabled !== provider))}
           />
         </div>
+
+        {actionsAvailable && !isBusy && (guidanceKey || (provider === "cursor" && state.status === "connected")) && <p
+          className="provider-setup-guidance"
+        >{guidanceKey ? t(guidanceKey, { provider: name }) : t("cursor.usageHint")}</p>}
 
         {actionsAvailable && pending && <Confirmation
           definition={state.definition}

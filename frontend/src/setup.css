@@ -112,10 +112,9 @@
   background: currentColor;
 }
 
-.provider-setup-row[data-status="connected"] .provider-setup-status,
-.provider-setup-row[data-status="stale"] .provider-setup-status { color: #9fd9bd; }
-.provider-setup-row[data-status="connected"] .provider-setup-status-dot,
-.provider-setup-row[data-status="stale"] .provider-setup-status-dot { background: var(--codex); }
+.provider-setup-row[data-status="connected"] .provider-setup-status { color: #9fd9bd; }
+.provider-setup-row[data-status="connected"] .provider-setup-status-dot { background: var(--codex); }
+.provider-setup-row[data-status="stale"] .provider-setup-status { color: var(--warning); }
 .provider-setup-row[data-status="notAuthenticated"] .provider-setup-status { color: var(--warning); }
 .provider-setup-row[data-status="unavailable"] .provider-setup-status { color: var(--error); }
 .provider-setup-row[aria-busy="true"] .provider-setup-status { color: var(--text-secondary); }
@@ -167,6 +166,7 @@
 .provider-setup-confirmation p,
 .provider-setup-confirmation dl,
 .provider-setup-error,
+.provider-setup-guidance,
 .provider-setup-loading {
   margin: 0;
   color: var(--text-secondary);

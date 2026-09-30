@@ -6,11 +6,23 @@ import { ProviderGlyph } from "./ProviderGlyph";
 
 export type ProviderViewStatus = ProviderStatus | "loading";
 
-function providerGuidanceKey(provider: ProviderId, status: ProviderViewStatus) {
+export function providerGuidanceKey(provider: ProviderId, status: ProviderViewStatus, errorKind?: string | null) {
   const suffix = provider === "github" ? "GitHub" : `${provider[0].toUpperCase()}${provider.slice(1)}`;
   if (status === "notInstalled") return `guidance.install${suffix}`;
   if (status === "notAuthenticated") return `guidance.signIn${suffix}`;
-  return null;
+  if (status !== "unavailable" && status !== "stale") return null;
+  // Only translate known categories. Never render raw CLI output or unknown errors.
+  switch (errorKind) {
+    case "missingExecutable": return `guidance.install${suffix}`;
+    case "authentication": return `guidance.signIn${suffix}`;
+    case "usageUnavailable": return "guidance.usageUnavailable";
+    case "unsupportedOutput": return "guidance.unsupportedOutput";
+    case "timeout": return "guidance.timeout";
+    case "launch": return "guidance.launch";
+    case "process": return "guidance.process";
+    case "network": return "guidance.network";
+    default: return "guidance.retryLater";
+  }
 }
 
 export function statusTranslationKey(status: ProviderViewStatus) {
@@ -20,22 +32,19 @@ export function statusTranslationKey(status: ProviderViewStatus) {
 type ProviderCardProps = {
   provider: ProviderId;
   status: ProviderViewStatus;
+  errorKind?: string | null;
   lastSuccessfulRefresh?: string | null;
   children?: ReactNode;
 };
 
-export function ProviderCard({ provider, status, lastSuccessfulRefresh, children }: ProviderCardProps) {
+export function ProviderCard({ provider, status, errorKind, lastSuccessfulRefresh, children }: ProviderCardProps) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.resolvedLanguage);
   const name = t(`providers.${provider}`);
-  const guidanceKey = providerGuidanceKey(provider, status);
+  const guidanceKey = providerGuidanceKey(provider, status, errorKind);
   const showsData = status === "connected" || status === "stale";
   const statusText = status === "connected" ? null : t(statusTranslationKey(status));
-  const guidance = guidanceKey
-    ? t(guidanceKey)
-    : status === "unavailable" || status === "stale"
-      ? t("guidance.retryLater", { provider: name })
-      : null;
+  const guidance = guidanceKey ? t(guidanceKey, { provider: name }) : null;
   // The header line only confirms a healthy connection; every other state gets
   // the full explanation panel below, so no status text is repeated twice.
   const headerState = status === "connected" ? t("setup.connected") : null;
@@ -43,6 +52,7 @@ export function ProviderCard({ provider, status, lastSuccessfulRefresh, children
   return <article
     className={`provider-card provider-${provider} status-${status}`}
     data-status={status}
+    tabIndex={status === "stale" ? 0 : undefined}
     dir={i18n.dir()}
     style={{ "--provider-accent": `var(--${provider})` } as React.CSSProperties}
   >

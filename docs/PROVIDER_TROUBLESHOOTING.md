@@ -4,6 +4,45 @@ Dashy reads provider data through the locally installed CLI. An installed app,
 a CLI command that can start, and an authenticated subscription are separate
 requirements. Missing data must never be displayed as zero usage.
 
+## Finishing or postponing setup
+
+Selecting a provider enables its setup controls; it does not install or sign in
+automatically. Use **Install** and its confirmation, then **Connect** and the
+official login when required. **Finish setup** becomes available after the
+selected providers are ready, and Dashy checks them again before saving completion.
+A failed or cancelled installation/login keeps setup open. **Retry** checks again
+after you repair a CLI outside Dashy; deselect any provider you do not want to use.
+
+**Save and finish later** is an explicit postponement. It saves the language and
+provider choices but leaves setup incomplete, so the dashboard remains hidden.
+Click the tray icon or choose **Show Dashy** or **Settings** to resume. Setup also
+returns the next time Dashy starts. Selecting no providers is a valid completed
+setup; it leaves the dashboard hidden until providers are enabled in Settings.
+
+Being signed in does not guarantee that a CLI exposes quota numbers. An
+authenticated **usage unavailable** response does not block finishing setup;
+Dashy explains that no limits were returned and suggests checking the provider
+account. Cursor setup similarly verifies its connection, but its card shows
+account/plan information and directs you to Cursor's dashboard for usage.
+
+## Understanding unavailable or last-known data
+
+Provider cards show a localized reason rather than a generic retry instruction:
+
+- **No usage limits returned:** the CLI authenticated, but no quota data is
+  available. Check usage in the provider account; another login is not assumed
+  to fix this
+- **Unsupported response:** Dashy cannot interpret the CLI response. Check for
+  Dashy and CLI updates, then retry
+- **Timeout or network failure:** check connectivity and retry
+- **Could not start:** verify that the CLI runs in a terminal, then reopen Dashy
+- **CLI request failed:** run the CLI in a terminal to investigate, then retry
+
+Last-known values remain visible when a later refresh fails, alongside the last
+successful update and failure reason. Stale data is not proof of a current
+connection; setup requires a fresh check. Unknown errors never become invented
+usage percentages or raw CLI output in the interface.
+
 ## What the September 2026 logs establish
 
 The supplied logs contained successful Claude refreshes followed by near-immediate

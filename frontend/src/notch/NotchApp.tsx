@@ -372,6 +372,9 @@ export function NotchApp({
       send({ kind: "escape" });
       return;
     }
+    // A focused stale card may need to scroll to expose its failure guidance.
+    if ((event.key === "ArrowUp" || event.key === "ArrowDown")
+      && (event.target as HTMLElement).closest(".provider-card")) return;
     const forward = placement === "top" ? event.key === "ArrowRight" : event.key === "ArrowDown";
     const backward = placement === "top" ? event.key === "ArrowLeft" : event.key === "ArrowUp";
     if (forward || backward) {

@@ -145,9 +145,7 @@ pub fn run() {
                             ..
                         }
                     ) {
-                        if let Some(state) = tray.app_handle().try_state::<DesktopState>() {
-                            state.controller.show_explicit();
-                        }
+                        show_or_resume_setup(tray.app_handle());
                     }
                 });
             if let Some(icon) = app.default_window_icon() {
@@ -222,12 +220,40 @@ pub fn run() {
         .expect("failed to run Dashy");
 }
 
+fn show_or_resume_setup(app: &AppHandle) {
+    let Some(state) = app.try_state::<DesktopState>() else {
+        return;
+    };
+    let Ok(settings) = state.settings.current() else {
+        return;
+    };
+    route_show_action(
+        &settings,
+        || {
+            let _ = desktop::show_onboarding_window(app);
+        },
+        || state.controller.show_explicit(),
+    );
+}
+
+fn route_show_action(
+    settings: &desktop::settings::AppSettings,
+    show_onboarding: impl FnOnce(),
+    show_dashboard: impl FnOnce(),
+) {
+    if settings.requires_provider_setup() {
+        show_onboarding();
+    } else {
+        show_dashboard();
+    }
+}
+
 fn handle_menu_action(app: &AppHandle, id: &str) {
     let Some(state) = app.try_state::<DesktopState>() else {
         return;
     };
     match id {
-        "show" => state.controller.show_explicit(),
+        "show" => show_or_resume_setup(app),
         "refresh_all" => {
             let dashboard = app.state::<AppState>().dashboard.clone();
             let app_handle = app.clone();
@@ -677,5 +703,45 @@ mod config_tests {
 
         settings.provider_setup_version = CURRENT_PROVIDER_SETUP_VERSION;
         assert_eq!(settings_window_label(&settings), "settings");
+    }
+
+    #[test]
+    fn shared_tray_click_and_show_menu_route_resumes_incomplete_setup() {
+        use crate::desktop::settings::CURRENT_PROVIDER_SETUP_VERSION;
+        let cases = [
+            (AppSettings::default(), "onboarding"),
+            (
+                AppSettings {
+                    onboarding_completed: true,
+                    ..Default::default()
+                },
+                "onboarding",
+            ),
+            (
+                AppSettings {
+                    onboarding_completed: false,
+                    provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION,
+                    ..Default::default()
+                },
+                "onboarding",
+            ),
+            (
+                AppSettings {
+                    onboarding_completed: true,
+                    provider_setup_version: CURRENT_PROVIDER_SETUP_VERSION,
+                    ..Default::default()
+                },
+                "dashboard",
+            ),
+        ];
+        for (settings, expected) in cases {
+            let target = std::cell::Cell::new("");
+            super::route_show_action(
+                &settings,
+                || target.set("onboarding"),
+                || target.set("dashboard"),
+            );
+            assert_eq!(target.get(), expected);
+        }
     }
 }

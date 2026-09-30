@@ -61,6 +61,7 @@ const providerStates: ProviderSetupState[] = [
     loginCommand: loginCommand as string,
   },
   status: "connected" as const,
+  errorKind: null,
   repairAction: null,
 }));
 
@@ -140,5 +141,104 @@ describe("Onboarding activation", () => {
     expect(document.documentElement.lang).toBe("he");
     expect(document.documentElement.dir).toBe("rtl");
     expect(screen.getByRole("radio", { name: "עברית" })).toBeChecked();
+  });
+
+  it("requires confirmed installation and login, recovers from cancellation, then permits completion", async () => {
+    mocks.activationRevision.mockReturnValue(1);
+    mocks.getSettings.mockResolvedValue({ ...baseSettings, enabledProviders: ["codex"] });
+    const missing: ProviderSetupState = {
+      ...providerStates[1], status: "notInstalled", errorKind: "missingExecutable", repairAction: "install",
+    };
+    const signedOut: ProviderSetupState = {
+      ...providerStates[1], status: "notAuthenticated", errorKind: "authentication", repairAction: "login",
+    };
+    mocks.getProviderSetupStates.mockResolvedValue([missing]);
+    mocks.installProvider.mockRejectedValueOnce(new Error("cancelled fixture install"))
+      .mockResolvedValueOnce(signedOut);
+    mocks.loginProvider.mockResolvedValue(providerStates[1]);
+    render(<OnboardingApp />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    const finish = await screen.findByRole("button", { name: "Finish setup" });
+    expect(finish).toBeDisabled();
+    expect(mocks.installProvider).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+    expect(mocks.installProvider).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(mocks.installProvider).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm installation" }));
+    expect(await screen.findByText("Provider setup needs attention.")).toBeInTheDocument();
+    expect(finish).toBeDisabled();
+    expect(mocks.completeOnboarding).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Install Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm installation" }));
+    const connect = await screen.findByRole("button", { name: "Connect Codex" });
+    expect(finish).toBeDisabled();
+    fireEvent.click(connect);
+    expect(mocks.loginProvider).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open official login" }));
+    await waitFor(() => expect(finish).toBeEnabled());
+    fireEvent.click(finish);
+    await waitFor(() => expect(mocks.completeOnboarding)
+      .toHaveBeenCalledExactlyOnceWith(["codex"], "en", false));
+    expect(mocks.installProvider).toHaveBeenCalledTimes(2);
+    expect(mocks.loginProvider).toHaveBeenCalledExactlyOnceWith("codex");
+  });
+
+  it("reloads and blocks a stale frontend success when native completion verification fails", async () => {
+    mocks.activationRevision.mockReturnValue(1);
+    mocks.getSettings.mockResolvedValue({ ...baseSettings, enabledProviders: ["codex"] });
+    mocks.getProviderSetupStates.mockResolvedValueOnce([providerStates[1]])
+      .mockResolvedValueOnce([{
+        ...providerStates[1], status: "stale", errorKind: "authentication", repairAction: "login",
+      }]);
+    mocks.completeOnboarding.mockRejectedValueOnce("provider_setup_incomplete");
+    render(<OnboardingApp />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    const finish = await screen.findByRole("button", { name: "Finish setup" });
+    fireEvent.click(finish);
+    expect(await screen.findByText(/A selected provider could not be verified/)).toBeInTheDocument();
+    await waitFor(() => expect(finish).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Connect Codex" })).toBeEnabled();
+    expect(screen.queryByText("provider_setup_incomplete")).not.toBeInTheDocument();
+
+    mocks.loginProvider.mockResolvedValue(providerStates[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Connect Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open official login" }));
+    await waitFor(() => expect(finish).toBeEnabled());
+    fireEvent.click(finish);
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.emitLocaleChanged).toHaveBeenCalledExactlyOnceWith("en"));
+  });
+
+  it("restores deferred selections on reopening and allows completion after a verified repair", async () => {
+    mocks.activationRevision.mockReturnValue(1);
+    const deferredSettings = { ...baseSettings, enabledProviders: ["codex" as const] };
+    mocks.getSettings.mockResolvedValue(deferredSettings);
+    mocks.getProviderSetupStates.mockResolvedValue([{
+      ...providerStates[1], status: "unavailable", errorKind: "network", repairAction: null,
+    }]);
+    mocks.completeOnboarding.mockResolvedValue(deferredSettings);
+    const view = render(<OnboardingApp />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save and finish later" }));
+    await waitFor(() => expect(mocks.completeOnboarding)
+      .toHaveBeenCalledExactlyOnceWith(["codex"], "en", true));
+    await waitFor(() => expect(mocks.emitLocaleChanged).toHaveBeenCalled());
+    view.unmount();
+
+    mocks.getProviderSetupStates.mockResolvedValue([providerStates[1]]);
+    mocks.completeOnboarding.mockResolvedValue({ ...deferredSettings, onboardingCompleted: true });
+    render(<OnboardingApp />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("checkbox", { name: "Use Codex in Dashy" })).toBeChecked();
+    const finish = screen.getByRole("button", { name: "Finish setup" });
+    expect(finish).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Save and finish later" })).not.toBeInTheDocument();
+    fireEvent.click(finish);
+    await waitFor(() => expect(mocks.completeOnboarding)
+      .toHaveBeenLastCalledWith(["codex"], "en", false));
   });
 });

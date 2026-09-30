@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderId, ProviderStatus } from "../dashboard";
-import { setLocale } from "../i18n";
+import { localeResources, setLocale, SUPPORTED_LOCALES } from "../i18n";
 import type { ProviderSetupDefinition, ProviderSetupState } from "../setup/api";
 import type { AppSettings } from "../window";
 import "../onboarding.css";
@@ -87,6 +87,7 @@ function states(status: Partial<Record<ProviderId, ProviderStatus>>): ProviderSe
     return {
       definition: { provider, ...metadata[provider] },
       status: providerStatus,
+      errorKind: null,
       repairAction: providerStatus === "notInstalled"
         ? "install"
         : providerStatus === "notAuthenticated" ? "login" : null,
@@ -177,7 +178,7 @@ describe("OnboardingApp", () => {
     fireEvent.click(await screen.findByRole("button", { name: "המשך" }));
     fireEvent.click(await screen.findByRole("button", { name: "סיום ההגדרה" }));
 
-    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "he"));
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "he", false));
     expect(mocks.setTrayLabels).toHaveBeenCalledTimes(1);
     expect(mocks.setTrayLabels.mock.calls[0][0].quit).toBe("צא מ־Dashy");
     expect(mocks.setTrayLabels.mock.invocationCallOrder[0])
@@ -192,7 +193,7 @@ describe("OnboardingApp", () => {
     await goToProviders();
     fireEvent.click(await screen.findByRole("button", { name: "Finish setup" }));
 
-    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en"));
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en", false));
     expect(screen.queryByText(/tray offline/i)).not.toBeInTheDocument();
     expect(screen.getByText("", { selector: ".onboarding-footer-status" })).toBeInTheDocument();
   });
@@ -288,7 +289,7 @@ describe("OnboardingApp", () => {
     fireEvent.click(finish);
 
     expect(finish).toBeDisabled();
-    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en"));
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en", false));
 
     resolveCompletion({ ...cleanSettings, onboardingCompleted: true });
     await waitFor(() => expect(finish).not.toBeDisabled());
@@ -338,5 +339,91 @@ describe("OnboardingApp", () => {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: previousWidth });
       Object.defineProperty(window, "innerHeight", { configurable: true, value: previousHeight });
     }
+  });
+
+  it.each(["notInstalled", "notAuthenticated", "unavailable", "stale"] as const)(
+    "requires repair or explicit deferral for a selected %s provider", async (status) => {
+      const setup = controller(states({ codex: status }));
+      mocks.controller.mockReturnValue(setup);
+      mocks.getSettings.mockResolvedValue({ ...cleanSettings, enabledProviders: ["codex"] });
+      render(<OnboardingApp />);
+      await goToProviders();
+
+      const finish = await screen.findByRole("button", { name: "Finish setup" });
+      expect(finish).toBeDisabled();
+      expect(screen.getByText(/Not ready yet:.*Codex/)).toBeInTheDocument();
+      expect(screen.getByText(/Setup stays incomplete and Dashy stays hidden/)).toBeInTheDocument();
+      fireEvent.click(finish);
+      expect(mocks.completeOnboarding).not.toHaveBeenCalled();
+      expect(setup.install).not.toHaveBeenCalled();
+      expect(setup.login).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "Save and finish later" }));
+      await waitFor(() => expect(mocks.completeOnboarding)
+        .toHaveBeenCalledExactlyOnceWith(["codex"], "en", true));
+    },
+  );
+
+  it("allows intentional deselection without marking an unready provider as ready", async () => {
+    render(<OnboardingApp />);
+    await goToProviders();
+    const choice = await screen.findByRole("checkbox", { name: "Use Codex in Dashy" });
+    fireEvent.click(choice);
+    expect(screen.getByRole("button", { name: "Finish setup" })).toBeDisabled();
+    fireEvent.click(choice);
+    expect(screen.queryByRole("button", { name: "Save and finish later" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Finish setup" }));
+    await waitFor(() => expect(mocks.completeOnboarding).toHaveBeenCalledExactlyOnceWith([], "en", false));
+  });
+
+  it("accepts authenticated missing quotas and Cursor account-only data with clear capability guidance", async () => {
+    const setup = states({ codex: "unavailable", cursor: "connected" });
+    setup[1].errorKind = "usageUnavailable";
+    mocks.controller.mockReturnValue(controller(setup));
+    mocks.getSettings.mockResolvedValue({ ...cleanSettings, enabledProviders: ["codex", "cursor"] });
+    render(<OnboardingApp />);
+    await goToProviders();
+    expect(await screen.findByText("Connected · usage unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/Codex is signed in but returned no usage limits/)).toBeInTheDocument();
+    expect(screen.getByText(/Cursor does not report usage limits/)).toBeInTheDocument();
+    const finish = screen.getByRole("button", { name: "Finish setup" });
+    expect(finish).toBeEnabled();
+    fireEvent.click(finish);
+    await waitFor(() => expect(mocks.completeOnboarding)
+      .toHaveBeenCalledExactlyOnceWith(["codex", "cursor"], "en", false));
+  });
+
+  it("does not finish or defer while an explicit provider action is still running", async () => {
+    mocks.controller.mockReturnValue({ ...controller(states({ codex: "unavailable" })), busyProvider: "codex", busyAction: "login" });
+    mocks.getSettings.mockResolvedValue({ ...cleanSettings, enabledProviders: ["codex"] });
+    render(<OnboardingApp />);
+    await goToProviders();
+    expect(await screen.findByRole("button", { name: "Finish setup" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save and finish later" })).toBeDisabled();
+  });
+
+  it("blocks stale readiness after a failed recheck and keeps Retry available", async () => {
+    const setup = { ...controller(states({ codex: "connected" })), loadFailed: true };
+    mocks.controller.mockReturnValue(setup);
+    mocks.getSettings.mockResolvedValue({ ...cleanSettings, enabledProviders: ["codex"] });
+    const view = render(<OnboardingApp />);
+    await goToProviders();
+    expect(await screen.findByRole("button", { name: "Finish setup" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(setup.reload).toHaveBeenCalledTimes(1);
+    mocks.controller.mockReturnValue({ ...setup, loadFailed: false });
+    view.rerender(<OnboardingApp />);
+    expect(screen.getByRole("button", { name: "Finish setup" })).toBeEnabled();
+  });
+
+  it.each(SUPPORTED_LOCALES)("localizes the deferred setup warning and actions in %s", async (locale) => {
+    mocks.getSettings.mockResolvedValue({ ...cleanSettings, locale, enabledProviders: ["codex"] });
+    render(<OnboardingApp />);
+    const messages = localeResources[locale].translation;
+    fireEvent.click(await screen.findByRole("button", { name: messages.setup.continue }));
+    expect(await screen.findByRole("button", { name: messages.setup.finish })).toBeDisabled();
+    expect(screen.getByRole("button", { name: messages.setup.defer })).toBeEnabled();
+    expect(screen.getByText((text) => text.includes(messages.setup.deferHint))).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe(locale === "he" || locale === "ar" ? "rtl" : "ltr");
   });
 });

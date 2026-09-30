@@ -4,7 +4,7 @@ export type Messages = {
   github: { streakDays: string; today: string; contributions: string; heatmapLabel: string; streakUnit: string; todayUnit: string };
   cursor: { plan: string; account: string; usageHint: string };
   status: { loading: string; notInstalled: string; signInRequired: string; unavailable: string; stale: string; lastUpdated: string };
-  guidance: { installClaude: string; installCodex: string; installGitHub: string; installGrok: string; installCursor: string; signInClaude: string; signInCodex: string; signInGitHub: string; signInGrok: string; signInCursor: string; retryLater: string };
+  guidance: { installClaude: string; installCodex: string; installGitHub: string; installGrok: string; installCursor: string; signInClaude: string; signInCodex: string; signInGitHub: string; signInGrok: string; signInCursor: string; retryLater: string; usageUnavailable: string; unsupportedOutput: string; timeout: string; launch: string; process: string; network: string };
   setup: {
     eyebrow: string; title: string; description: string; useProvider: string;
     languageTitle: string; languageDescription: string; continue: string; back: string; stepLabel: string;
@@ -13,6 +13,7 @@ export type Messages = {
     install: string; connect: string; retry: string; cancel: string;
     confirmInstall: string; confirmLogin: string; installDisclosure: string; installManualDisclosure: string; loginDisclosure: string;
     publisher: string; packageId: string; command: string; manualHelp: string; manualHelpFailure: string;
+    usageUnavailable: string; providersNotReady: string; defer: string; deferHint: string; finishNotReady: string;
     finish: string; finishFailure: string; actionFailure: string; loading: string;
   };
   settings: { title: string; placement: string; right: string; left: string; top: string; monitor: string; language: string; fullscreen: string; startup: string; display: string; providers: string; diagnostics: string; diagnosticsHint: string; openLogFolder: string };
@@ -26,7 +27,7 @@ const en = {
   github: { streakDays: "{{count}} day streak", today: "Today", contributions: "{{count}} contributions", heatmapLabel: "GitHub contributions over the last 12 weeks", streakUnit: "day streak", todayUnit: "contributions today" },
   cursor: { plan: "Plan", account: "Account", usageHint: "Cursor does not report usage limits. See usage on the Cursor dashboard." },
   status: { loading: "Loading", notInstalled: "Not installed", signInRequired: "Sign in required", unavailable: "Unavailable", stale: "Last known data", lastUpdated: "Last updated {{time}}" },
-  guidance: { installClaude: "Install the Claude CLI, then reopen Dashy.", installCodex: "Install the Codex CLI, then reopen Dashy.", installGitHub: "Install the GitHub CLI, then reopen Dashy.", installGrok: "Install the Grok CLI, then reopen Dashy.", installCursor: "Install the Cursor CLI, then reopen Dashy.", signInClaude: "Sign in to Claude, then retry.", signInCodex: "Sign in to Codex, then retry.", signInGitHub: "Sign in to GitHub, then retry.", signInGrok: "Sign in to Grok, then retry.", signInCursor: "Sign in to Cursor, then retry.", retryLater: "Try {{provider}} again later." },
+  guidance: { installClaude: "Install the Claude CLI, then reopen Dashy.", installCodex: "Install the Codex CLI, then reopen Dashy.", installGitHub: "Install the GitHub CLI, then reopen Dashy.", installGrok: "Install the Grok CLI, then reopen Dashy.", installCursor: "Install the Cursor CLI, then reopen Dashy.", signInClaude: "Sign in to Claude, then retry.", signInCodex: "Sign in to Codex, then retry.", signInGitHub: "Sign in to GitHub, then retry.", signInGrok: "Sign in to Grok, then retry.", signInCursor: "Sign in to Cursor, then retry.", retryLater: "Try {{provider}} again later.", usageUnavailable: "{{provider}} is signed in but returned no usage limits. Check usage in your provider account.", unsupportedOutput: "Dashy could not read the {{provider}} CLI response. Check for Dashy and CLI updates, then retry.", timeout: "The {{provider}} CLI took too long to respond. Check your connection, then retry.", launch: "Dashy could not start the {{provider}} CLI. Check that it runs in a terminal, then reopen Dashy.", process: "The {{provider}} CLI request failed. Run it in a terminal to check the problem, then retry.", network: "The {{provider}} CLI could not reach its service. Check your connection, then retry." },
   setup: {
     eyebrow: "DASHY / SETUP", title: "Choose what Dashy watches", description: "Connect only the tools you use. You can change this later in Settings.",
     languageTitle: "Choose your language", languageDescription: "Dashy switches immediately. You can change this later in Settings.", continue: "Continue", back: "Back", stepLabel: "Step {{current}} of {{total}}",
@@ -35,6 +36,7 @@ const en = {
     install: "Install {{provider}}", connect: "Connect {{provider}}", retry: "Retry", cancel: "Cancel", confirmInstall: "Confirm installation", confirmLogin: "Open official login",
     installDisclosure: "Dashy will open a visible terminal and run this command.", installManualDisclosure: "Dashy will open the official install guide in your browser.", loginDisclosure: "Dashy will open the provider's official login in a visible terminal and browser.",
     publisher: "Publisher", packageId: "Package", command: "Command", manualHelp: "Open official installation guide", manualHelpFailure: "Dashy could not open the official installation guide.", finish: "Finish setup",
+    usageUnavailable: "Connected · usage unavailable", providersNotReady: "Not ready yet: {{providers}}. Install, connect or retry these tools, or deselect them to finish.", defer: "Save and finish later", deferHint: "Setup stays incomplete and Dashy stays hidden. Resume with Show Dashy from the tray.", finishNotReady: "A selected provider could not be verified. Review its status and try again.",
     finishFailure: "Dashy could not save your provider selection.", actionFailure: "Provider setup needs attention.", loading: "Checking installed tools",
   },
   settings: { title: "Settings", placement: "Placement", right: "Right", left: "Left", top: "Top", monitor: "Monitor", language: "Language", fullscreen: "Always show over fullscreen apps", startup: "Launch at startup", display: "Display", providers: "Providers", diagnostics: "Diagnostics", diagnosticsHint: "A local log of provider refreshes: which CLI ran, how long it took, and whether it succeeded. No output or secrets.", openLogFolder: "Open log folder" },

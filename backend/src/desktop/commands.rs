@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 use crate::dashboard::{
     commands::{emit_dashboard_cache_changed, AppState},
-    models::ProviderId,
+    models::{DashboardSnapshot, ProviderId},
 };
 
 use super::{
@@ -201,14 +201,52 @@ pub async fn update_settings(
 fn onboarding_completion_patch(
     enabled_providers: Vec<ProviderId>,
     locale: LocaleCode,
+    defer_setup: bool,
 ) -> SettingsPatch {
     SettingsPatch {
-        onboarding_completed: Some(true),
+        onboarding_completed: Some(!defer_setup),
         enabled_providers: Some(enabled_providers),
         locale: Some(locale),
-        provider_setup_version: Some(CURRENT_PROVIDER_SETUP_VERSION),
+        provider_setup_version: (!defer_setup).then_some(CURRENT_PROVIDER_SETUP_VERSION),
         ..Default::default()
     }
+}
+
+fn verify_onboarding_providers(
+    snapshot: &DashboardSnapshot,
+    enabled_providers: &[ProviderId],
+) -> Result<(), String> {
+    if enabled_providers.iter().all(|provider| {
+        crate::setup::commands::provider_setup_state(*provider, snapshot).is_ready()
+    }) {
+        Ok(())
+    } else {
+        Err("provider_setup_incomplete".to_owned())
+    }
+}
+
+async fn run_onboarding_lifecycle<V, S, A>(
+    provider_selection_gate: &tokio::sync::Mutex<()>,
+    settings_side_effect_gate: &std::sync::Mutex<()>,
+    verify: V,
+    save: S,
+    after: A,
+) -> Result<AppSettings, String>
+where
+    V: Future<Output = Result<(), String>>,
+    S: FnOnce() -> Result<AppSettings, String>,
+    A: FnOnce(&AppSettings) -> Result<(), String>,
+{
+    let _selection_guard = provider_selection_gate.lock().await;
+    // Verify before marking setup complete. A failed/stale probe must leave both
+    // persisted completion and the visible setup window unchanged.
+    verify.await?;
+    let _side_effect_guard = settings_side_effect_gate
+        .lock()
+        .map_err(|_| "settings side-effect lock poisoned".to_owned())?;
+    let settings = save()?;
+    after(&settings)?;
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -219,28 +257,43 @@ pub async fn complete_onboarding(
     state: State<'_, DesktopState>,
     enabled_providers: Vec<ProviderId>,
     locale: LocaleCode,
+    defer_setup: Option<bool>,
 ) -> Result<AppSettings, String> {
     crate::authorize_caller(&window, &["onboarding"])?;
     let dashboard = dashboard.dashboard.clone();
     let cache_event_app = app.clone();
-    run_provider_selection_lifecycle(
+    let providers_to_verify = enabled_providers.clone();
+    let defer_setup = defer_setup.unwrap_or(false);
+    run_onboarding_lifecycle(
         &state.provider_selection_gate,
         &state.settings_side_effect_gate,
+        async move {
+            if defer_setup || providers_to_verify.is_empty() {
+                return Ok(());
+            }
+            // A fresh native probe is authoritative, even if the frontend still
+            // displays an earlier connected state after login or reactivation.
+            let snapshot = dashboard.get_snapshot_for(true, &providers_to_verify).await;
+            let result = verify_onboarding_providers(&snapshot, &providers_to_verify);
+            if result.is_err() {
+                // Publish the failure for any open surfaces without replacing the
+                // readiness error if a notification itself is unavailable.
+                let _ = emit_dashboard_cache_changed(&cache_event_app);
+            }
+            result
+        },
         || {
-            let previous = state.settings.current()?.enabled_providers;
-            let settings = state
-                .settings
-                .update(onboarding_completion_patch(enabled_providers, locale))?;
+            let settings = state.settings.update(onboarding_completion_patch(
+                enabled_providers,
+                locale,
+                defer_setup,
+            ))?;
             state.controller.queue_interaction(EdgeInteraction::Dismiss);
             emit_settings_changed(&app, &settings)?;
-            Ok((previous, settings))
+            Ok(settings)
         },
-        move |providers| async move {
-            dashboard.get_snapshot_for(true, &providers).await;
-        },
-        move || emit_dashboard_cache_changed(&cache_event_app),
-        || state.settings.current(),
         |settings| {
+            emit_dashboard_cache_changed(&app)?;
             state.refresh_tray(&app, settings)?;
             super::hide_onboarding_window(&app)
         },
@@ -379,9 +432,13 @@ mod tests {
 
     use super::{
         newly_enabled_providers, onboarding_completion_patch, refresh_newly_enabled_then_notify,
-        run_provider_selection_lifecycle, settings_event_targets, ExitRequest, NotchInteraction,
+        run_onboarding_lifecycle, run_provider_selection_lifecycle, settings_event_targets,
+        verify_onboarding_providers, ExitRequest, NotchInteraction,
     };
-    use crate::dashboard::models::ProviderId;
+    use crate::dashboard::models::{
+        AccountSnapshot, DashboardSnapshot, GitHubSnapshot, ProviderErrorKind, ProviderId,
+        ProviderStatus, UsageSnapshot,
+    };
     use crate::desktop::settings::{
         AppSettings, EdgePlacement, LocaleCode, MonitorPreference, StoredMonitorRect,
         CURRENT_PROVIDER_SETUP_VERSION,
@@ -392,6 +449,7 @@ mod tests {
         let patch = onboarding_completion_patch(
             vec![ProviderId::Claude, ProviderId::Codex],
             LocaleCode::He,
+            false,
         );
 
         assert_eq!(patch.onboarding_completed, Some(true));
@@ -407,6 +465,129 @@ mod tests {
         assert_eq!(patch.placement, None);
         assert_eq!(patch.monitor, None);
         assert_eq!(patch.always_show_over_fullscreen, None);
+    }
+
+    #[test]
+    fn deferred_setup_saves_choices_without_recording_completion() {
+        let patch = onboarding_completion_patch(vec![ProviderId::Codex], LocaleCode::He, true);
+        assert_eq!(patch.onboarding_completed, Some(false));
+        assert_eq!(patch.enabled_providers, Some(vec![ProviderId::Codex]));
+        assert_eq!(patch.locale, Some(LocaleCode::He));
+        assert_eq!(patch.provider_setup_version, None);
+    }
+
+    #[test]
+    fn completion_validates_only_selected_providers_and_accepts_supported_capabilities() {
+        let mut snapshot = DashboardSnapshot {
+            github: GitHubSnapshot::failed(
+                ProviderStatus::NotInstalled,
+                ProviderErrorKind::MissingExecutable,
+            ),
+            codex: UsageSnapshot::failed(
+                ProviderStatus::Unavailable,
+                ProviderErrorKind::UsageUnavailable,
+            ),
+            claude: UsageSnapshot::failed(
+                ProviderStatus::NotAuthenticated,
+                ProviderErrorKind::Authentication,
+            ),
+            grok: UsageSnapshot::failed(ProviderStatus::Unavailable, ProviderErrorKind::Process),
+            cursor: AccountSnapshot {
+                status: ProviderStatus::Connected,
+                subscription_tier: None,
+                account_email: None,
+                last_successful_refresh: Some(chrono::Utc::now()),
+                error_kind: None,
+            },
+            refreshed_at: chrono::Utc::now(),
+        };
+        assert!(verify_onboarding_providers(&snapshot, &[]).is_ok());
+        assert!(
+            verify_onboarding_providers(&snapshot, &[ProviderId::Codex, ProviderId::Cursor])
+                .is_ok()
+        );
+        for provider in [ProviderId::GitHub, ProviderId::Claude, ProviderId::Grok] {
+            assert_eq!(
+                verify_onboarding_providers(&snapshot, &[provider]),
+                Err("provider_setup_incomplete".to_owned())
+            );
+        }
+        snapshot.codex = UsageSnapshot::failed(ProviderStatus::Stale, ProviderErrorKind::Timeout);
+        assert!(verify_onboarding_providers(&snapshot, &[ProviderId::Codex]).is_err());
+        snapshot.codex =
+            UsageSnapshot::failed(ProviderStatus::Stale, ProviderErrorKind::Authentication);
+        assert!(verify_onboarding_providers(&snapshot, &[ProviderId::Codex]).is_err());
+    }
+
+    #[tokio::test]
+    async fn onboarding_verification_failure_never_saves_or_hides() {
+        let gate = tokio::sync::Mutex::new(());
+        let side_effect_gate = Mutex::new(());
+        let result = run_onboarding_lifecycle(
+            &gate,
+            &side_effect_gate,
+            async { Err("provider_setup_incomplete".to_owned()) },
+            || panic!("failed verification must not persist completion"),
+            |_| panic!("failed verification must keep setup visible"),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "provider_setup_incomplete");
+    }
+
+    #[tokio::test]
+    async fn onboarding_fresh_verification_precedes_save_publish_and_hide_under_selection_gate() {
+        let calls = Mutex::new(Vec::new());
+        let gate = tokio::sync::Mutex::new(());
+        let side_effect_gate = Mutex::new(());
+        run_onboarding_lifecycle(
+            &gate,
+            &side_effect_gate,
+            async {
+                assert!(gate.try_lock().is_err());
+                assert!(
+                    side_effect_gate.try_lock().is_ok(),
+                    "never hold the settings lock across CLI awaits"
+                );
+                calls.lock().unwrap().push("verify");
+                Ok(())
+            },
+            || {
+                assert!(gate.try_lock().is_err());
+                assert!(side_effect_gate.try_lock().is_err());
+                calls.lock().unwrap().push("save-publish");
+                Ok(AppSettings {
+                    onboarding_completed: true,
+                    ..Default::default()
+                })
+            },
+            |_| {
+                assert!(gate.try_lock().is_err());
+                assert!(side_effect_gate.try_lock().is_err());
+                calls.lock().unwrap().push("tray-hide");
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            *calls.lock().unwrap(),
+            ["verify", "save-publish", "tray-hide"]
+        );
+    }
+
+    #[tokio::test]
+    async fn onboarding_save_failure_after_verification_keeps_setup_open() {
+        let gate = tokio::sync::Mutex::new(());
+        let side_effect_gate = Mutex::new(());
+        let result = run_onboarding_lifecycle(
+            &gate,
+            &side_effect_gate,
+            async { Ok(()) },
+            || Err("save failed".to_owned()),
+            |_| panic!("failed persistence must keep setup visible"),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "save failed");
     }
 
     #[tokio::test]
