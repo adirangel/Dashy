@@ -58,6 +58,20 @@ describe("provider failure explanations", () => {
     expect(screen.getByText(/CLI took too long to respond/)).toBeInTheDocument();
   });
 
+  it("shows connected Codex weekly usage without inventing an unknown reset", () => {
+    render(<UsageProviderCard provider="codex" snapshot={{
+      ...unavailableDashboardSnapshot().codex,
+      status: "connected", errorKind: null, remainingPercent: 72,
+      weeklyWindow: { labelKey: "weekly", remainingPercent: 72, resetsAt: null },
+    }} />);
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByText("Weekly")).toBeInTheDocument();
+    expect(screen.getByText("72% remaining")).toBeInTheDocument();
+    expect(screen.queryByText("Current session")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Resets/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Last known data")).not.toBeInTheDocument();
+  });
+
   it.each([
     ["missingExecutable", "Install the Codex CLI, then reopen Dashy."],
     ["authentication", "Sign in to Codex, then retry."],

@@ -112,7 +112,7 @@ fn parse_value(value: serde_json::Value) -> Result<UsageData, ProviderError> {
         let usage_window = UsageWindowData {
             label_key: classify_window_kind(window.window_duration_mins)?,
             remaining_percent: window.remaining_percent,
-            resets_at: Some(window.resets_at),
+            resets_at: window.resets_at,
         };
         let slot = match usage_window.label_key {
             UsageWindowKind::Short => &mut short_window,
@@ -141,8 +141,12 @@ fn parse_window(window: &RateLimitWindow) -> Result<ParsedWindow, ProviderError>
         return Err(ProviderError::UnsupportedOutput);
     }
 
-    let resets_at =
-        DateTime::from_timestamp(window.resets_at, 0).ok_or(ProviderError::UnsupportedOutput)?;
+    let resets_at = window
+        .resets_at
+        .map(|timestamp| {
+            DateTime::from_timestamp(timestamp, 0).ok_or(ProviderError::UnsupportedOutput)
+        })
+        .transpose()?;
     Ok(ParsedWindow {
         remaining_percent: 100 - window.used_percent,
         resets_at,
@@ -152,7 +156,7 @@ fn parse_window(window: &RateLimitWindow) -> Result<ParsedWindow, ProviderError>
 
 struct ParsedWindow {
     remaining_percent: u8,
-    resets_at: DateTime<Utc>,
+    resets_at: Option<DateTime<Utc>>,
     window_duration_mins: u32,
 }
 
@@ -183,7 +187,7 @@ struct RateLimitWindow {
     #[serde(rename = "windowDurationMins")]
     window_duration_mins: u32,
     #[serde(rename = "resetsAt")]
-    resets_at: i64,
+    resets_at: Option<i64>,
 }
 
 #[cfg(test)]
@@ -260,6 +264,108 @@ mod tests {
             usage.weekly_window.unwrap().resets_at.unwrap().timestamp(),
             1788532560
         );
+    }
+
+    #[test]
+    fn accepts_null_or_absent_resets_without_losing_either_window() {
+        for reset in [Some(serde_json::Value::Null), None] {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&fixture_with_general_windows(28, 61)).unwrap();
+            let bucket = &mut value["rateLimitsByLimitId"]["codex"];
+            for name in ["primary", "secondary"] {
+                let window = bucket[name].as_object_mut().unwrap();
+                match &reset {
+                    Some(reset) => {
+                        window.insert("resetsAt".to_owned(), reset.clone());
+                    }
+                    None => {
+                        window.remove("resetsAt");
+                    }
+                }
+            }
+
+            let usage = parse_value(value).unwrap();
+            let short = usage.short_window.unwrap();
+            let weekly = usage.weekly_window.unwrap();
+            assert_eq!(short.remaining_percent, 72);
+            assert_eq!(weekly.remaining_percent, 39);
+            for window in [short, weekly] {
+                assert!(window.resets_at.is_none());
+                let serialized = serde_json::to_value(window).unwrap();
+                assert_eq!(serialized.get("resetsAt"), Some(&serde_json::Value::Null));
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_a_known_reset_when_the_other_window_reset_is_unknown() {
+        let mut value: serde_json::Value =
+            serde_json::from_str(&fixture_with_general_windows(28, 61)).unwrap();
+        value["rateLimitsByLimitId"]["codex"]["primary"]["resetsAt"] = serde_json::Value::Null;
+
+        let usage = parse_value(value).unwrap();
+        let short = usage.short_window.unwrap();
+        let weekly = usage.weekly_window.unwrap();
+        assert_eq!(short.remaining_percent, 72);
+        assert!(short.resets_at.is_none());
+        assert_eq!(weekly.remaining_percent, 39);
+        assert_eq!(weekly.resets_at.unwrap().timestamp(), 1788532560);
+    }
+
+    #[test]
+    fn accepts_a_weekly_only_primary_window_without_a_known_reset() {
+        let usage = parse_value(json!({
+            "rateLimits": {
+                "limitId": "codex",
+                "primary": {
+                    "usedPercent": 28,
+                    "windowDurationMins": 10080,
+                    "resetsAt": null
+                },
+                "secondary": null
+            }
+        }))
+        .unwrap();
+
+        assert!(usage.short_window.is_none());
+        let weekly = usage.weekly_window.unwrap();
+        assert_eq!(weekly.remaining_percent, 72);
+        assert!(weekly.resets_at.is_none());
+    }
+
+    #[test]
+    fn an_unknown_reset_does_not_relax_other_window_validation() {
+        for (field, invalid) in [
+            ("usedPercent", json!(101)),
+            ("usedPercent", json!("28")),
+            ("windowDurationMins", json!(0)),
+            ("windowDurationMins", json!(10081)),
+            ("windowDurationMins", json!(null)),
+            ("unexpected", json!(true)),
+        ] {
+            let mut value = json!({
+                "rateLimits": {
+                    "limitId": "codex",
+                    "primary": {
+                        "usedPercent": 28,
+                        "windowDurationMins": 10080,
+                        "resetsAt": null
+                    }
+                }
+            });
+            value["rateLimits"]["primary"][field] = invalid;
+            assert_eq!(parse_value(value), Err(ProviderError::UnsupportedOutput));
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_resets_instead_of_treating_them_as_unknown() {
+        for reset in [json!("1788000000"), json!(1.5), json!(true), json!({})] {
+            let mut value: serde_json::Value =
+                serde_json::from_str(&fixture_with_general_windows(28, 61)).unwrap();
+            value["rateLimitsByLimitId"]["codex"]["primary"]["resetsAt"] = reset;
+            assert_eq!(parse_value(value), Err(ProviderError::UnsupportedOutput));
+        }
     }
 
     #[test]
@@ -821,9 +927,9 @@ mod tests {
         assert!(windows.iter().any(Option::is_some));
         for window in windows.into_iter().flatten() {
             assert!(window.remaining_percent <= 100);
-            assert!(window
-                .resets_at
-                .is_some_and(|reset| reset > chrono::Utc::now()));
+            if let Some(reset) = window.resets_at {
+                assert!(reset > chrono::Utc::now());
+            }
         }
     }
 }
