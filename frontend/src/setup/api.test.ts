@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
-import { getProviderSetupStates, installProvider, loginProvider } from "./api";
+import { getProviderSetupStates, installProvider, isProviderReady, loginProvider, type ProviderSetupState } from "./api";
 
 const codex = {
   definition: {
@@ -14,6 +14,7 @@ const codex = {
     loginCommand: "codex login",
   },
   status: "notInstalled",
+  errorKind: null,
   repairAction: "install",
 };
 
@@ -26,6 +27,7 @@ const claudeOnMac = {
     loginCommand: "claude auth login --claudeai",
   },
   status: "notInstalled",
+  errorKind: null,
   repairAction: "install",
 };
 
@@ -38,6 +40,7 @@ const cursor = {
     loginCommand: "cursor-agent login",
   },
   status: "notInstalled",
+  errorKind: null,
   repairAction: "install",
 };
 
@@ -107,6 +110,28 @@ describe("provider setup IPC", () => {
     await expect(getProviderSetupStates()).resolves.toEqual([
       { ...codex, status: "connected", repairAction: null },
     ]);
+  });
+
+  it.each([undefined, 42, { message: "raw output" }])("rejects missing or malformed error categories %#", async (errorKind) => {
+    const response = { ...codex, errorKind } as Record<string, unknown>;
+    if (errorKind === undefined) delete response.errorKind;
+    mocks.invoke.mockResolvedValue([response]);
+    await expect(getProviderSetupStates()).rejects.toThrow(/invalid provider setup response/i);
+  });
+
+  it.each([
+    ["connected", null, null, true],
+    ["connected", null, "login", false],
+    ["notInstalled", "missingExecutable", "install", false],
+    ["notAuthenticated", "authentication", "login", false],
+    ["unavailable", "usageUnavailable", null, true],
+    ["stale", "usageUnavailable", null, true],
+    ["stale", "authentication", "login", false],
+    ["stale", "timeout", null, false],
+    ["unavailable", "unsupportedOutput", null, false],
+    ["unavailable", "unexpected", null, false],
+  ] as const)("uses explicit readiness for %s / %s / %s", (status, errorKind, repairAction, ready) => {
+    expect(isProviderReady({ ...codex, status, errorKind, repairAction } as ProviderSetupState)).toBe(ready);
   });
 
   it("rejects a provider guide URL outside the native allowlist", async () => {

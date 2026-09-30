@@ -646,6 +646,24 @@ describe("native notch interaction bridge", () => {
     await waitFor(() => expect(mocks.showNotchMenu).toHaveBeenCalledTimes(1));
   });
 
+  it("lets a focused stale card scroll without changing providers and keeps Escape working", async () => {
+    const view = await renderNativeNotch();
+    await emitEdgeView({ visibility: "pinned", placement: "right", provider: "claude" });
+    view.rerender(<NotchApp snapshot={{
+      ...snapshot, claude: { ...snapshot.claude, status: "stale", errorKind: "unsupportedOutput" },
+    }} />);
+    const card = screen.getByRole("article");
+    card.focus();
+    expect(card).toHaveFocus();
+    mocks.setNotchInteraction.mockClear();
+    expect(fireEvent.keyDown(card, { key: "ArrowDown" })).toBe(true);
+    expect(fireEvent.keyDown(card, { key: "ArrowUp" })).toBe(true);
+    expect(card).toHaveFocus();
+    expect(mocks.setNotchInteraction).not.toHaveBeenCalled();
+    fireEvent.keyDown(card, { key: "Escape" });
+    expect(mocks.setNotchInteraction).toHaveBeenCalledWith({ kind: "escape" });
+  });
+
   it("announces refresh failure politely, retains the card, and cleans up its listener", async () => {
     const view = await renderNativeNotch();
     await emitEdgeView({ visibility: "pinned", placement: "right", provider: "claude" });

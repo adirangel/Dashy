@@ -30,6 +30,7 @@ const codexState = (status: ProviderSetupState["status"]): ProviderSetupState =>
     loginCommand: "codex login",
   },
   status,
+  errorKind: null,
   repairAction: status === "notInstalled" ? "install" : null,
 });
 

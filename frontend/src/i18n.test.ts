@@ -33,15 +33,15 @@ describe("localization contract", () => {
       "setup.actionFailure", "setup.back", "setup.cancel", "setup.command",
       "setup.confirmInstall",
       "setup.confirmLogin", "setup.connect", "setup.connected", "setup.connecting",
-      "setup.continue", "setup.description",
-      "setup.eyebrow", "setup.finish", "setup.finishFailure", "setup.install",
+      "setup.continue", "setup.defer", "setup.deferHint", "setup.description",
+      "setup.eyebrow", "setup.finish", "setup.finishFailure", "setup.finishNotReady", "setup.install",
       "setup.installDisclosure", "setup.installManualDisclosure", "setup.installing",
       "setup.languageDescription", "setup.languageTitle",
       "setup.loading", "setup.loginDisclosure",
       "setup.manualHelp", "setup.manualHelpFailure",
-      "setup.needsAttention", "setup.notInstalled", "setup.packageId", "setup.publisher",
+      "setup.needsAttention", "setup.notInstalled", "setup.packageId", "setup.providersNotReady", "setup.publisher",
       "setup.retry", "setup.signInRequired", "setup.stepLabel", "setup.title",
-      "setup.useProvider",
+      "setup.usageUnavailable", "setup.useProvider",
     ]);
   });
 

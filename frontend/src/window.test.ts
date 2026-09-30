@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen, emitTo: vi.fn() 
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => mocks.currentWindow }));
 
 import {
-  beginNotchExit, completeNotchExit, getCurrentEdgeView, isDashboardCacheChangedEvent,
+  beginNotchExit, completeNotchExit, completeOnboarding, getCurrentEdgeView, isDashboardCacheChangedEvent,
   isCurrentWindowActive, isEdgeViewState, isExitToken, listenForCurrentWindowActivation,
   listenForSettingsChanges, openSettings,
 } from "./window";
@@ -36,6 +36,15 @@ describe("strict edge-view validation", () => {
     mocks.invoke.mockResolvedValue(view);
     await expect(getCurrentEdgeView()).resolves.toEqual(view);
     expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("get_current_edge_view");
+  });
+
+  it("distinguishes verified onboarding completion from explicit deferral at the native boundary", async () => {
+    await completeOnboarding(["codex"], "he");
+    await completeOnboarding(["codex"], "he", true);
+    expect(mocks.invoke.mock.calls).toEqual([
+      ["complete_onboarding", { enabledProviders: ["codex"], locale: "he", deferSetup: false }],
+      ["complete_onboarding", { enabledProviders: ["codex"], locale: "he", deferSetup: true }],
+    ]);
   });
 
   it("rejects a malformed current-view command response at the native boundary", async () => {

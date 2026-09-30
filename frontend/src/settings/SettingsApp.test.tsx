@@ -71,6 +71,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "claude auth login --claudeai",
     },
     status: "connected",
+    errorKind: null,
     repairAction: null,
   },
   {
@@ -81,6 +82,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "codex login",
     },
     status: "connected",
+    errorKind: null,
     repairAction: null,
   },
   {
@@ -91,6 +93,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "gh auth login --web",
     },
     status: "connected",
+    errorKind: null,
     repairAction: null,
   },
   {
@@ -101,6 +104,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "grok login",
     },
     status: "connected",
+    errorKind: null,
     repairAction: null,
   },
   {
@@ -112,6 +116,7 @@ const providerSetupStates: ProviderSetupState[] = [
       loginCommand: "cursor-agent login",
     },
     status: "connected",
+    errorKind: null,
     repairAction: null,
   },
 ];

@@ -43,7 +43,7 @@ export function UsageProviderCard({
   now?: Date;
 }) {
   const status = snapshot?.status ?? "loading";
-  return <ProviderCard provider={provider} status={status} lastSuccessfulRefresh={snapshot?.lastSuccessfulRefresh}>
+  return <ProviderCard provider={provider} status={status} errorKind={snapshot?.errorKind} lastSuccessfulRefresh={snapshot?.lastSuccessfulRefresh}>
     <div className="usage-windows">
       {snapshot?.shortWindow && <UsageWindow window={snapshot.shortWindow} now={now} />}
       {snapshot?.weeklyWindow && <UsageWindow window={snapshot.weeklyWindow} now={now} />}

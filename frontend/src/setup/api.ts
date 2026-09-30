@@ -22,8 +22,17 @@ export type ProviderSetupDefinition = {
 export type ProviderSetupState = {
   definition: ProviderSetupDefinition;
   status: ProviderStatus;
+  errorKind: string | null;
   repairAction: ProviderSetupAction | null;
 };
+
+export function isProviderReady(state: ProviderSetupState): boolean {
+  return state.repairAction === null && (
+    state.status === "connected"
+    || ((state.status === "unavailable" || state.status === "stale")
+      && state.errorKind === "usageUnavailable")
+  );
+}
 
 export type ProviderSetupAction = "install" | "login";
 
@@ -71,9 +80,10 @@ function isProviderSetupDefinition(value: unknown): value is ProviderSetupDefini
 function isProviderSetupState(value: unknown): value is ProviderSetupState {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return hasExactKeys(candidate, ["definition", "status", "repairAction"])
+  return hasExactKeys(candidate, ["definition", "status", "errorKind", "repairAction"])
     && isProviderSetupDefinition(candidate.definition)
     && providerStatuses.has(candidate.status as ProviderStatus)
+    && (candidate.errorKind === null || typeof candidate.errorKind === "string")
     && (candidate.repairAction === null
       || candidate.repairAction === "install"
       || candidate.repairAction === "login");

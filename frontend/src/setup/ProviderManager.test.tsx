@@ -49,6 +49,7 @@ function setupStates(
   return (["claude", "codex", "github", "grok", "cursor"] as ProviderId[]).map((provider) => ({
     definition: { provider, ...metadata[provider] },
     status: status[provider] ?? "connected",
+    errorKind: null,
     repairAction: repairAction[provider]
       ?? (status[provider] === "notInstalled"
         ? "install"
@@ -481,20 +482,20 @@ describe("ProviderManager", () => {
     expect(within(githubCard).queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("reports a stale provider as connected while keeping its retry affordance", () => {
+  it("marks stale data as needing attention while keeping its retry affordance", () => {
     renderManager({ githubStatus: "stale" });
 
     const githubCard = screen.getByRole("article", { name: "GitHub" });
     expect(githubCard).toHaveAttribute("data-status", "stale");
-    expect(within(githubCard).getByRole("status")).toHaveTextContent("Connected");
+    expect(within(githubCard).getByRole("status")).toHaveTextContent("Needs attention");
     expect(within(githubCard).getByRole("button", { name: "Retry" })).toBeEnabled();
   });
 
-  it("reports a stale provider with an authentication repair as connected with a login action", () => {
+  it("marks a stale authentication failure as needing attention with a login action", () => {
     renderManager({ states: setupStates({ github: "stale" }, { github: "login" }) });
 
     const githubCard = screen.getByRole("article", { name: "GitHub" });
-    expect(within(githubCard).getByRole("status")).toHaveTextContent("Connected");
+    expect(within(githubCard).getByRole("status")).toHaveTextContent("Needs attention");
     expect(within(githubCard).getByRole("button", { name: "Connect GitHub" })).toBeEnabled();
   });
 

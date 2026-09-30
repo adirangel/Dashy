@@ -17,6 +17,7 @@ export function CursorCard({ snapshot }: { snapshot: CursorSnapshot | null }) {
   return <ProviderCard
     provider="cursor"
     status={status}
+    errorKind={snapshot?.errorKind}
     lastSuccessfulRefresh={snapshot?.lastSuccessfulRefresh}
   >
     <div className="card-stats card-stats--account">

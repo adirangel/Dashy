@@ -6,7 +6,7 @@ const zhCN = {
   github: { streakDays: "连续 {{count}} 天", today: "今天", contributions: "{{count}} 次贡献", heatmapLabel: "过去 12 周的 GitHub 贡献", streakUnit: "天连续", todayUnit: "今日贡献" },
   cursor: { plan: "订阅方案", account: "账户", usageHint: "Cursor 不提供用量限制数据。请在 Cursor 控制台查看用量。" },
   status: { loading: "正在加载", notInstalled: "未安装", signInRequired: "需要登录", unavailable: "不可用", stale: "上次保存的数据", lastUpdated: "上次更新 {{time}}" },
-  guidance: { installClaude: "请安装 Claude CLI，然后重新打开 Dashy。", installCodex: "请安装 Codex CLI，然后重新打开 Dashy。", installGitHub: "请安装 GitHub CLI，然后重新打开 Dashy。", installGrok: "请安装 Grok CLI，然后重新打开 Dashy。", installCursor: "请安装 Cursor CLI，然后重新打开 Dashy。", signInClaude: "请登录 Claude 后重试。", signInCodex: "请登录 Codex 后重试。", signInGitHub: "请登录 GitHub 后重试。", signInGrok: "请登录 Grok 后重试。", signInCursor: "请登录 Cursor 后重试。", retryLater: "请稍后重试 {{provider}}。" },
+  guidance: { installClaude: "请安装 Claude CLI，然后重新打开 Dashy。", installCodex: "请安装 Codex CLI，然后重新打开 Dashy。", installGitHub: "请安装 GitHub CLI，然后重新打开 Dashy。", installGrok: "请安装 Grok CLI，然后重新打开 Dashy。", installCursor: "请安装 Cursor CLI，然后重新打开 Dashy。", signInClaude: "请登录 Claude 后重试。", signInCodex: "请登录 Codex 后重试。", signInGitHub: "请登录 GitHub 后重试。", signInGrok: "请登录 Grok 后重试。", signInCursor: "请登录 Cursor 后重试。", retryLater: "请稍后重试 {{provider}}。", usageUnavailable: "{{provider}} 已登录，但未返回用量限制。请在服务商账户中查看用量。", unsupportedOutput: "Dashy 无法读取 {{provider}} CLI 的响应。请检查 Dashy 和 CLI 的更新后重试。", timeout: "{{provider}} CLI 响应超时。请检查网络连接后重试。", launch: "Dashy 无法启动 {{provider}} CLI。请确认它可在终端中运行，然后重新打开 Dashy。", process: "{{provider}} CLI 请求失败。请在终端中运行它，检查问题后重试。", network: "{{provider}} CLI 无法连接到服务。请检查网络连接后重试。" },
   setup: {
     eyebrow: "DASHY / 设置", title: "选择 Dashy 要监控的内容", description: "只连接你使用的工具。之后可随时在设置中更改。",
     languageTitle: "选择你的语言", languageDescription: "Dashy 会立即切换。之后可随时在设置中更改。", continue: "继续", back: "返回", stepLabel: "第 {{current}} 步，共 {{total}} 步",
@@ -15,6 +15,7 @@ const zhCN = {
     install: "安装 {{provider}}", connect: "连接 {{provider}}", retry: "重试", cancel: "取消", confirmInstall: "确认安装", confirmLogin: "打开官方登录",
     installDisclosure: "Dashy 将打开可见终端并运行此命令。", installManualDisclosure: "Dashy 将在浏览器中打开官方安装指南。", loginDisclosure: "Dashy 将在可见终端和浏览器中打开服务商的官方登录流程。",
     publisher: "发布者", packageId: "软件包", command: "命令", manualHelp: "打开官方安装指南", manualHelpFailure: "Dashy 无法打开官方安装指南。", finish: "完成设置",
+    usageUnavailable: "已连接 · 用量不可用", providersNotReady: "尚未就绪：{{providers}}。请安装、登录或重试这些工具，或取消选择后完成设置。", defer: "保存并稍后完成", deferHint: "设置将保持未完成，Dashy 将保持隐藏。请从系统托盘选择“显示 Dashy”以继续。", finishNotReady: "无法验证所选服务商。请检查其状态后重试。",
     finishFailure: "Dashy 无法保存服务商选择。", actionFailure: "服务商设置需要处理。", loading: "正在检查已安装的工具",
   },
   settings: { title: "设置", placement: "位置", right: "右侧", left: "左侧", top: "顶部", monitor: "显示器", language: "语言", fullscreen: "始终显示在全屏应用之上", startup: "开机启动", display: "显示", providers: "服务", diagnostics: "诊断", diagnosticsHint: "本地记录每次服务刷新：运行了哪个 CLI、耗时多久、是否成功。不含输出或密钥。", openLogFolder: "打开日志文件夹" },

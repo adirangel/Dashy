@@ -58,6 +58,7 @@ fn providers_needing_reprobe(snapshot: &DashboardSnapshot) -> Vec<ProviderId> {
                 crate::dashboard::models::ProviderStatus::NotInstalled
                     | crate::dashboard::models::ProviderStatus::NotAuthenticated
                     | crate::dashboard::models::ProviderStatus::Unavailable
+                    | crate::dashboard::models::ProviderStatus::Stale
             )
         })
         .collect()
@@ -136,11 +137,15 @@ where
     Ok(state)
 }
 
-fn provider_setup_state(provider: ProviderId, snapshot: &DashboardSnapshot) -> ProviderSetupState {
+pub(crate) fn provider_setup_state(
+    provider: ProviderId,
+    snapshot: &DashboardSnapshot,
+) -> ProviderSetupState {
     let (status, error_kind) = snapshot.provider_status_and_error(provider);
     ProviderSetupState {
         definition: ProviderSetupDefinition::for_provider(provider),
         status,
+        error_kind,
         repair_action: match error_kind {
             Some(
                 crate::dashboard::models::ProviderErrorKind::MissingExecutable
@@ -261,8 +266,8 @@ mod tests {
 
         assert_eq!(
             super::providers_needing_reprobe(&snapshot),
-            vec![ProviderId::Claude, ProviderId::GitHub, ProviderId::Cursor],
-            "stale keeps its cached last-good state; failed probes re-run"
+            ProviderId::ALL.to_vec(),
+            "stale and failed probes must re-run to verify setup readiness"
         );
     }
 
@@ -275,6 +280,7 @@ mod tests {
             ))
             .unwrap();
             assert_eq!(install["repairAction"], "install", "{provider:?}");
+            assert_eq!(install["errorKind"], "missingExecutable", "{provider:?}");
 
             let login = serde_json::to_value(provider_setup_state(
                 provider,
@@ -282,7 +288,20 @@ mod tests {
             ))
             .unwrap();
             assert_eq!(login["repairAction"], "login", "{provider:?}");
+            assert_eq!(login["errorKind"], "authentication", "{provider:?}");
         }
+    }
+
+    #[test]
+    fn setup_keeps_authenticated_missing_quotas_distinct_from_authentication_failure() {
+        let state = provider_setup_state(
+            ProviderId::Codex,
+            &stale_snapshot(ProviderId::Codex, ProviderErrorKind::UsageUnavailable),
+        );
+        assert!(state.is_ready());
+        let value = serde_json::to_value(state).unwrap();
+        assert_eq!(value["errorKind"], "usageUnavailable");
+        assert!(value["repairAction"].is_null());
     }
 
     #[test]
@@ -319,6 +338,7 @@ mod tests {
                 std::future::ready(ProviderSetupState {
                     definition: ProviderSetupDefinition::for_provider(provider),
                     status: ProviderStatus::NotInstalled,
+                    error_kind: Some(ProviderErrorKind::MissingExecutable),
                     repair_action: Some(crate::setup::models::ProviderRepairAction::Install),
                 })
             },

@@ -19,7 +19,7 @@ export function GitHubCard({ snapshot, now = new Date() }: { snapshot: GitHubSna
   const formattedStreak = streak === null || streak === undefined ? null : formatNumber(streak, locale);
   const formattedToday = today ? formatNumber(today.count, locale) : null;
 
-  return <ProviderCard provider="github" status={status} lastSuccessfulRefresh={snapshot?.lastSuccessfulRefresh}>
+  return <ProviderCard provider="github" status={status} errorKind={snapshot?.errorKind} lastSuccessfulRefresh={snapshot?.lastSuccessfulRefresh}>
     <div className="card-stats">
       <div className="card-stat">
         <strong data-testid="github-streak-value">{formattedStreak ?? <Unavailable label={t("status.unavailable")} />}</strong>

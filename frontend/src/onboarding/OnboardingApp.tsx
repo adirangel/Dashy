@@ -6,6 +6,7 @@ import i18n, {
   type SupportedLocale,
 } from "../i18n";
 import { ProviderManager } from "../setup/ProviderManager";
+import { isProviderReady } from "../setup/api";
 import { useProviderSetup } from "../setup/useProviderSetup";
 import { applyTrayLocale } from "../trayLabels";
 import { useWindowActivationRevision } from "../useWindowActivation";
@@ -124,8 +125,15 @@ export function OnboardingApp() {
     void setLocale(locale).catch(() => undefined);
   }, []);
 
-  const finish = useCallback(async () => {
-    if (!selectionReady || finishInFlight.current) return;
+  const unfinishedProviders = enabledProviders.filter((provider) => {
+    const state = controller.states?.find((candidate) => candidate.definition.provider === provider);
+    return controller.loadFailed || !state || !isProviderReady(state);
+  });
+  const providersReady = unfinishedProviders.length === 0;
+  const setupBusy = controller.busyProvider !== null;
+
+  const finish = useCallback(async (deferSetup = false) => {
+    if (!selectionReady || finishInFlight.current || setupBusy || (!deferSetup && !providersReady)) return;
     finishInFlight.current = true;
     setFinishing(true);
     setMessage("");
@@ -134,18 +142,23 @@ export function OnboardingApp() {
       // Push localized tray labels first so the completion lifecycle's tray refresh
       // renders them; the tray keeps its defaults if this best-effort push fails.
       await applyTrayLocale(locale).catch(() => undefined);
-      await completeOnboarding(enabledProviders, locale);
+      await completeOnboarding(enabledProviders, locale, deferSetup);
       await emitLocaleChanged(locale).catch(() => undefined);
-    } catch {
-      setMessage(t("setup.finishFailure"));
+    } catch (error) {
+      const incomplete = error === "provider_setup_incomplete"
+        || (error instanceof Error && error.message === "provider_setup_incomplete");
+      setMessage(t(incomplete ? "setup.finishNotReady" : "setup.finishFailure"));
+      if (incomplete) await controller.reload();
     } finally {
       finishInFlight.current = false;
       setFinishing(false);
     }
-  }, [enabledProviders, selectionReady, settings, t]);
+  }, [controller, enabledProviders, providersReady, selectionReady, settings, setupBusy, t]);
 
   const selectedLocale = chosenLocale ?? resolveLocale(settings?.locale);
   const languageStep = step === "language";
+  const unfinishedNames = new Intl.ListFormat(resolveLocale(i18n.resolvedLanguage), { type: "conjunction" })
+    .format(unfinishedProviders.map((provider) => t(`providers.${provider}`)));
 
   return <main
     className="onboarding-app"
@@ -200,13 +213,20 @@ export function OnboardingApp() {
         controller={controller}
         enabledProviders={enabledProviders}
         onEnabledChange={setEnabledProviders}
+        selectionDisabled={finishing}
         actionsRequireSelection
       />
     </section>}
 
     <footer className="onboarding-footer">
-      <span className="onboarding-footer-status" role="status" aria-live="polite">
+      <span className="onboarding-footer-status" id="onboarding-readiness" role="status" aria-live="polite">
         {message}
+        {!languageStep && selectionReady && !providersReady && <>
+          {message && <br />}
+          {t("setup.providersNotReady", { providers: `\u2068${unfinishedNames}\u2069` })}
+          <br />
+          {t("setup.deferHint")}
+        </>}
       </span>
       {languageStep
         ? <button
@@ -221,10 +241,18 @@ export function OnboardingApp() {
             disabled={finishing}
             onClick={() => goToStep("language")}
           >{t("setup.back")}</button>
+          {selectionReady && !providersReady && <button
+            className="settings-ghost-button"
+            type="button"
+            disabled={finishing || setupBusy}
+            aria-describedby="onboarding-readiness"
+            onClick={() => { void finish(true); }}
+          >{t("setup.defer")}</button>}
           {selectionReady && <button
             className="settings-primary-button"
             type="button"
-            disabled={finishing}
+            disabled={finishing || setupBusy || !providersReady}
+            aria-describedby={!providersReady ? "onboarding-readiness" : undefined}
             onClick={() => { void finish(); }}
           >{t("setup.finish")}</button>}
         </div>}

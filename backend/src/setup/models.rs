@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::dashboard::models::{ProviderId, ProviderStatus};
+use crate::dashboard::models::{ProviderErrorKind, ProviderId, ProviderStatus};
 
 /// The operating system Dashy is running on, as far as provider setup cares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -188,12 +188,99 @@ pub enum ProviderRepairAction {
 pub struct ProviderSetupState {
     pub definition: ProviderSetupDefinition,
     pub status: ProviderStatus,
+    pub error_kind: Option<ProviderErrorKind>,
     pub repair_action: Option<ProviderRepairAction>,
+}
+
+impl ProviderSetupState {
+    pub fn is_ready(&self) -> bool {
+        self.repair_action.is_none()
+            && (self.status == ProviderStatus::Connected
+                || (matches!(
+                    self.status,
+                    ProviderStatus::Unavailable | ProviderStatus::Stale
+                ) && self.error_kind == Some(ProviderErrorKind::UsageUnavailable)))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readiness_requires_verified_connection_but_not_usage_quota_support() {
+        for (status, error_kind, repair_action, ready) in [
+            (ProviderStatus::Connected, None, None, true),
+            (
+                ProviderStatus::NotInstalled,
+                Some(ProviderErrorKind::MissingExecutable),
+                Some(ProviderRepairAction::Install),
+                false,
+            ),
+            (
+                ProviderStatus::NotAuthenticated,
+                Some(ProviderErrorKind::Authentication),
+                Some(ProviderRepairAction::Login),
+                false,
+            ),
+            (
+                ProviderStatus::Unavailable,
+                Some(ProviderErrorKind::UsageUnavailable),
+                None,
+                true,
+            ),
+            (
+                ProviderStatus::Stale,
+                Some(ProviderErrorKind::UsageUnavailable),
+                None,
+                true,
+            ),
+            (
+                ProviderStatus::Stale,
+                Some(ProviderErrorKind::Authentication),
+                Some(ProviderRepairAction::Login),
+                false,
+            ),
+            (
+                ProviderStatus::Stale,
+                Some(ProviderErrorKind::Timeout),
+                None,
+                false,
+            ),
+            (
+                ProviderStatus::Unavailable,
+                Some(ProviderErrorKind::UnsupportedOutput),
+                None,
+                false,
+            ),
+            (
+                ProviderStatus::Unavailable,
+                Some(ProviderErrorKind::Network),
+                None,
+                false,
+            ),
+            (
+                ProviderStatus::Unavailable,
+                Some(ProviderErrorKind::Launch),
+                Some(ProviderRepairAction::Install),
+                false,
+            ),
+            (
+                ProviderStatus::Unavailable,
+                Some(ProviderErrorKind::Process),
+                None,
+                false,
+            ),
+        ] {
+            let state = ProviderSetupState {
+                definition: ProviderSetupDefinition::for_provider(ProviderId::Codex),
+                status,
+                error_kind,
+                repair_action,
+            };
+            assert_eq!(state.is_ready(), ready, "{state:?}");
+        }
+    }
 
     #[test]
     fn windows_installs_through_exact_winget_packages() {
